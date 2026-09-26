@@ -1,0 +1,45 @@
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+
+# Backend - Java/Maven
+backend/target/
+backend/.classpath
+backend/.project
+backend/.settings/
+backend/*.jar
+backend/*.log
+
+# Frontend - Node/Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log
+frontend/yarn-error.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Misc
+.cache/
+tmp/
+temp/
