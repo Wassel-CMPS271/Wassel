@@ -1,0 +1,20 @@
+# Local development profile. Run with: ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/wassel}
+    username: ${DB_USERNAME:wassel}
+    password: ${DB_PASSWORD:wassel}
+
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: update
+
+jwt:
+  secret: ${JWT_SECRET:local-dev-secret-change-me-local-dev-secret-change-me}
+  expiration: ${JWT_EXPIRATION:24h}
+
+logging:
+  level:
+    com.wassel.backend: DEBUG
+    org.springframework.security: DEBUG
