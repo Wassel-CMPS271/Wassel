@@ -60,3 +60,35 @@ Wassel is a web-based school transport management platform for private schools, 
 | Frontend   | `http://localhost:3000` |
 
 To stop the database: `docker compose down` (add `-v` to also delete its data).
+
+## Staging Environment
+
+Staging runs the built backend jar and built frontend server in containers — the same
+artifacts a real deployment would run — instead of the dev servers used above. It's a
+separate stack (own database, own containers) from local dev, used for Sprint Review
+demos and pre-release verification.
+
+1. **Configure environment.** From the repo root:
+
+   ```bash
+   cp .env.staging.example .env.staging
+   ```
+
+   Then edit `.env.staging` and set real, generated values for `DB_PASSWORD` and
+   `JWT_SECRET` — don't reuse the local-dev defaults.
+
+2. **Build and start the full stack** (Postgres, backend, frontend):
+
+   ```bash
+   docker compose -f docker-compose.staging.yml --env-file .env.staging up -d --build
+   ```
+
+   Wait until `docker compose -f docker-compose.staging.yml ps` shows `postgres` as
+   `healthy`.
+
+3. **Open the app** at <http://localhost:3000>. The backend API is at
+   <http://localhost:8080>.
+
+To stop the stack: `docker compose -f docker-compose.staging.yml down` (add `-v` to
+also delete the staging database's data). Rebuild after code changes with the same
+`up -d --build` command.
