@@ -5,7 +5,7 @@ import type { FormEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { ApiValidationError } from "@/lib/api/schoolTimes";
+import { ApiValidationError } from "@/lib/api/errors";
 import type { NewSchoolTimes, SchoolTimes } from "@/lib/api/schoolTimes";
 import { colors, darkTheme, spacing } from "@/styles/tokens";
 

@@ -1,5 +1,6 @@
 package com.wassel.backend.common.exception;
 
+import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -44,6 +45,14 @@ public class GlobalExceptionHandler {
 	public ProblemDetail handleInvalidSchoolTimes(InvalidSchoolTimesException ex) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
 		problem.setProperty("errors", Map.of("dismissalTime", ex.getMessage()));
+		return problem;
+	}
+
+	// Same "errors" shape as validation, keyed by the offending field, so clients can show it there.
+	@ExceptionHandler(HolidayAlreadyExistsException.class)
+	public ProblemDetail handleHolidayAlreadyExists(HolidayAlreadyExistsException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Holiday already exists");
+		problem.setProperty("errors", Map.of("date", ex.getMessage()));
 		return problem;
 	}
 
