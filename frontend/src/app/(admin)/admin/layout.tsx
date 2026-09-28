@@ -14,10 +14,9 @@ interface NavItem {
   Icon: ComponentType<{ size?: number }>;
 }
 
-// The holiday calendar arrives with SCRUM-179.
 const NAV_ITEMS: NavItem[] = [
   { label: "School times", href: "/admin/school-times", enabled: true, Icon: ClockIcon },
-  { label: "Holiday calendar", href: "/admin/calendar", enabled: false, Icon: CalendarIcon },
+  { label: "Holiday calendar", href: "/admin/calendar", enabled: true, Icon: CalendarIcon },
 ];
 
 // Placeholder until SCRUM-176 (real auth) lands.

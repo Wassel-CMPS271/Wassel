@@ -14,7 +14,8 @@ that's the structure this codebase moved away from.
 - `users` — the `User` entity and `Role` enum. The foundational module (see
   Dependencies below).
 - `schools` — school-level settings. Real module: arrival/dismissal times
-  (SCRUM-178) are done; SCRUM-179 (further school configuration) is pending.
+  (SCRUM-178) and the holiday calendar (SCRUM-101) are done; half-day marking
+  (SCRUM-102, the rest of SCRUM-179) is pending.
 - `common` — cross-cutting code that belongs to no single feature:
   `config/SecurityConfig`, `exception/GlobalExceptionHandler`.
 - Placeholders (currently just a `package-info.java` describing scope and the

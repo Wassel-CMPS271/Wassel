@@ -12,7 +12,6 @@ interface Feature {
   Icon: ComponentType<{ size?: number }>;
 }
 
-// The holiday calendar and half-days arrive with SCRUM-179.
 const FEATURES: Feature[] = [
   {
     title: "School times",
@@ -24,7 +23,9 @@ const FEATURES: Feature[] = [
   },
   {
     title: "Holiday calendar",
-    description: "Add holidays and mark half-days so routes only run on days school is open.",
+    description: "Add the days school is closed so no routes are planned for them.",
+    href: "/admin/calendar",
+    cta: "Open holiday calendar",
     Icon: CalendarIcon,
   },
 ];

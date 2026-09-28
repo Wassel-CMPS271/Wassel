@@ -12,7 +12,9 @@
 //
 // Times are 24-hour "HH:mm" strings; both are null until first set. A 400
 // from the real API carries { errors: { field: message } }, which is what
-// ApiValidationError models here.
+// ApiValidationError (errors.ts) models here.
+
+import { ApiValidationError } from "./errors";
 
 export interface SchoolTimes {
   arrivalTime: string | null;
@@ -20,16 +22,6 @@ export interface SchoolTimes {
 }
 
 export type NewSchoolTimes = { arrivalTime: string; dismissalTime: string };
-
-export class ApiValidationError extends Error {
-  readonly errors: Record<string, string>;
-
-  constructor(errors: Record<string, string>) {
-    super("Validation failed");
-    this.name = "ApiValidationError";
-    this.errors = errors;
-  }
-}
 
 const MOCK_LATENCY_MS = 400;
 
