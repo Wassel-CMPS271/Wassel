@@ -1,4 +1,4 @@
-package com.wassel.backend.entity;
+package com.wassel.backend.users.entity;
 
 public enum Role {
 	DRIVER,

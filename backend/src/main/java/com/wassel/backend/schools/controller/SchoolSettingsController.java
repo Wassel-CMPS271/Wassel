@@ -1,9 +1,9 @@
-package com.wassel.backend.controller;
+package com.wassel.backend.schools.controller;
 
-import com.wassel.backend.dto.SchoolTimesRequest;
-import com.wassel.backend.dto.SchoolTimesResponse;
-import com.wassel.backend.entity.User;
-import com.wassel.backend.service.SchoolSettingsService;
+import com.wassel.backend.schools.dto.SchoolTimesRequest;
+import com.wassel.backend.schools.dto.SchoolTimesResponse;
+import com.wassel.backend.schools.service.SchoolSettingsService;
+import com.wassel.backend.users.entity.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;

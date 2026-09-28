@@ -1,4 +1,4 @@
-package com.wassel.backend.entity;
+package com.wassel.backend.users.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

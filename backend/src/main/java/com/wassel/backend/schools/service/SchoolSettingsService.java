@@ -1,10 +1,10 @@
-package com.wassel.backend.service;
+package com.wassel.backend.schools.service;
 
-import com.wassel.backend.dto.SchoolTimesRequest;
-import com.wassel.backend.dto.SchoolTimesResponse;
-import com.wassel.backend.entity.SchoolSettings;
-import com.wassel.backend.exception.InvalidSchoolTimesException;
-import com.wassel.backend.repository.SchoolSettingsRepository;
+import com.wassel.backend.schools.dto.SchoolTimesRequest;
+import com.wassel.backend.schools.dto.SchoolTimesResponse;
+import com.wassel.backend.schools.entity.SchoolSettings;
+import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
+import com.wassel.backend.schools.repository.SchoolSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

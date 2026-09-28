@@ -1,4 +1,4 @@
-package com.wassel.backend.config;
+package com.wassel.backend.auth.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

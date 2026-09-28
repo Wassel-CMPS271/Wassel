@@ -1,4 +1,4 @@
-package com.wassel.backend.dto;
+package com.wassel.backend.schools.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.constraints.NotNull;

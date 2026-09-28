@@ -1,8 +1,8 @@
-package com.wassel.backend.controller;
+package com.wassel.backend.schools.controller;
 
-import com.wassel.backend.entity.Role;
-import com.wassel.backend.entity.User;
-import com.wassel.backend.repository.SchoolSettingsRepository;
+import com.wassel.backend.schools.repository.SchoolSettingsRepository;
+import com.wassel.backend.users.entity.Role;
+import com.wassel.backend.users.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

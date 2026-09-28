@@ -1,6 +1,6 @@
-package com.wassel.backend.repository;
+package com.wassel.backend.schools.repository;
 
-import com.wassel.backend.entity.SchoolSettings;
+import com.wassel.backend.schools.entity.SchoolSettings;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.UUID;

@@ -1,6 +1,7 @@
-package com.wassel.backend.config;
+package com.wassel.backend.auth.service;
 
-import com.wassel.backend.entity.User;
+import com.wassel.backend.auth.config.JwtProperties;
+import com.wassel.backend.users.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

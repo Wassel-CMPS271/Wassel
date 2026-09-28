@@ -1,4 +1,4 @@
-package com.wassel.backend.entity;
+package com.wassel.backend.schools.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -17,7 +17,7 @@ import java.util.UUID;
 
 /**
  * Per-school configuration. There is exactly one row per school, keyed by
- * {@link #schoolId} (the tenant boundary, see {@link User#getSchoolId()}).
+ * {@link #schoolId} (the tenant boundary, see the schoolId field on the user entity).
  *
  * <p>The arrival and dismissal times are hard constraints for later route optimization.
  * Both are null until an admin sets them for the first time.
