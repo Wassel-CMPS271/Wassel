@@ -28,6 +28,8 @@ const FEATURES: Feature[] = [
     title: "Drivers",
     description:
       "Keep a roster of your drivers and assign each one to the vehicle they operate.",
+    href: "/head-of-transport/drivers",
+    cta: "Open drivers",
     Icon: DriverIcon,
   },
   {
