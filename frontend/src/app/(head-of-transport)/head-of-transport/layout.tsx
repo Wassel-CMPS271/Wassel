@@ -14,11 +14,11 @@ interface NavItem {
   Icon: ComponentType<{ size?: number }>;
 }
 
-// Students arrive in SCRUM-160–162; Settings has no ticket yet.
+// Settings has no ticket yet.
 const NAV_ITEMS: NavItem[] = [
   { label: "Vehicles", href: "/head-of-transport/vehicles", enabled: true, Icon: VehicleIcon },
   { label: "Drivers", href: "/head-of-transport/drivers", enabled: true, Icon: DriverIcon },
-  { label: "Students", href: "/head-of-transport/students", enabled: false, Icon: StudentIcon },
+  { label: "Students", href: "/head-of-transport/students", enabled: true, Icon: StudentIcon },
   { label: "Settings", href: "/head-of-transport/settings", enabled: false, Icon: SettingsIcon },
 ];
 

@@ -36,6 +36,8 @@ const FEATURES: Feature[] = [
     title: "Students",
     description:
       "Maintain the student list and place each student on the vehicle that picks them up.",
+    href: "/head-of-transport/students",
+    cta: "Open students",
     Icon: StudentIcon,
   },
 ];
