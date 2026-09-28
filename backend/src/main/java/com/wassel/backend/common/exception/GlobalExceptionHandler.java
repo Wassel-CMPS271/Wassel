@@ -1,5 +1,9 @@
 package com.wassel.backend.common.exception;
 
+import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
+import com.wassel.backend.drivers.exception.DriverNotFoundException;
+import com.wassel.backend.drivers.exception.DriverStatusConflictException;
+import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
@@ -78,6 +82,38 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(VehicleNotFoundException.class)
 	public ProblemDetail handleVehicleNotFound(VehicleNotFoundException ex) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// Same shape again, keyed by whichever field conflicted (email or phone), for a duplicate
+	// driver within a school.
+	@ExceptionHandler(DriverAlreadyExistsException.class)
+	public ProblemDetail handleDriverAlreadyExists(DriverAlreadyExistsException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Driver already exists");
+		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
+		return problem;
+	}
+
+	@ExceptionHandler(DriverNotFoundException.class)
+	public ProblemDetail handleDriverNotFound(DriverNotFoundException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// Same shape again, keyed by "status", for an action that doesn't make sense for the driver's
+	// current status (e.g. resending an invite they've already accepted).
+	@ExceptionHandler(DriverStatusConflictException.class)
+	public ProblemDetail handleDriverStatusConflict(DriverStatusConflictException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Driver status conflict");
+		problem.setProperty("errors", Map.of("status", ex.getMessage()));
+		return problem;
+	}
+
+	// Same shape again, keyed by "vehicleId", for a vehicle that can't be assigned (deactivated,
+	// or already assigned to another driver).
+	@ExceptionHandler(VehicleAssignmentConflictException.class)
+	public ProblemDetail handleVehicleAssignmentConflict(VehicleAssignmentConflictException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Vehicle assignment conflict");
+		problem.setProperty("errors", Map.of("vehicleId", ex.getMessage()));
+		return problem;
 	}
 
 	// Thrown by @PreAuthorize checks inside the MVC layer.

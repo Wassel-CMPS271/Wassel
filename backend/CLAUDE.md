@@ -20,9 +20,11 @@ that's the structure this codebase moved away from.
   `config/SecurityConfig`, `exception/GlobalExceptionHandler`.
 - `vehicles` — fleet vehicles: create, set capacity, deactivate/reactivate, with
   validation (SCRUM-163). Real module.
+- `drivers` — driver roster: add/invite, resend invite, assign/unassign a vehicle, with
+  validation (SCRUM-164). Real module. Depends on `vehicles` (via its service) to check a
+  vehicle exists and is active before assigning a driver to it.
 - Placeholders (currently just a `package-info.java` describing scope and the
-  ticket(s) that will fill them): `drivers` (SCRUM-164),
-  `students` (SCRUM-165, SCRUM-166, SCRUM-167).
+  ticket(s) that will fill them): `students` (SCRUM-165, SCRUM-166, SCRUM-167).
 
 ## Where things go
 
