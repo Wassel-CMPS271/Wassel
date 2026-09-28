@@ -18,8 +18,10 @@ that's the structure this codebase moved away from.
   (SCRUM-102) are done. A date can't be both a holiday and a half-day.
 - `common` — cross-cutting code that belongs to no single feature:
   `config/SecurityConfig`, `exception/GlobalExceptionHandler`.
+- `vehicles` — fleet vehicles: create, set capacity, deactivate/reactivate, with
+  validation (SCRUM-163). Real module.
 - Placeholders (currently just a `package-info.java` describing scope and the
-  ticket(s) that will fill them): `vehicles` (SCRUM-163), `drivers` (SCRUM-164),
+  ticket(s) that will fill them): `drivers` (SCRUM-164),
   `students` (SCRUM-165, SCRUM-166, SCRUM-167).
 
 ## Where things go
