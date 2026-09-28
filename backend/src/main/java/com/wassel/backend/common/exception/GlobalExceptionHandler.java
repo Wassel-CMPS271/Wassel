@@ -1,5 +1,6 @@
 package com.wassel.backend.common.exception;
 
+import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +53,14 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(HolidayAlreadyExistsException.class)
 	public ProblemDetail handleHolidayAlreadyExists(HolidayAlreadyExistsException ex) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Holiday already exists");
+		problem.setProperty("errors", Map.of("date", ex.getMessage()));
+		return problem;
+	}
+
+	// Same shape again for a date that clashes with another calendar entry (half-day vs holiday).
+	@ExceptionHandler(CalendarDateConflictException.class)
+	public ProblemDetail handleCalendarDateConflict(CalendarDateConflictException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Calendar date conflict");
 		problem.setProperty("errors", Map.of("date", ex.getMessage()));
 		return problem;
 	}

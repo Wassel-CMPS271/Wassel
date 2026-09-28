@@ -1,14 +1,14 @@
 "use client";
 
 import { motion } from "framer-motion";
-import type { Holiday } from "@/lib/api/holidays";
+import type { HalfDay } from "@/lib/api/halfDays";
 import { calendarDateParts } from "@/lib/calendarDate";
 import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
 
 // Under MotionConfig reducedMotion="user" (set in layout.tsx) the y offset is
 // dropped and only the fade remains.
-export function HolidayListItem({ holiday }: { holiday: Holiday }) {
-  const { month, day, full } = calendarDateParts(holiday.date);
+export function HalfDayListItem({ halfDay }: { halfDay: HalfDay }) {
+  const { month, day, full } = calendarDateParts(halfDay.date);
 
   return (
     <motion.li
@@ -31,12 +31,12 @@ export function HolidayListItem({ holiday }: { holiday: Holiday }) {
           width: "52px",
           height: "52px",
           borderRadius: radius.md,
-          backgroundColor: "rgba(26, 86, 255, 0.14)",
+          backgroundColor: "rgba(100, 64, 255, 0.16)",
         }}
       >
         <span
           className="text-xs font-medium uppercase tracking-wider"
-          style={{ color: colors.primary[300], lineHeight: 1.1 }}
+          style={{ color: colors.secondary[300], lineHeight: 1.1 }}
         >
           {month}
         </span>
@@ -48,8 +48,8 @@ export function HolidayListItem({ holiday }: { holiday: Holiday }) {
         </span>
       </span>
       <div className="min-w-0">
-        <p className="text-base font-semibold truncate" style={{ color: darkTheme.text.primary }}>
-          {holiday.name}
+        <p className="text-base font-semibold" style={{ color: darkTheme.text.primary }}>
+          Half-day
         </p>
         <p className="text-sm" style={{ color: darkTheme.text.secondary }}>
           {full}

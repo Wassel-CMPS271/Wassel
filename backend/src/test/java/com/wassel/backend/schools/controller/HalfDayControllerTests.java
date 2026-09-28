@@ -1,5 +1,6 @@
 package com.wassel.backend.schools.controller;
 
+import com.wassel.backend.schools.repository.HalfDayRepository;
 import com.wassel.backend.schools.repository.HolidayRepository;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.entity.User;
@@ -28,9 +29,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-class HolidayControllerTests {
+class HalfDayControllerTests {
 
-	private static final String URL = "/api/admin/school-calendar/holidays";
+	private static final String URL = "/api/admin/school-calendar/half-days";
+	private static final String HOLIDAYS_URL = "/api/admin/school-calendar/holidays";
 
 	private final UUID schoolA = UUID.randomUUID();
 	private final UUID schoolB = UUID.randomUUID();
@@ -39,10 +41,14 @@ class HolidayControllerTests {
 	private MockMvc mockMvc;
 
 	@Autowired
+	private HalfDayRepository halfDayRepository;
+
+	@Autowired
 	private HolidayRepository holidayRepository;
 
 	@BeforeEach
 	void cleanDatabase() {
+		halfDayRepository.deleteAll();
 		holidayRepository.deleteAll();
 	}
 
@@ -54,147 +60,129 @@ class HolidayControllerTests {
 				user, null, List.of(new SimpleGrantedAuthority("ROLE_" + role))));
 	}
 
-	private String holiday(String date, String name) {
-		return "{\"date\":\"%s\",\"name\":\"%s\"}".formatted(date, name);
+	private String halfDay(String date) {
+		return "{\"date\":\"%s\"}".formatted(date);
 	}
 
-	private void addAs(UUID schoolId, String date, String name) throws Exception {
+	private void addAs(UUID schoolId, String date) throws Exception {
 		mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolId))
-						.contentType(MediaType.APPLICATION_JSON).content(holiday(date, name)))
+						.contentType(MediaType.APPLICATION_JSON).content(halfDay(date)))
+				.andExpect(status().isCreated());
+	}
+
+	private void addHolidayAs(UUID schoolId, String date) throws Exception {
+		mockMvc.perform(post(HOLIDAYS_URL).with(loggedInAs(Role.ADMIN, schoolId))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"date\":\"%s\",\"name\":\"Closed\"}".formatted(date)))
 				.andExpect(status().isCreated());
 	}
 
 	@Test
-	void listIsEmptyBeforeAnyHolidayIsAdded() throws Exception {
+	void listIsEmptyBeforeAnyHalfDayIsMarked() throws Exception {
 		mockMvc.perform(get(URL).with(loggedInAs(Role.ADMIN, schoolA)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(0));
 	}
 
 	@Test
-	void adminCanAddAHolidayAndSeeItInTheList() throws Exception {
+	void adminCanMarkAHalfDayAndSeeItInTheList() throws Exception {
 		mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolA))
-						.contentType(MediaType.APPLICATION_JSON).content(holiday("2026-12-25", "Christmas Day")))
+						.contentType(MediaType.APPLICATION_JSON).content(halfDay("2026-12-24")))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.id").isNotEmpty())
-				.andExpect(jsonPath("$.date").value("2026-12-25"))
-				.andExpect(jsonPath("$.name").value("Christmas Day"));
+				.andExpect(jsonPath("$.date").value("2026-12-24"));
 
 		mockMvc.perform(get(URL).with(loggedInAs(Role.ADMIN, schoolA)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].date").value("2026-12-25"))
-				.andExpect(jsonPath("$[0].name").value("Christmas Day"));
+				.andExpect(jsonPath("$[0].date").value("2026-12-24"));
 	}
 
 	@Test
-	void holidaysAreListedEarliestFirstWhateverTheAddOrder() throws Exception {
-		addAs(schoolA, "2026-12-25", "Christmas Day");
-		addAs(schoolA, "2026-05-01", "Labour Day");
-		addAs(schoolA, "2026-11-22", "Independence Day");
+	void halfDaysAreListedEarliestFirstWhateverTheAddOrder() throws Exception {
+		addAs(schoolA, "2026-12-24");
+		addAs(schoolA, "2026-05-08");
+		addAs(schoolA, "2026-10-30");
 
 		mockMvc.perform(get(URL).with(loggedInAs(Role.ADMIN, schoolA)))
-				.andExpect(jsonPath("$[0].date").value("2026-05-01"))
-				.andExpect(jsonPath("$[1].date").value("2026-11-22"))
-				.andExpect(jsonPath("$[2].date").value("2026-12-25"));
+				.andExpect(jsonPath("$[0].date").value("2026-05-08"))
+				.andExpect(jsonPath("$[1].date").value("2026-10-30"))
+				.andExpect(jsonPath("$[2].date").value("2026-12-24"));
 	}
 
 	@Test
-	void theNameIsTrimmed() throws Exception {
-		mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolA))
-						.contentType(MediaType.APPLICATION_JSON).content(holiday("2026-05-01", "  Labour Day  ")))
-				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.name").value("Labour Day"));
-	}
-
-	@Test
-	void aSecondHolidayOnTheSameDateIsRejectedAndTheFirstIsKept() throws Exception {
-		addAs(schoolA, "2026-12-25", "Christmas Day");
+	void aDateCannotBeMarkedAHalfDayTwice() throws Exception {
+		addAs(schoolA, "2026-12-24");
 
 		mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolA))
-						.contentType(MediaType.APPLICATION_JSON).content(holiday("2026-12-25", "Something else")))
+						.contentType(MediaType.APPLICATION_JSON).content(halfDay("2026-12-24")))
 				.andExpect(status().isConflict())
-				.andExpect(jsonPath("$.errors.date").value("A holiday is already set for that date."));
+				.andExpect(jsonPath("$.errors.date").value("That date is already marked as a half-day."));
 
 		mockMvc.perform(get(URL).with(loggedInAs(Role.ADMIN, schoolA)))
-				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].name").value("Christmas Day"));
+				.andExpect(jsonPath("$.length()").value(1));
 	}
 
 	@Test
-	void aHalfDayCannotBeMadeAHoliday() throws Exception {
-		mockMvc.perform(post("/api/admin/school-calendar/half-days").with(loggedInAs(Role.ADMIN, schoolA))
-						.contentType(MediaType.APPLICATION_JSON).content("{\"date\":\"2026-12-24\"}"))
-				.andExpect(status().isCreated());
+	void aHolidayCannotBeMarkedAsAHalfDay() throws Exception {
+		addHolidayAs(schoolA, "2026-12-25");
 
 		mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolA))
-						.contentType(MediaType.APPLICATION_JSON).content(holiday("2026-12-24", "Christmas Eve")))
+						.contentType(MediaType.APPLICATION_JSON).content(halfDay("2026-12-25")))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.errors.date")
-						.value("That date is marked as a half-day, so it can't also be a holiday."));
+						.value("That date is a holiday, so it can't also be a half-day."));
 
-		assertEquals(0, holidayRepository.count());
+		assertEquals(0, halfDayRepository.count());
 	}
 
 	@Test
-	void differentSchoolsCanHaveAHolidayOnTheSameDate() throws Exception {
-		addAs(schoolA, "2026-12-25", "Christmas Day");
-		addAs(schoolB, "2026-12-25", "Winter closure");
+	void anotherSchoolsHolidayDoesNotBlockAHalfDay() throws Exception {
+		addHolidayAs(schoolB, "2026-12-25");
+		addAs(schoolA, "2026-12-25");
 	}
 
 	@Test
-	void eachSchoolOnlySeesItsOwnHolidays() throws Exception {
-		addAs(schoolA, "2026-05-01", "Labour Day");
-		addAs(schoolB, "2026-11-22", "Independence Day");
+	void differentSchoolsCanMarkTheSameDate() throws Exception {
+		addAs(schoolA, "2026-12-24");
+		addAs(schoolB, "2026-12-24");
+	}
+
+	@Test
+	void eachSchoolOnlySeesItsOwnHalfDays() throws Exception {
+		addAs(schoolA, "2026-05-08");
+		addAs(schoolB, "2026-10-30");
 
 		mockMvc.perform(get(URL).with(loggedInAs(Role.ADMIN, schoolA)))
 				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].name").value("Labour Day"));
+				.andExpect(jsonPath("$[0].date").value("2026-05-08"));
 		mockMvc.perform(get(URL).with(loggedInAs(Role.ADMIN, schoolB)))
 				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].name").value("Independence Day"));
+				.andExpect(jsonPath("$[0].date").value("2026-10-30"));
 	}
 
 	@Test
-	void dateAndNameAreRequired() throws Exception {
-		mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolA))
-						.contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Labour Day\"}"))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.errors.date").value("Date is required"));
-
-		for (String body : new String[] { "{\"date\":\"2026-05-01\"}",
-				"{\"date\":\"2026-05-01\",\"name\":\"\"}", "{\"date\":\"2026-05-01\",\"name\":\"   \"}" }) {
+	void dateIsRequired() throws Exception {
+		for (String body : new String[] { "{}", "{\"date\":null}" }) {
 			mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolA))
 							.contentType(MediaType.APPLICATION_JSON).content(body))
 					.andExpect(status().isBadRequest())
-					.andExpect(jsonPath("$.errors.name").value("Name is required"));
+					.andExpect(jsonPath("$.errors.date").value("Date is required"));
 		}
-		assertEquals(0, holidayRepository.count());
-	}
-
-	@Test
-	void theNameHasALengthLimit() throws Exception {
-		mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolA))
-						.contentType(MediaType.APPLICATION_JSON).content(holiday("2026-05-01", "x".repeat(101))))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.errors.name").value("Name must be at most 100 characters"));
-
-		mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolA))
-						.contentType(MediaType.APPLICATION_JSON).content(holiday("2026-05-01", "x".repeat(100))))
-				.andExpect(status().isCreated());
+		assertEquals(0, halfDayRepository.count());
 	}
 
 	@Test
 	void malformedOrImpossibleDatesAreABadRequestAndNothingIsSaved() throws Exception {
-		for (String bad : new String[] { "2026-13-01", "2026-02-30", "25/12/2026", "Dec 25 2026", "abc" }) {
+		for (String bad : new String[] { "2026-13-01", "2026-02-30", "24/12/2026", "Dec 24 2026", "abc" }) {
 			mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolA))
-							.contentType(MediaType.APPLICATION_JSON).content(holiday(bad, "Christmas Day")))
+							.contentType(MediaType.APPLICATION_JSON).content(halfDay(bad)))
 					.andExpect(status().isBadRequest());
 		}
 		mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolA))
 						.contentType(MediaType.APPLICATION_JSON).content("{not json"))
 				.andExpect(status().isBadRequest());
-		assertEquals(0, holidayRepository.count());
+		assertEquals(0, halfDayRepository.count());
 	}
 
 	@Test
@@ -203,16 +191,16 @@ class HolidayControllerTests {
 			mockMvc.perform(get(URL).with(loggedInAs(role, schoolA)))
 					.andExpect(status().isForbidden());
 			mockMvc.perform(post(URL).with(loggedInAs(role, schoolA))
-							.contentType(MediaType.APPLICATION_JSON).content(holiday("2026-12-25", "Christmas Day")))
+							.contentType(MediaType.APPLICATION_JSON).content(halfDay("2026-12-24")))
 					.andExpect(status().isForbidden());
 		}
-		assertEquals(0, holidayRepository.count());
+		assertEquals(0, halfDayRepository.count());
 	}
 
 	@Test
 	void anonymousRequestsAreUnauthorized() throws Exception {
 		mockMvc.perform(get(URL)).andExpect(status().isUnauthorized());
-		mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON).content(holiday("2026-12-25", "Christmas Day")))
+		mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON).content(halfDay("2026-12-24")))
 				.andExpect(status().isUnauthorized());
 	}
 }

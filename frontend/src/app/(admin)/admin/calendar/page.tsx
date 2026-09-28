@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { MotionConfig } from "framer-motion";
 import { addHoliday, getHolidays, type Holiday, type NewHoliday } from "@/lib/api/holidays";
+import { HalfDaysSection } from "./HalfDaysSection";
 import { HolidayForm } from "./HolidayForm";
 import { HolidayListItem } from "./HolidayListItem";
 import { HolidayListSkeleton } from "./HolidayListSkeleton";
@@ -52,13 +53,14 @@ export default function HolidayCalendarPage() {
             className="text-xs font-medium uppercase tracking-wider"
             style={{ color: colors.accent[300], marginBottom: spacing.xs }}
           >
-            School calendar
+            School settings
           </p>
           <h1 className="text-2xl font-semibold" style={{ color: darkTheme.text.primary }}>
-            Holiday calendar
+            School calendar
           </h1>
           <p className="text-sm" style={{ color: darkTheme.text.secondary }}>
-            Add the days school is closed so no routes are planned for them.
+            Add the days school is closed and the days it ends early, so routes are planned
+            around them.
           </p>
         </header>
 
@@ -149,6 +151,8 @@ export default function HolidayCalendarPage() {
             </ul>
           )}
         </section>
+
+        <HalfDaysSection pushToast={pushToast} />
       </main>
 
       <ToastViewport toasts={toasts} />
