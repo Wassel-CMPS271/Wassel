@@ -3,6 +3,8 @@ package com.wassel.backend.common.exception;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
+import com.wassel.backend.vehicles.exception.VehicleAlreadyExistsException;
+import com.wassel.backend.vehicles.exception.VehicleNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -63,6 +65,19 @@ public class GlobalExceptionHandler {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Calendar date conflict");
 		problem.setProperty("errors", Map.of("date", ex.getMessage()));
 		return problem;
+	}
+
+	// Same shape again, keyed by plate number, for a duplicate vehicle plate within a school.
+	@ExceptionHandler(VehicleAlreadyExistsException.class)
+	public ProblemDetail handleVehicleAlreadyExists(VehicleAlreadyExistsException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Vehicle already exists");
+		problem.setProperty("errors", Map.of("plateNumber", ex.getMessage()));
+		return problem;
+	}
+
+	@ExceptionHandler(VehicleNotFoundException.class)
+	public ProblemDetail handleVehicleNotFound(VehicleNotFoundException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
 
 	// Thrown by @PreAuthorize checks inside the MVC layer.
