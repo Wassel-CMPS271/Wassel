@@ -3,6 +3,7 @@ package com.wassel.backend.exception;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -27,6 +28,21 @@ public class GlobalExceptionHandler {
 		}
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
 		problem.setProperty("errors", errors);
+		return problem;
+	}
+
+	// Unparseable body or field, e.g. malformed JSON or a time that isn't HH:mm. Without this the
+	// catch-all below would turn a client mistake into a 500.
+	@ExceptionHandler(HttpMessageNotReadableException.class)
+	public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Malformed request body");
+	}
+
+	// Same "errors" shape as bean validation so clients can render it against the field.
+	@ExceptionHandler(InvalidSchoolTimesException.class)
+	public ProblemDetail handleInvalidSchoolTimes(InvalidSchoolTimesException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+		problem.setProperty("errors", Map.of("dismissalTime", ex.getMessage()));
 		return problem;
 	}
 
