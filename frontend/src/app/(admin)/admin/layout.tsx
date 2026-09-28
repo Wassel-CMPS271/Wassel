@@ -16,7 +16,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: "School times", href: "/admin/school-times", enabled: true, Icon: ClockIcon },
-  { label: "Holiday calendar", href: "/admin/calendar", enabled: true, Icon: CalendarIcon },
+  { label: "School calendar", href: "/admin/calendar", enabled: true, Icon: CalendarIcon },
 ];
 
 // Placeholder until SCRUM-176 (real auth) lands.

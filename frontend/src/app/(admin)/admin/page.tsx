@@ -22,10 +22,11 @@ const FEATURES: Feature[] = [
     Icon: ClockIcon,
   },
   {
-    title: "Holiday calendar",
-    description: "Add the days school is closed so no routes are planned for them.",
+    title: "School calendar",
+    description:
+      "Add holidays and mark half-days so routes are planned around the days school is closed or ends early.",
     href: "/admin/calendar",
-    cta: "Open holiday calendar",
+    cta: "Open school calendar",
     Icon: CalendarIcon,
   },
 ];
