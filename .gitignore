@@ -30,7 +30,6 @@ frontend/yarn-error.log
 .env
 .env.local
 .env.*.local
-.env.staging
 
 # OS
 Thumbs.db
