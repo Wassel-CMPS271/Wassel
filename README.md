@@ -92,3 +92,33 @@ demos and pre-release verification.
 To stop the stack: `docker compose -f docker-compose.staging.yml down` (add `-v` to
 also delete the staging database's data). Rebuild after code changes with the same
 `up -d --build` command.
+
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs on every push and on every pull request into `develop`
+or `main`:
+
+| Check            | What it runs                                                                      |
+| ---------------- | --------------------------------------------------------------------------------- |
+| `backend-build`  | `mvn -B verify` in `/backend` (compile + tests + package)                         |
+| `frontend-build` | `npm ci`, `npm run lint`, `npm test --if-present`, `npm run build` in `/frontend` |
+
+The same checks can be run locally before pushing:
+
+```bash
+cd backend && ./mvnw verify
+cd frontend && npm ci && npm run lint && npm run build
+```
+
+### Blocking merges on failure
+
+A workflow can only report a result; blocking the merge is a repository setting. In
+GitHub, go to **Settings → Branches → Add branch ruleset** (or a classic branch
+protection rule) for `main` and `develop`, and enable:
+
+- **Require a pull request before merging**
+- **Require status checks to pass before merging**, adding both `backend-build` and
+  `frontend-build` (they only appear in the search box after the workflow has run once)
+- **Require branches to be up to date before merging** (recommended)
+
+With that in place, a failing or still-running check disables the merge button.
