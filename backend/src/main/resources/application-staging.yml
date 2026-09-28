@@ -1,0 +1,9 @@
+# Staging profile. Run with: SPRING_PROFILES_ACTIVE=staging (set by ../../docker-compose.staging.yml)
+spring:
+  jpa:
+    hibernate:
+      # TODO: drop this override once a migration tool (Flyway/Liquibase, see
+      # application.yml) exists — there's no migration tool yet, so 'validate'
+      # can't work against a fresh staging database. Until then, staging creates
+      # its schema the same way local does.
+      ddl-auto: update
