@@ -6,6 +6,8 @@ import {
   addStudent,
   getStudents,
   importStudents,
+  setStudentStatus,
+  updateStudent,
   type ImportRowResult,
   type NewStudent,
   type Student,
@@ -47,6 +49,21 @@ export default function StudentsPage() {
     const student = await addStudent(data);
     setStudents((prev) => [...prev, student]);
     pushToast(`${student.firstName} ${student.lastName} added.`);
+  }
+
+  async function handleEdit(
+    id: string,
+    updates: Partial<Omit<Student, "id" | "createdAt">>,
+  ) {
+    const updated = await updateStudent(id, updates);
+    setStudents((prev) => prev.map((s) => (s.id === id ? updated : s)));
+    pushToast(`${updated.firstName} ${updated.lastName} updated.`);
+  }
+
+  async function handleToggleStatus(id: string, status: Student["status"]) {
+    const updated = await setStudentStatus(id, status);
+    setStudents((prev) => prev.map((s) => (s.id === id ? updated : s)));
+    pushToast(`${updated.firstName} ${updated.lastName} marked ${status}.`);
   }
 
   async function handleImport(rows: NewStudent[]): Promise<ImportRowResult[]> {
@@ -170,7 +187,12 @@ export default function StudentsPage() {
             >
               <AnimatePresence initial={false}>
                 {students.map((student) => (
-                  <StudentListItem key={student.id} student={student} />
+                  <StudentListItem
+                    key={student.id}
+                    student={student}
+                    onEdit={handleEdit}
+                    onToggleStatus={handleToggleStatus}
+                  />
                 ))}
               </AnimatePresence>
             </ul>
