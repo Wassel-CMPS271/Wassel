@@ -23,8 +23,9 @@ that's the structure this codebase moved away from.
 - `drivers` — driver roster: add/invite, resend invite, assign/unassign a vehicle, with
   validation (SCRUM-164). Real module. Depends on `vehicles` (via its service) to check a
   vehicle exists and is active before assigning a driver to it.
-- Placeholders (currently just a `package-info.java` describing scope and the
-  ticket(s) that will fill them): `students` (SCRUM-165, SCRUM-166, SCRUM-167).
+- `students` — student roster. Real module, partial: add and list are done (SCRUM-165).
+  Search/filter, CSV import, and the active/inactive toggle are not built yet
+  (SCRUM-166, SCRUM-167) even though the frontend already has UI for them against a mock.
 
 ## Where things go
 
