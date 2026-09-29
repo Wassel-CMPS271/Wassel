@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, MotionConfig } from "framer-motion";
 import {
   addStudent,
   getStudents,
   importStudents,
+  matchesFilters,
   setStudentStatus,
   updateStudent,
   type ImportRowResult,
@@ -14,17 +15,49 @@ import {
 } from "@/lib/api/students";
 import { AddStudentForm } from "./AddStudentForm";
 import { ImportStudentsForm } from "./ImportStudentsForm";
+import { StudentFilters, type StatusFilterValue } from "./StudentFilters";
 import { StudentListItem } from "./StudentListItem";
 import { StudentListSkeleton } from "./StudentListSkeleton";
+import { Button } from "@/components/ui/Button";
 import { ToastViewport, useToastQueue } from "@/components/ui/Toast";
 import { StudentIcon } from "@/components/ui/icons";
 import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
+
+// How long to wait after the last keystroke before the search filter
+// applies, so filtering doesn't re-run on every character.
+const SEARCH_DEBOUNCE_MS = 250;
 
 export default function StudentsPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | undefined>();
   const { toasts, pushToast } = useToastQueue();
+
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
+  const [gradeFilter, setGradeFilter] = useState("all");
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedQuery(searchInput), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [searchInput]);
+
+  const grades = useMemo(() => {
+    const unique = Array.from(new Set(students.map((s) => s.grade)));
+    return unique.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [students]);
+
+  const filteredStudents = useMemo(
+    () =>
+      students.filter((s) =>
+        matchesFilters(s, { query: debouncedQuery, status: statusFilter, grade: gradeFilter }),
+      ),
+    [students, debouncedQuery, statusFilter, gradeFilter],
+  );
+
+  const isFiltering =
+    debouncedQuery.trim() !== "" || statusFilter !== "all" || gradeFilter !== "all";
 
   const loadStudents = useCallback(async () => {
     setIsLoading(true);
@@ -143,6 +176,18 @@ export default function StudentsPage() {
             </p>
           )}
 
+          {!isLoading && !loadError && students.length > 0 && (
+            <StudentFilters
+              query={searchInput}
+              onQueryChange={setSearchInput}
+              status={statusFilter}
+              onStatusChange={setStatusFilter}
+              grade={gradeFilter}
+              onGradeChange={setGradeFilter}
+              grades={grades}
+            />
+          )}
+
           {!isLoading && !loadError && students.length === 0 && (
             <div
               className="flex flex-col items-center text-center"
@@ -179,14 +224,47 @@ export default function StudentsPage() {
             </div>
           )}
 
-          {!isLoading && !loadError && students.length > 0 && (
+          {!isLoading && !loadError && students.length > 0 && filteredStudents.length === 0 && (
+            <div
+              role="status"
+              className="flex flex-col items-center text-center"
+              style={{
+                padding: spacing.xl,
+                border: `1px dashed ${darkTheme.surface.cardBorder}`,
+                borderRadius: radius.lg,
+                backgroundColor: "rgba(20, 22, 29, 0.5)",
+              }}
+            >
+              <p
+                className="text-sm font-medium"
+                style={{ color: darkTheme.text.primary, marginBottom: spacing.xs }}
+              >
+                No students match your search.
+              </p>
+              {isFiltering && (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setSearchInput("");
+                    setStatusFilter("all");
+                    setGradeFilter("all");
+                  }}
+                  style={{ marginTop: spacing.sm }}
+                >
+                  Clear filters
+                </Button>
+              )}
+            </div>
+          )}
+
+          {!isLoading && !loadError && filteredStudents.length > 0 && (
             <ul
               role="list"
               className="flex flex-col"
               style={{ gap: spacing.sm, padding: 0, margin: 0 }}
             >
               <AnimatePresence initial={false}>
-                {students.map((student) => (
+                {filteredStudents.map((student) => (
                   <StudentListItem
                     key={student.id}
                     student={student}
