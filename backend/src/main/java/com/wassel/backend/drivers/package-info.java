@@ -1,4 +1,5 @@
 /**
- * Drivers module: driver profiles and assignments. To be filled by SCRUM-164.
+ * Drivers module: driver roster — add/invite, resend invite, assign/unassign a vehicle, with
+ * validation (SCRUM-164).
  */
 package com.wassel.backend.drivers;

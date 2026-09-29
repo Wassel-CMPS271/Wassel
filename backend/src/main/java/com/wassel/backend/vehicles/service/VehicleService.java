@@ -79,6 +79,12 @@ public class VehicleService {
 		return toResponse(vehicle);
 	}
 
+	/** For other modules (e.g. drivers, assigning a driver to a vehicle) to look up one vehicle. */
+	@Transactional(readOnly = true)
+	public VehicleResponse getOwnedVehicle(UUID schoolId, UUID vehicleId) {
+		return toResponse(findOwned(schoolId, vehicleId));
+	}
+
 	private Vehicle findOwned(UUID schoolId, UUID vehicleId) {
 		return vehicleRepository.findBySchoolIdAndId(schoolId, vehicleId)
 				.orElseThrow(() -> new VehicleNotFoundException(NOT_FOUND_MESSAGE));
