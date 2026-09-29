@@ -238,3 +238,37 @@ export async function setStudentStatus(
   students = students.map((s) => (s.id === id ? updated : s));
   return delay(updated);
 }
+
+export async function updateStudent(
+  id: string,
+  updates: Partial<Omit<Student, "id" | "createdAt">>,
+): Promise<Student> {
+  const existing = students.find((s) => s.id === id);
+  if (!existing) {
+    throw new Error(`Student not found: ${id}`);
+  }
+
+  const merged: Student = { ...existing, ...updates };
+
+  const missing = missingFieldsReason(merged);
+  if (missing) {
+    throw new Error(missing);
+  }
+
+  if (students.some((s) => s.id !== id && isDuplicateOf(merged, s))) {
+    throw new Error(
+      `A student named ${merged.firstName} ${merged.lastName} with guardian phone ${merged.guardianPhone} already exists.`,
+    );
+  }
+
+  const updated: Student = {
+    ...merged,
+    firstName: merged.firstName.trim(),
+    lastName: merged.lastName.trim(),
+    grade: merged.grade.trim(),
+    guardianName: merged.guardianName.trim(),
+    guardianPhone: merged.guardianPhone.trim(),
+  };
+  students = students.map((s) => (s.id === id ? updated : s));
+  return delay(updated);
+}
