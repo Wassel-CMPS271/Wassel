@@ -82,7 +82,8 @@ export const colors = {
     700: "#b54708",
   },
   // Signature warm accent. Use sparingly: active nav item, hover states,
-  // small highlights (eyebrow labels). Never for large fills or body text.
+  // small highlights (eyebrow labels), the brand mark badge, and the public
+  // "Sign in" CTA (see `cta` below). Never for large fills or body text.
   accent: {
     50: "#fffbeb",
     100: "#fef3c7",
@@ -181,11 +182,17 @@ export const darkTheme = {
     input: "#1b1e27", // recessed input fill, one step lighter than card
     inputBorder: "rgba(255, 255, 255, 0.14)",
     sidebar: "rgba(16, 18, 24, 0.78)", // translucent nav rail over the page gradient
+    sidebarBlur: "blur(12px)", // backdropFilter that pairs with `sidebar`
+    recede: "rgba(255, 255, 255, 0.03)", // inactive/"before" items that should sit back
   },
   interactive: {
     hoverBg: "rgba(251, 191, 36, 0.06)", // accent tint for hovered nav items/cards
     activeBg: "rgba(251, 191, 36, 0.12)", // accent tint for the current nav item
     activeBorder: "rgba(251, 191, 36, 0.35)",
+    // Focus ring for controls over photo/video: primary[400] outline with a
+    // dark halo (same as background.base) so it clears 3:1 on any frame (~5.6:1).
+    focusRing: colors.primary[400],
+    focusHalo: "#05060a",
   },
   text: {
     primary: "#f5f5f7", // headings, primary content
@@ -197,6 +204,73 @@ export const darkTheme = {
     activeGlow: "rgba(18, 183, 106, 0.55)",
     inactiveDot: colors.neutral[400],
   },
+} as const;
+
+/**
+ * Primary public call to action (the landing page "Sign in" links): a
+ * small solid amber fill with a navy label. Contrast (WCAG formula):
+ *   text (primary[900]) on bg (accent[400])      10.2:1
+ *   text (primary[900]) on bgHover (accent[300]) 11.9:1
+ * The focus ring stays primary[400] with the dark halo (5.6:1).
+ */
+export const cta = {
+  bg: colors.accent[400],
+  bgHover: colors.accent[300],
+  text: colors.primary[900],
+  glow: "0 0 24px rgba(251, 191, 36, 0.45)", // hover glow, tint of accent[400]
+} as const;
+
+/**
+ * Brand mark: amber badge with a navy school bus in front of a pale
+ * sunrise arc. Bus on badge 10.2:1; bus on sun 13.7:1. Keep
+ * src/app/icon.svg in sync with these values.
+ */
+export const brand = {
+  badge: colors.accent[400],
+  ink: colors.primary[900],
+  sun: colors.accent[100],
+} as const;
+
+/** Minimum hit area for any link or button (WCAG 2.5.5 target size). */
+export const sizing = {
+  tapTarget: "44px",
+  brandSidebar: "40px", // BrandMark beside the wordmark in the role sidebars (was the old "W" badge size)
+} as const;
+
+/** Icon pixel sizes, so call sites don't pass bare numbers. */
+export const iconSize = {
+  sm: 16, // inline glyph inside a button (the CTA arrow)
+  md: 20, // feature icons inside a tile
+} as const;
+
+/**
+ * Public landing page (SCRUM-183).
+ *
+ * Display sizes scale fluidly between the mobile and desktop values, so
+ * headings don't need breakpoint classes.
+ *
+ * Scrims are tints of background.base (rgb 5, 6, 10) over photo/video.
+ * Worst case checked against a pure-white pixel under the scrim (sRGB blend):
+ *   alpha 0.72 -> text.primary 7.9:1, text.secondary 5.2:1, accent[300] 6.0:1
+ *   alpha 0.80 -> text.primary 10.8:1, text.secondary 7.1:1
+ * text.muted fails over media (2.9:1 at 0.72), so it is never used there.
+ */
+export const landing = {
+  contentMaxWidth: "1200px",
+  display: {
+    hero: { size: "clamp(36px, 3.6vw + 20px, 64px)", lineHeight: "1.08" },
+    section: { size: "clamp(28px, 1.6vw + 22px, 40px)", lineHeight: "1.2" },
+  },
+  // lg and up: at least 0.8 across the left 55% where the text column sits
+  // (the text column never extends past ~59% of the viewport at lg).
+  heroScrimWide:
+    "linear-gradient(90deg, rgba(5, 6, 10, 0.92) 0%, rgba(5, 6, 10, 0.8) 55%, rgba(5, 6, 10, 0.72) 60%, rgba(5, 6, 10, 0.25) 80%, rgba(5, 6, 10, 0.08) 100%)",
+  // Below lg the text spans most of the width, so the tint is even.
+  heroScrimNarrow: "rgba(5, 6, 10, 0.72)",
+  // Bottom of the hero fades into the page background.
+  heroFadeBottom: `linear-gradient(180deg, transparent 65%, ${darkTheme.background.base} 100%)`,
+  // Closing CTA image: page color at the edges, at least 0.72 everywhere else.
+  ctaScrim: `linear-gradient(180deg, ${darkTheme.background.base} 0%, rgba(5, 6, 10, 0.72) 25%, rgba(5, 6, 10, 0.72) 75%, ${darkTheme.background.base} 100%)`,
 } as const;
 
 /**

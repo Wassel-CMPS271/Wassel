@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Wassel brand mark. Same shape as src/components/ui/BrandMark.tsx.
+       Colors mirror tokens.ts: brand.badge #fbbf24 (accent[400]),
+       brand.ink #061847 (primary[900]), brand.sun #fef3c7 (accent[100]). -->
+  <rect width="32" height="32" rx="8" fill="#fbbf24"/>
+  <path d="M4 21a12 12 0 0 1 24 0z" fill="#fef3c7"/>
+  <g fill="#061847">
+    <rect x="7.1" y="12.6" width="1.8" height="3.6" rx="0.8"/>
+    <rect x="23.1" y="12.6" width="1.8" height="3.6" rx="0.8"/>
+    <rect x="8.4" y="13.6" width="1.6" height="0.9"/>
+    <rect x="22" y="13.6" width="1.6" height="0.9"/>
+    <rect x="9.5" y="10" width="13" height="14.5" rx="2.6"/>
+    <rect x="10.8" y="23.4" width="2.6" height="3.2" rx="0.8"/>
+    <rect x="18.6" y="23.4" width="2.6" height="3.2" rx="0.8"/>
+  </g>
+  <rect x="11" y="11.6" width="10" height="1.3" rx="0.65" fill="#fbbf24"/>
+  <rect x="11" y="14.2" width="10" height="5.2" rx="1" fill="#fef3c7"/>
+  <circle cx="12.7" cy="21.8" r="1.1" fill="#fef3c7"/>
+  <circle cx="19.3" cy="21.8" r="1.1" fill="#fef3c7"/>
+</svg>

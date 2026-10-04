@@ -4,8 +4,9 @@ import type { ComponentType, CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MotionConfig, motion } from "framer-motion";
+import { BrandMark } from "@/components/ui/BrandMark";
 import { DriverIcon, SettingsIcon, StudentIcon, VehicleIcon } from "@/components/ui/icons";
-import { colors, darkPageBackground, darkTheme, radius, spacing } from "@/styles/tokens";
+import { colors, darkPageBackground, darkTheme, radius, sizing, spacing } from "@/styles/tokens";
 
 interface NavItem {
   label: string;
@@ -65,21 +66,7 @@ export default function HeadOfTransportLayout({
             className="flex items-center rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4"
             style={{ gap: spacing.sm, marginBottom: spacing.xl, outlineColor: colors.primary[400] }}
           >
-            <span
-              aria-hidden="true"
-              className="flex items-center justify-center flex-shrink-0 font-bold"
-              style={{
-                width: "40px",
-                height: "40px",
-                borderRadius: radius.lg,
-                background: `linear-gradient(135deg, ${colors.primary[500]}, ${colors.secondary[500]})`,
-                boxShadow: "0 6px 20px rgba(26, 86, 255, 0.35)",
-                color: "#ffffff",
-                fontSize: "20px",
-              }}
-            >
-              W
-            </span>
+            <BrandMark size={sizing.brandSidebar} />
             <span className="flex flex-col">
               <span
                 className="text-xl font-bold"
