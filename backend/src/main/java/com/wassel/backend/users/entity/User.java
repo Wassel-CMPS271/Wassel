@@ -34,6 +34,10 @@ import java.util.UUID;
 @ToString(exclude = "passwordHash")
 public class User {
 
+	// password_hash is NOT NULL, so an invited account stores this instead. It isn't a valid
+	// BCrypt hash, so no password ever matches it.
+	public static final String NO_PASSWORD_HASH = "!";
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)
 	private UUID id;
@@ -59,4 +63,8 @@ public class User {
 	@Builder.Default
 	@Column(nullable = false)
 	private boolean enabled = true;
+
+	public boolean hasPassword() {
+		return !NO_PASSWORD_HASH.equals(passwordHash);
+	}
 }
