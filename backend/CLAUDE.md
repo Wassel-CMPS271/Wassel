@@ -118,6 +118,15 @@ DTOs live at the API boundary. Controllers must never return entities directly
   school/tenant id from the request; derive it from the authenticated
   principal. The one exception is `password_tokens`, which is looked up by the token itself.
 
+## Logging
+
+- Log through SLF4J (`@Slf4j`), never `System.out`.
+- Errors a client causes (validation, conflicts, not found, forbidden) are logged at WARN
+  in `common.exception.GlobalExceptionHandler`, message only. Unexpected failures are ERROR
+  with the stack trace. Don't add logging to individual controllers for these.
+- Output is ECS JSON (see `application.yml`), so put data in the message, not in
+  free-text that needs parsing.
+
 ## Tests
 
 Tests mirror the main package structure: a test for

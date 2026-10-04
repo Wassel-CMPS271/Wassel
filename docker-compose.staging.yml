@@ -55,5 +55,48 @@ services:
     ports:
       - "3000:3000"
 
+  # Central log store (SCRUM-143). Internal only: Grafana is the one way in.
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: wassel-loki-staging
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./ops/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - wassel-staging-loki:/loki
+
+  # Collects every container's logs and sends them to Loki. Needs the Docker socket to find
+  # containers, mounted read-only.
+  promtail:
+    image: grafana/promtail:3.2.0
+    container_name: wassel-promtail-staging
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./ops/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
+  # Search and view the logs. Log in at http://localhost:3001 with the admin account set by
+  # GRAFANA_ADMIN_PASSWORD in .env.staging.
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: wassel-grafana-staging
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env.staging}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - wassel-staging-grafana:/var/lib/grafana
+    depends_on:
+      - loki
+    ports:
+      - "3001:3000"
+
 volumes:
   wassel-staging-pgdata:
+  wassel-staging-loki:
+  wassel-staging-grafana:

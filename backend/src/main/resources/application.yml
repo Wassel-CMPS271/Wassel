@@ -28,3 +28,10 @@ wassel:
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
     school-id: ${SCHOOL_ID:00000000-0000-0000-0000-000000000001}
+
+# One JSON object per log line, with the severity in "log.level" (ECS). Loki (see
+# docker-compose.staging.yml) parses these, so the level can be filtered on.
+logging:
+  structured:
+    format:
+      console: ecs

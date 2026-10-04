@@ -30,6 +30,10 @@ import java.util.Map;
 
 /**
  * Translates exceptions thrown from controllers into RFC 9457 problem responses.
+ *
+ * <p>Logging severity: a request the client got wrong is logged at WARN with the message
+ * only; an unexpected failure is logged at ERROR with its stack trace. Every handler below
+ * goes through one of these two paths, so nothing is answered silently.
  */
 @Slf4j
 @RestControllerAdvice
@@ -37,6 +41,7 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	public ProblemDetail handleValidation(MethodArgumentNotValidException ex) {
+		logRejected(ex);
 		Map<String, String> errors = new LinkedHashMap<>();
 		for (FieldError error : ex.getBindingResult().getFieldErrors()) {
 			errors.putIfAbsent(error.getField(), error.getDefaultMessage());
@@ -50,12 +55,14 @@ public class GlobalExceptionHandler {
 	// catch-all below would turn a client mistake into a 500.
 	@ExceptionHandler(HttpMessageNotReadableException.class)
 	public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Malformed request body");
 	}
 
 	// Same "errors" shape as bean validation so clients can render it against the field.
 	@ExceptionHandler(InvalidSchoolTimesException.class)
 	public ProblemDetail handleInvalidSchoolTimes(InvalidSchoolTimesException ex) {
+		logRejected(ex);
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
 		problem.setProperty("errors", Map.of("dismissalTime", ex.getMessage()));
 		return problem;
@@ -64,6 +71,7 @@ public class GlobalExceptionHandler {
 	// Same "errors" shape as validation, keyed by the offending field, so clients can show it there.
 	@ExceptionHandler(HolidayAlreadyExistsException.class)
 	public ProblemDetail handleHolidayAlreadyExists(HolidayAlreadyExistsException ex) {
+		logRejected(ex);
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Holiday already exists");
 		problem.setProperty("errors", Map.of("date", ex.getMessage()));
 		return problem;
@@ -72,6 +80,7 @@ public class GlobalExceptionHandler {
 	// Same shape again for a date that clashes with another calendar entry (half-day vs holiday).
 	@ExceptionHandler(CalendarDateConflictException.class)
 	public ProblemDetail handleCalendarDateConflict(CalendarDateConflictException ex) {
+		logRejected(ex);
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Calendar date conflict");
 		problem.setProperty("errors", Map.of("date", ex.getMessage()));
 		return problem;
@@ -80,6 +89,7 @@ public class GlobalExceptionHandler {
 	// Same shape again, keyed by plate number, for a duplicate vehicle plate within a school.
 	@ExceptionHandler(VehicleAlreadyExistsException.class)
 	public ProblemDetail handleVehicleAlreadyExists(VehicleAlreadyExistsException ex) {
+		logRejected(ex);
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Vehicle already exists");
 		problem.setProperty("errors", Map.of("plateNumber", ex.getMessage()));
 		return problem;
@@ -87,6 +97,7 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(VehicleNotFoundException.class)
 	public ProblemDetail handleVehicleNotFound(VehicleNotFoundException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
 
@@ -94,6 +105,7 @@ public class GlobalExceptionHandler {
 	// driver within a school.
 	@ExceptionHandler(DriverAlreadyExistsException.class)
 	public ProblemDetail handleDriverAlreadyExists(DriverAlreadyExistsException ex) {
+		logRejected(ex);
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Driver already exists");
 		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
 		return problem;
@@ -101,6 +113,7 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(DriverNotFoundException.class)
 	public ProblemDetail handleDriverNotFound(DriverNotFoundException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
 
@@ -108,6 +121,7 @@ public class GlobalExceptionHandler {
 	// current status (e.g. resending an invite they've already accepted).
 	@ExceptionHandler(DriverStatusConflictException.class)
 	public ProblemDetail handleDriverStatusConflict(DriverStatusConflictException ex) {
+		logRejected(ex);
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Driver status conflict");
 		problem.setProperty("errors", Map.of("status", ex.getMessage()));
 		return problem;
@@ -117,6 +131,7 @@ public class GlobalExceptionHandler {
 	// or already assigned to another driver).
 	@ExceptionHandler(VehicleAssignmentConflictException.class)
 	public ProblemDetail handleVehicleAssignmentConflict(VehicleAssignmentConflictException ex) {
+		logRejected(ex);
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Vehicle assignment conflict");
 		problem.setProperty("errors", Map.of("vehicleId", ex.getMessage()));
 		return problem;
@@ -126,6 +141,7 @@ public class GlobalExceptionHandler {
 	// an existing one (same name and guardian phone) within a school.
 	@ExceptionHandler(StudentAlreadyExistsException.class)
 	public ProblemDetail handleStudentAlreadyExists(StudentAlreadyExistsException ex) {
+		logRejected(ex);
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Student already exists");
 		problem.setProperty("errors", Map.of("guardianPhone", ex.getMessage()));
 		return problem;
@@ -133,11 +149,13 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(StudentNotFoundException.class)
 	public ProblemDetail handleStudentNotFound(StudentNotFoundException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
 
 	@ExceptionHandler(UserNotFoundException.class)
 	public ProblemDetail handleUserNotFound(UserNotFoundException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
 
@@ -162,12 +180,19 @@ public class GlobalExceptionHandler {
 	// Thrown by @PreAuthorize checks inside the MVC layer.
 	@ExceptionHandler(AccessDeniedException.class)
 	public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Access denied");
 	}
 
+	// Last resort: anything not handled above is a bug or an outage, so it is ERROR with the stack trace.
 	@ExceptionHandler(Exception.class)
 	public ProblemDetail handleUnexpected(Exception ex) {
 		log.error("Unhandled exception", ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
+	}
+
+	// WARN, message only: the client sent something we refuse, which is expected traffic, not a fault.
+	private static void logRejected(Exception ex) {
+		log.warn("Request rejected: {}: {}", ex.getClass().getSimpleName(), ex.getMessage());
 	}
 }
