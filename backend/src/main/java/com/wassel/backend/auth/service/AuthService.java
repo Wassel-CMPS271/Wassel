@@ -59,6 +59,10 @@ public class AuthService {
 		return new LoginResult(toResponse(user), jwtService.generateToken(user));
 	}
 
+	public void resendCode(String pendingToken) {
+		twoFactorService.resend(pendingToken);
+	}
+
 	public AuthUserResponse toResponse(User user) {
 		return new AuthUserResponse(user.getId(), user.getEmail(), user.getRole(), user.getSchoolId());
 	}

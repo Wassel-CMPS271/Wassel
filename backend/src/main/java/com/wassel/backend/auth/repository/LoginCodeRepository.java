@@ -29,6 +29,16 @@ public interface LoginCodeRepository extends JpaRepository<LoginCode, UUID> {
 			+ "where c.id = :id and c.usedAt is null and c.attempts < :max")
 	int recordAttempt(@Param("id") UUID id, @Param("max") int max);
 
+	/**
+	 * Swaps in a fresh code and fresh attempts, but only for an open pending login whose last code was
+	 * sent at or before {@code cutoff}. Returns 0 otherwise, so parallel resends can't all get through.
+	 */
+	@Modifying
+	@Query("update LoginCode c set c.codeHash = :codeHash, c.expiresAt = :expiresAt, c.sentAt = :now, c.attempts = 0 "
+			+ "where c.id = :id and c.usedAt is null and c.attempts < :max and c.sentAt <= :cutoff")
+	int reissue(@Param("id") UUID id, @Param("codeHash") String codeHash, @Param("expiresAt") Instant expiresAt,
+			@Param("now") Instant now, @Param("cutoff") Instant cutoff, @Param("max") int max);
+
 	/** Returns 0 if the code was already used, so two requests can't both win. */
 	@Modifying
 	@Query("update LoginCode c set c.usedAt = :now where c.id = :id and c.usedAt is null")

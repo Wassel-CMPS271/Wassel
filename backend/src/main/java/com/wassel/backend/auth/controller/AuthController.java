@@ -59,6 +59,13 @@ public class AuthController {
 				.body(result.user());
 	}
 
+	@PostMapping("/2fa/resend")
+	@PreAuthorize("permitAll()")
+	public ResponseEntity<Void> resend(HttpServletRequest http) {
+		authService.resendCode(authCookie.readPending(http).orElse(null));
+		return ResponseEntity.noContent().build();
+	}
+
 	@PostMapping("/logout")
 	@PreAuthorize("permitAll()")
 	public ResponseEntity<Void> logout() {

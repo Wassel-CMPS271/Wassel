@@ -14,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -21,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -68,6 +70,9 @@ class TwoFactorControllerTests {
 
 	@Autowired
 	private PasswordEncoder passwordEncoder;
+
+	@Autowired
+	private JdbcTemplate jdbc;
 
 	@MockitoBean
 	private Mailer mailer;
@@ -191,6 +196,41 @@ class TwoFactorControllerTests {
 				.andExpect(jsonPath("$.detail").value("Please wait a minute before requesting another code."))
 				.andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
 		verify(mailer, times(1)).send(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void resendingMailsANewCodeThatCompletesTheLogin() throws Exception {
+		saveUser();
+		Cookie pending = pendingCookie(login());
+		jdbc.update("update login_codes set sent_at = ?", OffsetDateTime.now().minusSeconds(61));
+
+		mockMvc.perform(post("/api/auth/2fa/resend").cookie(pending))
+				.andExpect(status().isNoContent())
+				.andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+
+		verify(mailer, times(2)).send(anyString(), anyString(), anyString());
+		verifyCode(pending, lastCode()).andExpect(status().isOk());
+	}
+
+	@Test
+	void resendingWithinAMinuteIsTooManyRequests() throws Exception {
+		saveUser();
+		Cookie pending = pendingCookie(login());
+
+		mockMvc.perform(post("/api/auth/2fa/resend").cookie(pending))
+				.andExpect(status().isTooManyRequests())
+				.andExpect(jsonPath("$.detail").value("Please wait a minute before requesting another code."));
+		verify(mailer, times(1)).send(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void resendingWithoutThePendingCookieIsUnauthorized() throws Exception {
+		saveUser();
+		login();
+
+		mockMvc.perform(post("/api/auth/2fa/resend"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.detail").value("Your sign-in has expired. Please sign in again."));
 	}
 
 	@Test

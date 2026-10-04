@@ -55,7 +55,7 @@ public class TwoFactorService {
 				});
 
 		String pendingToken = PasswordService.randomToken();
-		String code = "%06d".formatted(RANDOM.nextInt(1_000_000));
+		String code = newCode();
 		codeRepository.deleteForUser(user.getId());
 		try {
 			codeRepository.saveAndFlush(LoginCode.builder()
@@ -71,10 +71,31 @@ public class TwoFactorService {
 			throw new CodeCooldownException();
 		}
 		// After the flush, so a request that lost the race above sends nothing.
-		mailer.send(user.getEmail(), "Your Wassel verification code",
-				"Your verification code is %s. It expires in 5 minutes. If you didn't try to sign in, change your password."
-						.formatted(code));
+		sendCode(user, code);
 		return pendingToken;
+	}
+
+	/** Replaces the code with a fresh one, with fresh attempts. Once a minute at most. */
+	@Transactional
+	public void resend(String pendingToken) {
+		Instant now = Instant.now();
+		LoginCode stored = findLive(pendingToken, now);
+		User user = userService.findById(stored.getUserId())
+				.filter(User::isEnabled)
+				.orElseThrow(LoginExpiredException::new);
+		Instant cutoff = now.minus(COOLDOWN);
+		if (stored.getSentAt().isAfter(cutoff)) {
+			throw new CodeCooldownException();
+		}
+
+		String code = newCode();
+		// One conditional update, not load-and-save: parallel resends would all pass the check above,
+		// each would reset the attempts, and a save could write back a row that verify just used.
+		if (codeRepository.reissue(stored.getId(), PasswordService.hash(code), now.plus(CODE_LIFETIME), now, cutoff,
+				MAX_ATTEMPTS) == 0) {
+			throw new CodeCooldownException();
+		}
+		sendCode(user, code);
 	}
 
 	// The attempt is counted by an update that must survive the exception thrown for a wrong code,
@@ -82,11 +103,7 @@ public class TwoFactorService {
 	@Transactional(noRollbackFor = { InvalidCodeException.class, LoginExpiredException.class })
 	public User verify(String pendingToken, String code) {
 		Instant now = Instant.now();
-		LoginCode stored = Optional.ofNullable(pendingToken)
-				.flatMap(token -> codeRepository.findByPendingHash(PasswordService.hash(token)))
-				.filter(candidate -> candidate.getUsedAt() == null && candidate.getAttempts() < MAX_ATTEMPTS
-						&& candidate.getCreatedAt().isAfter(now.minus(PENDING_LIFETIME)))
-				.orElseThrow(LoginExpiredException::new);
+		LoginCode stored = findLive(pendingToken, now);
 		if (codeRepository.recordAttempt(stored.getId(), MAX_ATTEMPTS) == 0) {
 			throw new LoginExpiredException();
 		}
@@ -103,5 +120,24 @@ public class TwoFactorService {
 		return userService.findById(stored.getUserId())
 				.filter(User::isEnabled)
 				.orElseThrow(LoginExpiredException::new);
+	}
+
+	/** The pending login behind this token, if it is still open: not used, not out of attempts, not too old. */
+	private LoginCode findLive(String pendingToken, Instant now) {
+		return Optional.ofNullable(pendingToken)
+				.flatMap(token -> codeRepository.findByPendingHash(PasswordService.hash(token)))
+				.filter(candidate -> candidate.getUsedAt() == null && candidate.getAttempts() < MAX_ATTEMPTS
+						&& candidate.getCreatedAt().isAfter(now.minus(PENDING_LIFETIME)))
+				.orElseThrow(LoginExpiredException::new);
+	}
+
+	private static String newCode() {
+		return "%06d".formatted(RANDOM.nextInt(1_000_000));
+	}
+
+	private void sendCode(User user, String code) {
+		mailer.send(user.getEmail(), "Your Wassel verification code",
+				"Your verification code is %s. It expires in 5 minutes. If you didn't try to sign in, change your password."
+						.formatted(code));
 	}
 }

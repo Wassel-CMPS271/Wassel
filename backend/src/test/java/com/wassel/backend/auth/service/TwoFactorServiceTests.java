@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
@@ -241,6 +242,86 @@ class TwoFactorServiceTests {
 		assertEquals(1, results.stream().filter(won -> won).count());
 		verify(mailer, times(1)).send(anyString(), anyString(), anyString());
 		assertEquals(1, codeRepository.count());
+	}
+
+	@Test
+	void resendingAfterTheCooldownMailsANewCodeAndTheOldOneStopsWorking() {
+		String pending = twoFactor.start(user());
+		String oldCode = lastCode();
+		jdbc.update("update login_codes set sent_at = ?", OffsetDateTime.now().minusSeconds(61));
+
+		twoFactor.resend(pending);
+
+		verify(mailer, times(2)).send(anyString(), anyString(), anyString());
+		String newCode = lastCode();
+		assumeTrue(!newCode.equals(oldCode), "the same random code twice, a one in a million chance");
+		assertThrows(InvalidCodeException.class, () -> twoFactor.verify(pending, oldCode));
+		twoFactor.verify(pending, newCode);
+	}
+
+	@Test
+	void resendingWithinTheCooldownIsRefusedAndSendsNothing() {
+		String pending = twoFactor.start(user());
+
+		assertThrows(CodeCooldownException.class, () -> twoFactor.resend(pending));
+
+		verify(mailer, times(1)).send(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void aResentCodeComesWithFreshAttempts() {
+		String pending = twoFactor.start(user());
+		String firstCode = lastCode();
+		for (int i = 0; i < 3; i++) {
+			assertThrows(InvalidCodeException.class, () -> twoFactor.verify(pending, wrongCodeFor(firstCode)));
+		}
+		jdbc.update("update login_codes set sent_at = ?", OffsetDateTime.now().minusSeconds(61));
+
+		twoFactor.resend(pending);
+
+		// Four wrong guesses would have run out of attempts on the first code (3 used, 5 allowed).
+		String newCode = lastCode();
+		for (int i = 0; i < 4; i++) {
+			assertThrows(InvalidCodeException.class, () -> twoFactor.verify(pending, wrongCodeFor(newCode)));
+		}
+		twoFactor.verify(pending, newCode);
+	}
+
+	@Test
+	void resendingAPendingLoginThatIsClosedIsExpired() {
+		String pending = twoFactor.start(user());
+		String code = lastCode();
+		for (int i = 0; i < 4; i++) {
+			assertThrows(InvalidCodeException.class, () -> twoFactor.verify(pending, wrongCodeFor(code)));
+		}
+		assertThrows(LoginExpiredException.class, () -> twoFactor.verify(pending, wrongCodeFor(code)));
+		jdbc.update("update login_codes set sent_at = ?", OffsetDateTime.now().minusSeconds(61));
+
+		assertThrows(LoginExpiredException.class, () -> twoFactor.resend(pending));
+
+		jdbc.update("update login_codes set attempts = 0, created_at = ?", OffsetDateTime.now().minusMinutes(16));
+		assertThrows(LoginExpiredException.class, () -> twoFactor.resend(pending));
+		assertThrows(LoginExpiredException.class, () -> twoFactor.resend(null));
+		verify(mailer, times(1)).send(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void twoResendsAtOnceSendExactlyOneCode() throws Exception {
+		String pending = twoFactor.start(user());
+		jdbc.update("update login_codes set sent_at = ?", OffsetDateTime.now().minusSeconds(61));
+
+		List<Boolean> results = runTogether(() -> {
+			try {
+				twoFactor.resend(pending);
+				return true;
+			}
+			catch (CodeCooldownException ex) {
+				return false;
+			}
+		});
+
+		assertEquals(1, results.stream().filter(won -> won).count());
+		verify(mailer, times(2)).send(anyString(), anyString(), anyString());
 	}
 
 	private static List<Boolean> runTogether(Callable<Boolean> attempt) throws Exception {
