@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 import { AuthShell } from "@/components/auth/AuthShell";
-import { LoginForm } from "@/components/auth/LoginForm";
+import { PasswordForm } from "@/components/auth/PasswordForm";
 
 export const metadata: Metadata = {
-  title: "Sign in",
+  title: "Reset password",
 };
 
-export default function LoginPage() {
+export default function ResetPasswordPage() {
   return (
     <AuthShell headline="Welcome back.">
-      <LoginForm />
+      <PasswordForm mode="reset" />
     </AuthShell>
   );
 }

@@ -2,14 +2,10 @@
 
 import { FormEvent, useState } from "react";
 
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import { AuthCard, authFieldProps } from "@/components/auth/AuthCard";
+import { CtaButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import {
-  darkTheme,
-  spacing,
-  typography,
-} from "@/styles/tokens";
+import { spacing } from "@/styles/tokens";
 
 export function TwoFactorForm() {
   const [code, setCode] = useState("");
@@ -38,74 +34,32 @@ export function TwoFactorForm() {
   }
 
   return (
-    <Card
-      style={{
-        width: "100%",
-        maxWidth: "420px",
-      }}
-    >
-      <div
+    <AuthCard title="Verify your account" description="Enter the verification code to continue.">
+      <form
+        onSubmit={handleSubmit}
+        noValidate
         style={{
           display: "flex",
           flexDirection: "column",
-          gap: spacing.lg,
+          gap: spacing.md,
         }}
       >
-        <div>
-          <h1
-            style={{
-              margin: 0,
-              color: darkTheme.text.primary,
-              fontSize: typography.fontSize["2xl"].size,
-              lineHeight: typography.fontSize["2xl"].lineHeight,
-              fontWeight: typography.fontWeight.bold,
-            }}
-          >
-            Verify your account
-          </h1>
+        <Input
+          label="Verification code"
+          name="verificationCode"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          value={code}
+          onChange={(event) => setCode(event.target.value)}
+          error={codeError}
+          placeholder="Enter verification code"
+          {...authFieldProps}
+        />
 
-          <p
-            style={{
-              margin: `${spacing.sm} 0 0`,
-              color: darkTheme.text.secondary,
-              fontSize: typography.fontSize.sm.size,
-              lineHeight: typography.fontSize.sm.lineHeight,
-            }}
-          >
-            Enter the verification code to continue.
-          </p>
-        </div>
-
-        <form
-          onSubmit={handleSubmit}
-          noValidate
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: spacing.md,
-          }}
-        >
-          <Input
-            label="Verification code"
-            name="verificationCode"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-            error={codeError}
-            placeholder="Enter verification code"
-          />
-
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={isSubmitting}
-            style={{ width: "100%" }}
-          >
-            {isSubmitting ? "Verifying..." : "Verify"}
-          </Button>
-        </form>
-      </div>
-    </Card>
+        <CtaButton type="submit" disabled={isSubmitting} className="w-full">
+          {isSubmitting ? "Verifying..." : "Verify"}
+        </CtaButton>
+      </form>
+    </AuthCard>
   );
 }

@@ -92,44 +92,75 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
-// The public call to action (e.g. "Sign in" -> /login): an amber link with a
-// navy label and an arrow that slides right on hover. It stays a real <a>.
+// The public call to action (e.g. "Sign in" -> /login): an amber fill with a
+// navy label and an arrow that slides right on hover. CtaLink stays a real
+// <a>; CtaButton is the same look as a form submit (the auth pages).
 // Background and glow go through CSS variables so the static hover: classes
 // can override them (inline styles would always beat :hover).
+const CTA_CLASS = `group inline-flex items-center justify-center whitespace-nowrap text-base font-semibold transition-[background-color,box-shadow] duration-200 ease-out bg-[var(--cta-bg)] ${focusRingClass}`;
+
+const CTA_STYLE = {
+  ...focusRingStyle,
+  "--cta-bg": cta.bg,
+  "--cta-bg-hover": cta.bgHover,
+  "--cta-glow": cta.glow,
+  color: cta.text,
+  gap: spacing.sm,
+  borderRadius: radius.md,
+  padding: `${spacing.sm} ${spacing.lg}`,
+  minHeight: sizing.tapTarget,
+} as CSSProperties;
+
+function CtaArrow() {
+  return (
+    <svg
+      width={iconSize.sm}
+      height={iconSize.sm}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className="transition-transform duration-200 ease-out group-hover:translate-x-1 group-focus-visible:translate-x-1 group-disabled:translate-x-0 motion-reduce:transition-none motion-reduce:transform-none"
+    >
+      <path d="M3 8h9.5M8.5 4l4 4-4 4" />
+    </svg>
+  );
+}
+
 export function CtaLink({ className = "", style, children, ...props }: ComponentProps<typeof Link>) {
   return (
     <Link
-      className={`group inline-flex items-center justify-center whitespace-nowrap text-base font-semibold transition-[background-color,box-shadow] duration-200 ease-out bg-[var(--cta-bg)] hover:bg-[var(--cta-bg-hover)] hover:shadow-[var(--cta-glow)] ${focusRingClass} ${className}`}
-      style={{
-        ...focusRingStyle,
-        "--cta-bg": cta.bg,
-        "--cta-bg-hover": cta.bgHover,
-        "--cta-glow": cta.glow,
-        color: cta.text,
-        gap: spacing.sm,
-        borderRadius: radius.md,
-        padding: `${spacing.sm} ${spacing.lg}`,
-        minHeight: sizing.tapTarget,
-        ...style,
-      } as CSSProperties}
+      className={`${CTA_CLASS} hover:bg-[var(--cta-bg-hover)] hover:shadow-[var(--cta-glow)] ${className}`}
+      style={{ ...CTA_STYLE, ...style }}
       {...props}
     >
       {children}
-      <svg
-        width={iconSize.sm}
-        height={iconSize.sm}
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.75}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-        focusable="false"
-        className="transition-transform duration-200 ease-out group-hover:translate-x-1 group-focus-visible:translate-x-1 motion-reduce:transition-none motion-reduce:transform-none"
-      >
-        <path d="M3 8h9.5M8.5 4l4 4-4 4" />
-      </svg>
+      <CtaArrow />
     </Link>
+  );
+}
+
+// Submit-button twin of CtaLink. No hover glow while disabled (submitting).
+export function CtaButton({
+  className = "",
+  style,
+  children,
+  type = "submit",
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type={type}
+      className={`${CTA_CLASS} enabled:hover:bg-[var(--cta-bg-hover)] enabled:hover:shadow-[var(--cta-glow)] disabled:cursor-not-allowed ${className}`}
+      style={{ ...CTA_STYLE, ...style }}
+      {...props}
+    >
+      {children}
+      <CtaArrow />
+    </button>
   );
 }
