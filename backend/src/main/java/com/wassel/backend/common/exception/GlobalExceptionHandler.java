@@ -7,6 +7,7 @@ import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
+import com.wassel.backend.students.exception.StudentAlreadyExistsException;
 import com.wassel.backend.vehicles.exception.VehicleAlreadyExistsException;
 import com.wassel.backend.vehicles.exception.VehicleNotFoundException;
 import lombok.extern.slf4j.Slf4j;
@@ -113,6 +114,15 @@ public class GlobalExceptionHandler {
 	public ProblemDetail handleVehicleAssignmentConflict(VehicleAssignmentConflictException ex) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Vehicle assignment conflict");
 		problem.setProperty("errors", Map.of("vehicleId", ex.getMessage()));
+		return problem;
+	}
+
+	// Same shape again, keyed by "guardianPhone", for a student that looks like a duplicate of
+	// an existing one (same name and guardian phone) within a school.
+	@ExceptionHandler(StudentAlreadyExistsException.class)
+	public ProblemDetail handleStudentAlreadyExists(StudentAlreadyExistsException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Student already exists");
+		problem.setProperty("errors", Map.of("guardianPhone", ex.getMessage()));
 		return problem;
 	}
 
