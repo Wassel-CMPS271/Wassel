@@ -19,7 +19,7 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
 
 - **Page background**: apply `darkPageBackground` once, in the role's `layout.tsx`. Individual pages must not set their own page background. That's what keeps the product feeling like one continuous surface.
 - **Shared components** (`src/components/ui/`: `Button`, `Input`, `Card`) default to `theme="dark"`. Pass `theme="light"` only when a surface is deliberately light (an explicit opt-in, e.g. a printable view). Don't mix light cards into a dark page.
-- New role areas (`driver`, `parent`, `admin`) should get a `layout.tsx` modeled on the head-of-transport one: sidebar, brand header, nav with icons, user block.
+- New role areas (`driver`, `parent`, `admin`) should get a `layout.tsx` modeled on the head-of-transport one: sidebar, brand header, nav with icons, user block. The brand header is `<BrandMark size={sizing.brandSidebar} />` next to the "Wassel" text; don't redraw the logo.
 
 ## Color palette (`tokens.ts`)
 
@@ -32,9 +32,11 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
 | `darkTheme.text.primary` | Headings, primary content, input values. |
 | `darkTheme.text.secondary` | Body copy, labels, supporting values. |
 | `darkTheme.text.muted` | Placeholders, helper text, disabled/"coming soon" items. Never for essential content. |
-| `colors.primary.*` (blue) | Primary buttons, links/CTAs at rest (`primary[300]` on dark), focus rings (`primary[400]`/`[500]`). |
-| `colors.secondary.*` (violet) | Secondary buttons, gradient partner to primary (brand mark, background glow). |
-| `colors.accent.*` (amber), `darkTheme.interactive.*` | **Signature accent, used sparingly**: current nav item (`accent[300]` text, `accent[400]` icon/indicator, `interactive.activeBg`), hover states (`interactive.hoverBg`, CTA hover), small eyebrow labels. Never for large fills, body text, or status. |
+| `colors.primary.*` (blue) | Primary buttons inside the app, links at rest (`primary[300]` on dark), focus rings (`primary[400]`/`[500]`). |
+| `colors.secondary.*` (violet) | Secondary buttons, gradient partner to primary (background glow). |
+| `colors.accent.*` (amber), `darkTheme.interactive.*` | **Signature accent, used sparingly**: current nav item (`accent[300]` text, `accent[400]` icon/indicator, `interactive.activeBg`), hover states (`interactive.hoverBg`), small eyebrow labels, the brand mark badge (`brand.*`), and the public "Sign in" CTA (`cta.*`). Never for large fills, body text, or status. |
+| `cta.*` | The public call to action (`CtaLink` in `components/ui/Button.tsx`): small solid `accent[400]` fill, `primary[900]` navy label (10.2:1), `accent[300]` hover with a soft amber glow. One style everywhere it appears; in-app forms keep the blue primary `Button`. |
+| `brand.*` | `BrandMark` (`components/ui/BrandMark.tsx`): amber badge, navy bus, pale sunrise arc. `src/app/icon.svg` repeats it with literal values; keep both in sync. |
 | `colors.success.*` / `darkTheme.status.*` | Live/active status only (the pulsing green dot). |
 | `colors.error.*` | Errors and destructive actions. Destructive buttons use `error[600]` (white text passes AA there; `error[500]` doesn't). Error text on dark uses `error[500]`. |
 | `colors.warning.*` | Warnings. |
