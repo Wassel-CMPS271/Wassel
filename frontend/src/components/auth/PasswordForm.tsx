@@ -2,14 +2,10 @@
 
 import { FormEvent, useState } from "react";
 
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Input } from "@/components/ui/Input";
-import {
-  darkTheme,
-  spacing,
-  typography,
-} from "@/styles/tokens";
+import { AuthCard, authFieldProps } from "@/components/auth/AuthCard";
+import { CtaButton } from "@/components/ui/Button";
+import { PasswordInput } from "@/components/ui/PasswordInput";
+import { spacing } from "@/styles/tokens";
 
 type PasswordFormMode = "setup" | "reset";
 
@@ -66,91 +62,53 @@ export function PasswordForm({ mode }: PasswordFormProps) {
   }
 
   return (
-    <Card
-      style={{
-        width: "100%",
-        maxWidth: "420px",
-      }}
+    <AuthCard
+      title={isSetup ? "Set your password" : "Reset your password"}
+      description={
+        isSetup
+          ? "Create a password to finish setting up your account."
+          : "Enter a new password for your account."
+      }
     >
-      <div
+      <form
+        onSubmit={handleSubmit}
+        noValidate
         style={{
           display: "flex",
           flexDirection: "column",
-          gap: spacing.lg,
+          gap: spacing.md,
         }}
       >
-        <div>
-          <h1
-            style={{
-              margin: 0,
-              color: darkTheme.text.primary,
-              fontSize: typography.fontSize["2xl"].size,
-              lineHeight: typography.fontSize["2xl"].lineHeight,
-              fontWeight: typography.fontWeight.bold,
-            }}
-          >
-            {isSetup ? "Set your password" : "Reset your password"}
-          </h1>
+        <PasswordInput
+          label="New password"
+          name="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          error={passwordError}
+          placeholder="Enter your new password"
+          {...authFieldProps}
+        />
 
-          <p
-            style={{
-              margin: `${spacing.sm} 0 0`,
-              color: darkTheme.text.secondary,
-              fontSize: typography.fontSize.sm.size,
-              lineHeight: typography.fontSize.sm.lineHeight,
-            }}
-          >
-            {isSetup
-              ? "Create a password to finish setting up your account."
-              : "Enter a new password for your account."}
-          </p>
-        </div>
+        <PasswordInput
+          label="Confirm password"
+          name="confirmPassword"
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={(event) => setConfirmPassword(event.target.value)}
+          error={confirmPasswordError}
+          placeholder="Confirm your new password"
+          {...authFieldProps}
+        />
 
-        <form
-          onSubmit={handleSubmit}
-          noValidate
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: spacing.md,
-          }}
-        >
-          <Input
-            label="New password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            error={passwordError}
-            placeholder="Enter your new password"
-          />
-
-          <Input
-            label="Confirm password"
-            name="confirmPassword"
-            type="password"
-            autoComplete="new-password"
-            value={confirmPassword}
-            onChange={(event) => setConfirmPassword(event.target.value)}
-            error={confirmPasswordError}
-            placeholder="Confirm your new password"
-          />
-
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={isSubmitting}
-            style={{ width: "100%" }}
-          >
-            {isSubmitting
-              ? "Saving..."
-              : isSetup
-                ? "Set password"
-                : "Reset password"}
-          </Button>
-        </form>
-      </div>
-    </Card>
+        <CtaButton type="submit" disabled={isSubmitting} className="w-full">
+          {isSubmitting
+            ? "Saving..."
+            : isSetup
+              ? "Set password"
+              : "Reset password"}
+        </CtaButton>
+      </form>
+    </AuthCard>
   );
 }

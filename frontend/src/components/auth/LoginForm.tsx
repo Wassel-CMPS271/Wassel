@@ -2,14 +2,11 @@
 
 import { FormEvent, useState } from "react";
 
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import { AuthCard, authFieldProps } from "@/components/auth/AuthCard";
+import { CtaButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import {
-  darkTheme,
-  spacing,
-  typography,
-} from "@/styles/tokens";
+import { PasswordInput } from "@/components/ui/PasswordInput";
+import { spacing } from "@/styles/tokens";
 
 export function LoginForm() {
   const [identifier, setIdentifier] = useState("");
@@ -56,84 +53,42 @@ export function LoginForm() {
   }
 
   return (
-    <Card
-      style={{
-        width: "100%",
-        maxWidth: "420px",
-      }}
-    >
-      <div
+    <AuthCard title="Sign in to Wassel" description="Use your account credentials to continue.">
+      <form
+        onSubmit={handleSubmit}
         style={{
           display: "flex",
           flexDirection: "column",
-          gap: spacing.lg,
+          gap: spacing.md,
         }}
+        noValidate
       >
-        <div>
-          <h1
-            style={{
-              margin: 0,
-              color: darkTheme.text.primary,
-              fontSize: typography.fontSize["2xl"].size,
-              lineHeight: typography.fontSize["2xl"].lineHeight,
-              fontWeight: typography.fontWeight.bold,
-            }}
-          >
-            Sign in to Wassel
-          </h1>
+        <Input
+          label="Account identifier"
+          name="identifier"
+          autoComplete="username"
+          value={identifier}
+          onChange={(event) => setIdentifier(event.target.value)}
+          error={identifierError}
+          placeholder="Enter your account identifier"
+          {...authFieldProps}
+        />
 
-          <p
-            style={{
-              margin: `${spacing.sm} 0 0`,
-              color: darkTheme.text.secondary,
-              fontSize: typography.fontSize.sm.size,
-              lineHeight: typography.fontSize.sm.lineHeight,
-            }}
-          >
-            Use your account credentials to continue.
-          </p>
-        </div>
+        <PasswordInput
+          label="Password"
+          name="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          error={passwordError}
+          placeholder="Enter your password"
+          {...authFieldProps}
+        />
 
-        <form
-          onSubmit={handleSubmit}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: spacing.md,
-          }}
-          noValidate
-        >
-          <Input
-            label="Account identifier"
-            name="identifier"
-            autoComplete="username"
-            value={identifier}
-            onChange={(event) => setIdentifier(event.target.value)}
-            error={identifierError}
-            placeholder="Enter your account identifier"
-          />
-
-          <Input
-            label="Password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            error={passwordError}
-            placeholder="Enter your password"
-          />
-
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={isSubmitting}
-            style={{ width: "100%" }}
-          >
-            {isSubmitting ? "Signing in..." : "Sign in"}
-          </Button>
-        </form>
-      </div>
-    </Card>
+        <CtaButton type="submit" disabled={isSubmitting} className="w-full">
+          {isSubmitting ? "Signing in..." : "Sign in"}
+        </CtaButton>
+      </form>
+    </AuthCard>
   );
 }

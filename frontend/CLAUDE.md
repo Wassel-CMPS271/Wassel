@@ -35,7 +35,7 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
 | `colors.primary.*` (blue) | Primary buttons inside the app, links at rest (`primary[300]` on dark), focus rings (`primary[400]`/`[500]`). |
 | `colors.secondary.*` (violet) | Secondary buttons, gradient partner to primary (background glow). |
 | `colors.accent.*` (amber), `darkTheme.interactive.*` | **Signature accent, used sparingly**: current nav item (`accent[300]` text, `accent[400]` icon/indicator, `interactive.activeBg`), hover states (`interactive.hoverBg`), small eyebrow labels, the brand mark badge (`brand.*`), and the public "Sign in" CTA (`cta.*`). Never for large fills, body text, or status. |
-| `cta.*` | The public call to action (`CtaLink` in `components/ui/Button.tsx`): small solid `accent[400]` fill, `primary[900]` navy label (10.2:1), `accent[300]` hover with a soft amber glow. One style everywhere it appears; in-app forms keep the blue primary `Button`. |
+| `cta.*` | The public call to action (`CtaLink` / `CtaButton` in `components/ui/Button.tsx`): small solid `accent[400]` fill, `primary[900]` navy label (10.2:1), `accent[300]` hover with a soft amber glow, sliding arrow. One style everywhere it appears: `CtaLink` for links, `CtaButton` for the submit on the auth pages. In-app forms keep the blue primary `Button`. |
 | `brand.*` | `BrandMark` (`components/ui/BrandMark.tsx`): amber badge, navy bus, pale sunrise arc. `src/app/icon.svg` repeats it with literal values; keep both in sync. |
 | `colors.success.*` / `darkTheme.status.*` | Live/active status only (the pulsing green dot). |
 | `colors.error.*` | Errors and destructive actions. Destructive buttons use `error[600]` (white text passes AA there; `error[500]` doesn't). Error text on dark uses `error[500]`. |
@@ -53,6 +53,15 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
   - `semibold` 600: page and section headings.
   - `bold` 700: the brand wordmark and license-plate numbers only.
 - Eyebrow labels (small context above a heading): `text-xs font-medium uppercase tracking-wider` in `colors.accent[300]`.
+
+## Auth pages
+
+`/login`, `/reset-password`, `/set-password` and `/verify-2fa` live in the `(public)` route group (its layout supplies the page background and `MotionConfig`) and share one frame:
+
+- `AuthShell` (`components/auth/`) is the page: lg and up, a split screen with the hero photo, a navy scrim (`auth.panelScrim`) and a headline on the left (`auth.panelColumns`), the form column on the right. Below lg the photo is a fixed, dimmed backdrop (`auth.backdropScrim`). It also renders the "Back to home" link. Pass a short `headline`; the subline is fixed.
+- `AuthCard` is the frosted card (`auth.cardSurface` + `auth.cardBlur`): brand lockup, `h1`, description, then the form. Spread `authFieldProps` on every field (44px height and the two-tone focus ring, since the card can sit over the photo). Submit with `CtaButton className="w-full"`.
+- Password fields use `PasswordInput` (`components/ui/`), which adds the show/hide toggle (fixed name "Show password", state in `aria-pressed`). It's built on `Input`'s `endAdornment` slot.
+- New auth screens reuse these; don't give them their own background or card.
 
 ## Surfaces
 

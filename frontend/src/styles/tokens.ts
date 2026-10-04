@@ -239,7 +239,7 @@ export const sizing = {
 
 /** Icon pixel sizes, so call sites don't pass bare numbers. */
 export const iconSize = {
-  sm: 16, // inline glyph inside a button (the CTA arrow)
+  sm: 16, // inline glyph inside a button (the CTA arrow, "Back to home")
   md: 20, // feature icons inside a tile
 } as const;
 
@@ -271,6 +271,33 @@ export const landing = {
   heroFadeBottom: `linear-gradient(180deg, transparent 65%, ${darkTheme.background.base} 100%)`,
   // Closing CTA image: page color at the edges, at least 0.72 everywhere else.
   ctaScrim: `linear-gradient(180deg, ${darkTheme.background.base} 0%, rgba(5, 6, 10, 0.72) 25%, rgba(5, 6, 10, 0.72) 75%, ${darkTheme.background.base} 100%)`,
+} as const;
+
+/**
+ * Auth pages (SCRUM-186): /login, /reset-password, /set-password, /verify-2fa.
+ *
+ * Scrims are tints of colors.primary[900] (navy, rgb 6, 24, 71) over the hero
+ * photo. Worst case checked against a pure-white pixel under the scrim:
+ *   alpha 0.80 -> text.primary 8.5:1, text.secondary 5.6:1
+ *   alpha 0.75 -> text.primary 7.1:1, text.secondary 4.7:1
+ * Controls over the photo use the two-tone focus ring (focusRing.ts).
+ */
+export const auth = {
+  cardMaxWidth: "420px",
+  // Frosted card: surface.card at 0.72 plus blur. Over the 0.8 mobile scrim
+  // text.secondary stays above 9.4:1 and the focus ring above 4.2:1.
+  cardSurface: "rgba(20, 22, 29, 0.72)",
+  cardBlur: "blur(16px)",
+  // Desktop photo panel width (lg and up); the form column takes the rest.
+  panelColumns: "55fr 45fr",
+  // Desktop panel: lighter at the top so the photo reads, at least 0.8 from
+  // 55% down, where the headline sits (bottom-aligned).
+  panelScrim:
+    "linear-gradient(180deg, rgba(6, 24, 71, 0.3) 0%, rgba(6, 24, 71, 0.55) 35%, rgba(6, 24, 71, 0.8) 55%, rgba(6, 24, 71, 0.88) 100%)",
+  // Below lg the photo sits behind the card and the "Back to home" link.
+  backdropScrim: "rgba(6, 24, 71, 0.8)",
+  // Keeps the bus in frame when the photo is cropped to a tall panel.
+  photoPosition: "72% center",
 } as const;
 
 /**
