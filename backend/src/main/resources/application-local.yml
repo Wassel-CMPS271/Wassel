@@ -15,6 +15,11 @@ jwt:
   expiration: ${JWT_EXPIRATION:24h}
   cookie-secure: ${JWT_COOKIE_SECURE:false}
 
+wassel:
+  seed-admin:
+    email: ${ADMIN_EMAIL:admin@wassel.local}
+    password: ${ADMIN_PASSWORD:local-admin-password}
+
 logging:
   level:
     com.wassel.backend: DEBUG
