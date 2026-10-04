@@ -11,7 +11,6 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import lombok.ToString;
 import org.hibernate.annotations.CreationTimestamp;
 
@@ -25,7 +24,6 @@ import java.util.UUID;
 @Entity
 @Table(name = "password_tokens", indexes = @Index(name = "idx_password_tokens_user_id", columnList = "user_id"))
 @Getter
-@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder

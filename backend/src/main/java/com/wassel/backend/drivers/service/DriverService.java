@@ -70,7 +70,6 @@ public class DriverService {
 			throw new DriverAlreadyExistsException("phone", PHONE_TAKEN_MESSAGE);
 		}
 
-		// Throws EmailAlreadyInUseException (a 409) if any account on the platform has this email.
 		User user = userService.createInvitedUser(request.email(), Role.DRIVER, schoolId);
 		Driver driver = Driver.builder()
 				.schoolId(schoolId)

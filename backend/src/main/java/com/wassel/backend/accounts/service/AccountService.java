@@ -32,12 +32,10 @@ public class AccountService {
 		return invite(schoolId, Role.HEAD_OF_TRANSPORT, request);
 	}
 
-	@Transactional(readOnly = true)
 	public List<AccountResponse> listParents(UUID schoolId) {
 		return userService.listByRole(schoolId, Role.PARENT).stream().map(this::toResponse).toList();
 	}
 
-	// Throws EmailAlreadyInUseException (a 409) if any account on the platform has this email.
 	private AccountResponse invite(UUID schoolId, Role role, CreateAccountRequest request) {
 		User user = userService.createInvitedUser(request.email(), role, schoolId);
 		passwordService.sendInvite(user);

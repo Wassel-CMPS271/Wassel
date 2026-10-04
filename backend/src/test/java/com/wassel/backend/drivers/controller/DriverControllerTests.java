@@ -297,6 +297,18 @@ class DriverControllerTests {
 	}
 
 	@Test
+	void aDeactivatedDriverWhoSetsAPasswordStaysDeactivated() throws Exception {
+		UUID id = UUID.fromString(addAs(schoolA, "Ahmad", "Khalil", "+961 3 123 456", "ahmad.khalil@example.com"));
+		Driver driver = driverRepository.findById(id).orElseThrow();
+		driver.setStatus(DriverStatus.DEACTIVATED);
+		driverRepository.saveAndFlush(driver);
+
+		setPassword(lastToken()).andExpect(status().isNoContent());
+
+		assertEquals(DriverStatus.DEACTIVATED, driverRepository.findById(id).orElseThrow().getStatus());
+	}
+
+	@Test
 	void aDriverWhoSetsAPasswordBecomesActiveAndCanLogIn() throws Exception {
 		addAs(schoolA, "Ahmad", "Khalil", "+961 3 123 456", "ahmad.khalil@example.com");
 

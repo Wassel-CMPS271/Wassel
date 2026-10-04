@@ -28,8 +28,10 @@ that's the structure this codebase moved away from.
   prints the email, link included, to the application log (links point at `FRONTEND_BASE_URL`).
   **Anyone who can read the logs can take over an account through those links: add an SMTP
   `Mailer` and limit `LoggingMailer` to the local/test profiles before inviting any real user.**
-  Known limit: a password change does not revoke existing sessions (tokens are stateless); the
-  fix is a "tokens valid from" timestamp on `User` checked by `JwtAuthenticationFilter`.
+  Known limits: a password change does not revoke existing sessions (tokens are stateless); the
+  fix is a "tokens valid from" timestamp on `User` checked by `JwtAuthenticationFilter`. And
+  anyone who knows an email can call forgot-password once a minute; each new link voids the
+  previous one, so they can keep that person's link from working and fill their inbox.
 - `users` — the `User` entity and `Role` enum, plus `UserRepository`/`UserService` for other
   modules to look up one of their own school's users by id and role (e.g. students, validating
   a parent-link target), and for auth to find users by email and create accounts. The foundational

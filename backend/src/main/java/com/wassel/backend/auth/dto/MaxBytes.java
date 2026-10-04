@@ -11,15 +11,12 @@ import java.lang.annotation.Target;
 import java.nio.charset.StandardCharsets;
 
 import static java.lang.annotation.ElementType.FIELD;
-import static java.lang.annotation.ElementType.METHOD;
-import static java.lang.annotation.ElementType.PARAMETER;
-import static java.lang.annotation.ElementType.RECORD_COMPONENT;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /** Limits the UTF-8 size, not the character count: BCrypt rejects passwords over 72 bytes. */
 @Documented
 @Constraint(validatedBy = MaxBytes.Validator.class)
-@Target({ FIELD, METHOD, RECORD_COMPONENT, PARAMETER })
+@Target(FIELD)
 @Retention(RUNTIME)
 public @interface MaxBytes {
 

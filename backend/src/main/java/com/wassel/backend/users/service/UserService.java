@@ -60,7 +60,7 @@ public class UserService {
 		return userRepository.save(user);
 	}
 
-	/** An account with no password yet; the person sets one from an emailed link. */
+	/** Throws EmailAlreadyInUseException (a 409) if any account on the platform has this email. */
 	@Transactional
 	public User createInvitedUser(String email, Role role, UUID schoolId) {
 		String normalised = email.trim().toLowerCase(Locale.ROOT);

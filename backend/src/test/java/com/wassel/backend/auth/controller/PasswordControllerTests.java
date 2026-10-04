@@ -23,8 +23,14 @@ import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -82,6 +88,9 @@ class PasswordControllerTests {
 	private JdbcTemplate jdbc;
 
 	@Autowired
+	private TransactionTemplate transactions;
+
+	@Autowired
 	private ApplicationEvents applicationEvents;
 
 	@MockitoBean
@@ -132,6 +141,13 @@ class PasswordControllerTests {
 				.content("{\"email\":\"%s\",\"password\":\"%s\"}".formatted(email, password)));
 	}
 
+	// Rounded to the minute: created_at is stamped a few milliseconds after the expiry is computed.
+	private long tokenLifetimeInMinutes() {
+		return jdbc.queryForObject("select created_at, expires_at from password_tokens",
+				(rs, row) -> Duration.between(rs.getObject(1, OffsetDateTime.class),
+						rs.getObject(2, OffsetDateTime.class)).plusSeconds(30).toMinutes());
+	}
+
 	private void assertInvalidLink(ResultActions result) throws Exception {
 		result.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.detail").value("This link is invalid or has expired."));
@@ -141,6 +157,7 @@ class PasswordControllerTests {
 	void anInvitedUserSetsAPasswordFromTheLinkAndThenLogsIn() throws Exception {
 		User user = invitedUser("new@wassel.test");
 		assertTrue(bodies(1).getFirst().contains("/set-password?token="));
+		assertEquals(24 * 60, tokenLifetimeInMinutes());
 		login("new@wassel.test", NEW_PASSWORD).andExpect(status().isUnauthorized());
 
 		setPassword(lastToken(), NEW_PASSWORD).andExpect(status().isNoContent());
@@ -156,6 +173,7 @@ class PasswordControllerTests {
 
 		forgotPassword("  PAR@wassel.test ").andExpect(status().isNoContent());
 		assertTrue(bodies(1).getFirst().contains("/reset-password?token="));
+		assertEquals(30, tokenLifetimeInMinutes());
 		setPassword(lastToken(), NEW_PASSWORD).andExpect(status().isNoContent());
 
 		login("par@wassel.test", OLD_PASSWORD).andExpect(status().isUnauthorized());
@@ -206,6 +224,20 @@ class PasswordControllerTests {
 
 		assertInvalidLink(setPassword(older, NEW_PASSWORD));
 		setPassword(newer, NEW_PASSWORD).andExpect(status().isNoContent());
+	}
+
+	@Test
+	void oneUsersNewLinkAndCooldownLeaveAnotherUsersLinkAlone() throws Exception {
+		invitedUser("first@wassel.test");
+		String firstUsersToken = lastToken();
+		User second = userWithPassword("second@wassel.test");
+
+		// The first user's fresh token must not count towards the second user's cooldown.
+		forgotPassword("second@wassel.test").andExpect(status().isNoContent());
+		verify(mailer, times(1)).send(eq("second@wassel.test"), anyString(), anyString());
+		passwordService.sendInvite(second);
+
+		setPassword(firstUsersToken, NEW_PASSWORD).andExpect(status().isNoContent());
 	}
 
 	@Test
@@ -281,18 +313,50 @@ class PasswordControllerTests {
 	}
 
 	@Test
+	void thePasswordLimitsAreTenCharactersAndSeventyTwoBytes() throws Exception {
+		invitedUser("new@wassel.test");
+		String token = lastToken();
+
+		setPassword(token, "a".repeat(9)).andExpect(status().isBadRequest());
+		setPassword(token, "a".repeat(73)).andExpect(status().isBadRequest());
+		setPassword(token, "a".repeat(72)).andExpect(status().isNoContent());
+
+		invitedUser("other@wassel.test");
+		setPassword(lastToken(), "a".repeat(10)).andExpect(status().isNoContent());
+	}
+
+	@Test
 	void aBlankTokenIsRejectedWithAFieldError() throws Exception {
 		setPassword("", NEW_PASSWORD).andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errors.token").exists());
 	}
 
 	@Test
-	void theStoredValueIsAHashNotTheToken() {
+	void forgotPasswordWithoutAnEmailIsRejectedWithAFieldError() throws Exception {
+		mockMvc.perform(post("/api/auth/forgot-password").contentType(MediaType.APPLICATION_JSON).content("{}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.email").value("Email is required"));
+	}
+
+	@Test
+	void theStoredValueIsTheSha256OfTheTokenNotTheToken() throws Exception {
 		invitedUser("new@wassel.test");
 		String stored = jdbc.queryForObject("select token_hash from password_tokens", String.class);
 
-		assertNotEquals(lastToken(), stored);
-		assertEquals(64, stored.length());
+		assertEquals(HexFormat.of().formatHex(
+				MessageDigest.getInstance("SHA-256").digest(lastToken().getBytes(StandardCharsets.UTF_8))), stored);
+	}
+
+	@Test
+	void aTokenCanOnlyBeMarkedUsedOnce() {
+		invitedUser("new@wassel.test");
+		UUID id = tokenRepository.findAll().getFirst().getId();
+
+		Integer first = transactions.execute(status -> tokenRepository.markUsed(id, Instant.now()));
+		Integer second = transactions.execute(status -> tokenRepository.markUsed(id, Instant.now()));
+
+		assertEquals(1, first);
+		assertEquals(0, second);
 	}
 
 	@Test

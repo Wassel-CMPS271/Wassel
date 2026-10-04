@@ -59,6 +59,10 @@ Wassel is a web-based school transport management platform for private schools, 
 | Backend    | `http://localhost:8080` |
 | Frontend   | `http://localhost:3000` |
 
+There is no real email delivery yet. Invite and password-reset emails, including their
+links, are printed in the backend console (look for `Email to`). On staging they are in
+`docker compose -f docker-compose.staging.yml logs backend`.
+
 To stop the database: `docker compose down` (add `-v` to also delete its data).
 
 ## Staging Environment

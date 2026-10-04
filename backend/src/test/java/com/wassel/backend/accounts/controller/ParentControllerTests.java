@@ -144,6 +144,12 @@ class ParentControllerTests {
 					.andExpect(jsonPath("$.errors.email").value("Enter a valid email address"));
 		}
 
+		// Longer than the column: must be a validation error, not a misleading "already exists" 409.
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON).content(body("a".repeat(250) + "@example.com")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.email").value("Email is too long"));
+
 		assertEquals(0, userRepository.count());
 	}
 

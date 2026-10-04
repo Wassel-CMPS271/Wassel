@@ -19,7 +19,7 @@ public interface PasswordTokenRepository extends JpaRepository<PasswordToken, UU
 
 	@Modifying
 	@Query("update PasswordToken t set t.usedAt = :now where t.userId = :userId and t.usedAt is null")
-	int voidUnusedFor(@Param("userId") UUID userId, @Param("now") Instant now);
+	void voidUnusedFor(@Param("userId") UUID userId, @Param("now") Instant now);
 
 	/** Returns 0 if the token was already used, so two concurrent requests can't both win. */
 	@Modifying
