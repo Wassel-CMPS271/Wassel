@@ -56,9 +56,7 @@ public class PasswordService {
 	public void sendInvite(User user) {
 		boolean invite = !user.hasPassword();
 		Instant now = Instant.now();
-		byte[] bytes = new byte[32];
-		RANDOM.nextBytes(bytes);
-		String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+		String token = randomToken();
 
 		tokenRepository.voidUnusedFor(user.getId(), now);
 		tokenRepository.save(PasswordToken.builder()
@@ -103,7 +101,13 @@ public class PasswordService {
 		events.publishEvent(new PasswordSetEvent(user.getId()));
 	}
 
-	private static String hash(String token) {
+	static String randomToken() {
+		byte[] bytes = new byte[32];
+		RANDOM.nextBytes(bytes);
+		return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+	}
+
+	static String hash(String token) {
 		try {
 			return HexFormat.of().formatHex(
 					MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8)));
