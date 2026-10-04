@@ -93,6 +93,20 @@ To stop the stack: `docker compose -f docker-compose.staging.yml down` (add `-v`
 also delete the staging database's data). Rebuild after code changes with the same
 `up -d --build` command.
 
+## Logs
+
+The staging stack collects every container's logs into one place (Loki), searchable in Grafana.
+
+- **Grafana:** http://localhost:3001. Log in as `admin` with `GRAFANA_ADMIN_PASSWORD` from `.env.staging`. Open **Explore**, pick the **Loki** data source, and query.
+- **Backend logs are JSON** (ECS), one object per line, with the severity in `log.level`.
+- **Example queries:**
+  - All backend logs: `{service="backend"}`
+  - Errors only: `{service="backend"} | json | log_level="ERROR"`
+  - Rejected requests: `{service="backend"} | json | log_level="WARN"`
+- Logs are kept for 14 days. Config lives in `ops/` (`loki`, `promtail`, `grafana`).
+
+Severity: **ERROR** is an unexpected failure, with a stack trace. **WARN** is a request the client got wrong (validation, conflicts, not found, forbidden), logged without a stack trace.
+
 ## Continuous Integration
 
 `.github/workflows/ci.yml` runs on every push and on every pull request into `develop`
