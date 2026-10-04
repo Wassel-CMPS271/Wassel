@@ -20,22 +20,40 @@ public class AuthCookie {
 
 	public static final String NAME = "wassel_token";
 
+	/** Holds the pending-login token between the password step and the code step. It is not a session. */
+	public static final String PENDING_NAME = "wassel_2fa";
+
+	// How long the user has to enter the code; keep in step with TwoFactorService's pending lifetime.
+	private static final Duration PENDING_MAX_AGE = Duration.ofMinutes(15);
+
 	private final JwtProperties jwtProperties;
 
 	public ResponseCookie create(String token) {
-		return base(token).maxAge(jwtProperties.expiration()).build();
+		return base(NAME, token).maxAge(jwtProperties.expiration()).build();
 	}
 
 	public ResponseCookie clear() {
-		return base("").maxAge(Duration.ZERO).build();
+		return base(NAME, "").maxAge(Duration.ZERO).build();
 	}
 
 	public Optional<String> read(HttpServletRequest request) {
 		return Optional.ofNullable(WebUtils.getCookie(request, NAME)).map(Cookie::getValue);
 	}
 
-	private ResponseCookie.ResponseCookieBuilder base(String value) {
-		return ResponseCookie.from(NAME, value)
+	public ResponseCookie createPending(String pendingToken) {
+		return base(PENDING_NAME, pendingToken).maxAge(PENDING_MAX_AGE).build();
+	}
+
+	public ResponseCookie clearPending() {
+		return base(PENDING_NAME, "").maxAge(Duration.ZERO).build();
+	}
+
+	public Optional<String> readPending(HttpServletRequest request) {
+		return Optional.ofNullable(WebUtils.getCookie(request, PENDING_NAME)).map(Cookie::getValue);
+	}
+
+	private ResponseCookie.ResponseCookieBuilder base(String name, String value) {
+		return ResponseCookie.from(name, value)
 				.httpOnly(true)
 				.secure(jwtProperties.cookieSecure())
 				.sameSite("Strict")

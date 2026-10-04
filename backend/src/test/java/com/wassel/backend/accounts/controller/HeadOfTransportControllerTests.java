@@ -105,8 +105,7 @@ class HeadOfTransportControllerTests {
 
 		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
 						.content("{\"email\":\"hot@wassel.test\",\"password\":\"a-brand-new-password\"}"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.role").value("HEAD_OF_TRANSPORT"));
+				.andExpect(status().isNoContent());
 	}
 
 	@Test

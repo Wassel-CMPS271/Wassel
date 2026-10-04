@@ -1,7 +1,10 @@
 package com.wassel.backend.common.exception;
 
+import com.wassel.backend.auth.exception.CodeCooldownException;
+import com.wassel.backend.auth.exception.InvalidCodeException;
 import com.wassel.backend.auth.exception.InvalidCredentialsException;
 import com.wassel.backend.auth.exception.InvalidPasswordTokenException;
+import com.wassel.backend.auth.exception.LoginExpiredException;
 import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
@@ -175,6 +178,21 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(InvalidPasswordTokenException.class)
 	public ProblemDetail handleInvalidPasswordToken(InvalidPasswordTokenException ex) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidCodeException.class)
+	public ProblemDetail handleInvalidCode(InvalidCodeException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+	}
+
+	@ExceptionHandler(LoginExpiredException.class)
+	public ProblemDetail handleLoginExpired(LoginExpiredException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
+	}
+
+	@ExceptionHandler(CodeCooldownException.class)
+	public ProblemDetail handleCodeCooldown(CodeCooldownException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
 	}
 
 	// Thrown by @PreAuthorize checks inside the MVC layer.

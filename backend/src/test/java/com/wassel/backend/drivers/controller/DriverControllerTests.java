@@ -318,8 +318,7 @@ class DriverControllerTests {
 				.andExpect(jsonPath("$[0].status").value("active"));
 		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
 						.content("{\"email\":\"ahmad.khalil@example.com\",\"password\":\"%s\"}".formatted(NEW_PASSWORD)))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.role").value("DRIVER"));
+				.andExpect(status().isNoContent());
 	}
 
 	@Test
