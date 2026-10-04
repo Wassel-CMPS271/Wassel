@@ -15,6 +15,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -24,6 +25,11 @@ import java.util.UUID;
  * database uniqueness constraint on name + guardian phone: it's a plausible (if rare)
  * coincidence for two real students, so it's only a soft duplicate-prevention check in
  * {@code StudentService}, not a hard invariant.
+ *
+ * <p>{@code address}, {@code latitude}/{@code longitude} (the map pin), and {@code parentUserId}
+ * are set after creation via the edit endpoints (SCRUM-166); {@code route} is filterable
+ * (SCRUM-167) but nothing sets it yet, pending a future routing feature. All four are nullable:
+ * a newly added student has none of them yet.
  */
 @Entity
 @Table(name = "students")
@@ -59,6 +65,21 @@ public class Student {
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
 	private StudentStatus status;
+
+	@Column(length = 255)
+	private String address;
+
+	@Column(precision = 9, scale = 6)
+	private BigDecimal latitude;
+
+	@Column(precision = 9, scale = 6)
+	private BigDecimal longitude;
+
+	@Column(length = 50)
+	private String route;
+
+	@Column(name = "parent_user_id")
+	private UUID parentUserId;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)

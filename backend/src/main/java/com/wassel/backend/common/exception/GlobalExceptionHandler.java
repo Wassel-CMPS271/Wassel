@@ -8,6 +8,8 @@ import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
 import com.wassel.backend.students.exception.StudentAlreadyExistsException;
+import com.wassel.backend.students.exception.StudentNotFoundException;
+import com.wassel.backend.users.exception.UserNotFoundException;
 import com.wassel.backend.vehicles.exception.VehicleAlreadyExistsException;
 import com.wassel.backend.vehicles.exception.VehicleNotFoundException;
 import lombok.extern.slf4j.Slf4j;
@@ -124,6 +126,16 @@ public class GlobalExceptionHandler {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Student already exists");
 		problem.setProperty("errors", Map.of("guardianPhone", ex.getMessage()));
 		return problem;
+	}
+
+	@ExceptionHandler(StudentNotFoundException.class)
+	public ProblemDetail handleStudentNotFound(StudentNotFoundException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	@ExceptionHandler(UserNotFoundException.class)
+	public ProblemDetail handleUserNotFound(UserNotFoundException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
 
 	// Thrown by @PreAuthorize checks inside the MVC layer.

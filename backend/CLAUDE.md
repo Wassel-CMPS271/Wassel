@@ -11,8 +11,9 @@ that's the structure this codebase moved away from.
 
 - `auth` — JWT issuing/validation (`config/JwtProperties`, `service/JwtService`).
   Stubbed pending SCRUM-168.
-- `users` — the `User` entity and `Role` enum. The foundational module (see
-  Dependencies below).
+- `users` — the `User` entity and `Role` enum, plus a minimal `UserRepository`/`UserService`
+  for other modules to look up one of their own school's users by id and role (e.g. students,
+  validating a parent-link target). The foundational module (see Dependencies below).
 - `schools` — school-level settings. Real module: arrival/dismissal times
   (SCRUM-178), the holiday calendar (SCRUM-101) and half-day marking
   (SCRUM-102) are done. A date can't be both a holiday and a half-day.
@@ -23,9 +24,11 @@ that's the structure this codebase moved away from.
 - `drivers` — driver roster: add/invite, resend invite, assign/unassign a vehicle, with
   validation (SCRUM-164). Real module. Depends on `vehicles` (via its service) to check a
   vehicle exists and is active before assigning a driver to it.
-- `students` — student roster. Real module, partial: add and list are done (SCRUM-165).
-  Search/filter, CSV import, and the active/inactive toggle are not built yet
-  (SCRUM-166, SCRUM-167) even though the frontend already has UI for them against a mock.
+- `students` — student roster. Real module: add, list, search/filter by query/status/grade/route
+  (SCRUM-167), and editing address, map-pin location, and parent-linking (SCRUM-166) are done.
+  CSV import and the active/inactive toggle are not built yet, and there's no endpoint to assign
+  a student's route (the `route` column exists for filtering; it's expected to be populated by a
+  future routing feature, not edited by hand here).
 
 ## Where things go
 
