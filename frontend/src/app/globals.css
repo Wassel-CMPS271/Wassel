@@ -12,8 +12,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Times New Roman only (typography.fontFamily.serif); Tailwind's preflight
+     reads these for <html> and code elements. */
+  --font-sans: "Times New Roman", Times, serif;
+  --font-mono: "Times New Roman", Times, serif;
 }
 
 body {
