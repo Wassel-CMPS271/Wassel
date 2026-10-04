@@ -18,3 +18,6 @@ jwt:
   secret: ${JWT_SECRET:}
   expiration: ${JWT_EXPIRATION:1h}
   cookie-secure: ${JWT_COOKIE_SECURE:true}
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}

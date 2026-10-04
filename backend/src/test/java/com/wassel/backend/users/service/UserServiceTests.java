@@ -1,5 +1,7 @@
 package com.wassel.backend.users.service;
 
+import com.wassel.backend.auth.dto.LoginRequest;
+import com.wassel.backend.auth.service.AuthService;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.entity.User;
 import com.wassel.backend.users.repository.UserRepository;
@@ -29,6 +31,9 @@ class UserServiceTests {
 	@Autowired
 	private PasswordEncoder passwordEncoder;
 
+	@Autowired
+	private AuthService authService;
+
 	@BeforeEach
 	void cleanDatabase() {
 		userRepository.deleteAll();
@@ -46,5 +51,13 @@ class UserServiceTests {
 		assertTrue(user.isEnabled());
 		assertNotEquals("a-long-enough-password", user.getPasswordHash());
 		assertTrue(passwordEncoder.matches("a-long-enough-password", user.getPasswordHash()));
+	}
+
+	@Test
+	void anAccountMadeByCreateUserCanSignIn() {
+		userService.createUser("New.Admin@Wassel.TEST", "a-long-enough-password", Role.ADMIN, UUID.randomUUID());
+
+		assertEquals(Role.ADMIN,
+				authService.login(new LoginRequest("new.admin@wassel.test", "a-long-enough-password")).user().role());
 	}
 }
