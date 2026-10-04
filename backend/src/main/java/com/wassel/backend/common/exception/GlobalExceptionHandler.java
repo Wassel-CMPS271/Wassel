@@ -1,6 +1,7 @@
 package com.wassel.backend.common.exception;
 
 import com.wassel.backend.auth.exception.InvalidCredentialsException;
+import com.wassel.backend.auth.exception.InvalidPasswordTokenException;
 import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
@@ -151,6 +152,11 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(InvalidCredentialsException.class)
 	public ProblemDetail handleInvalidCredentials(InvalidCredentialsException ex) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidPasswordTokenException.class)
+	public ProblemDetail handleInvalidPasswordToken(InvalidPasswordTokenException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
 	}
 
 	// Thrown by @PreAuthorize checks inside the MVC layer.
