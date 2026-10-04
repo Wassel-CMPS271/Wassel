@@ -1,8 +1,11 @@
 package com.wassel.backend.students.controller;
 
+import com.wassel.backend.students.entity.Student;
+import com.wassel.backend.students.entity.StudentStatus;
 import com.wassel.backend.students.repository.StudentRepository;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.entity.User;
+import com.wassel.backend.users.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,10 +20,13 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -41,9 +47,13 @@ class StudentControllerTests {
 	@Autowired
 	private StudentRepository studentRepository;
 
+	@Autowired
+	private UserRepository userRepository;
+
 	@BeforeEach
 	void cleanDatabase() {
 		studentRepository.deleteAll();
+		userRepository.deleteAll();
 	}
 
 	private RequestPostProcessor loggedInAs(Role role, UUID schoolId) {
@@ -59,12 +69,29 @@ class StudentControllerTests {
 				.formatted(firstName, lastName, grade, guardianName, guardianPhone);
 	}
 
-	private void addAs(UUID schoolId, String firstName, String lastName, String grade, String guardianName,
+	private String addAs(UUID schoolId, String firstName, String lastName, String grade, String guardianName,
 			String guardianPhone) throws Exception {
-		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolId))
+		String body = mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolId))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(student(firstName, lastName, grade, guardianName, guardianPhone)))
-				.andExpect(status().isCreated());
+				.andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString();
+		Matcher matcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(body);
+		matcher.find();
+		return matcher.group(1);
+	}
+
+	private UUID saveStudentWithRoute(UUID schoolId, String firstName, String route) {
+		Student entity = Student.builder().schoolId(schoolId).firstName(firstName).lastName("Test")
+				.grade("Grade 1").guardianName("Guardian").guardianPhone("+961 3 000 000")
+				.status(StudentStatus.ACTIVE).route(route).build();
+		return studentRepository.saveAndFlush(entity).getId();
+	}
+
+	private UUID saveParent(UUID schoolId) {
+		User parent = User.builder().email("parent-" + UUID.randomUUID() + "@wassel.test").passwordHash("x")
+				.role(Role.PARENT).schoolId(schoolId).build();
+		return userRepository.saveAndFlush(parent).getId();
 	}
 
 	@Test
@@ -193,5 +220,226 @@ class StudentControllerTests {
 		mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON)
 						.content(student("Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222")))
 				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void newlyAddedStudentHasNoEditableFieldsSetYet() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+
+		mockMvc.perform(get(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$[0].id").value(id))
+				.andExpect(jsonPath("$[0].address").doesNotExist())
+				.andExpect(jsonPath("$[0].latitude").doesNotExist())
+				.andExpect(jsonPath("$[0].longitude").doesNotExist())
+				.andExpect(jsonPath("$[0].route").doesNotExist())
+				.andExpect(jsonPath("$[0].parentUserId").doesNotExist());
+	}
+
+	@Test
+	void headOfTransportCanUpdateAStudentsAddress() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+
+		mockMvc.perform(patch(URL + "/" + id + "/address").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"address\":\"  Hamra Street, Beirut  \"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.address").value("Hamra Street, Beirut"));
+	}
+
+	@Test
+	void updatingAddressRequiresANonBlankValue() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+
+		mockMvc.perform(patch(URL + "/" + id + "/address").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON).content("{\"address\":\"   \"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.address").value("Address is required"));
+	}
+
+	@Test
+	void updatingAddressForUnknownOrOtherSchoolStudentIsNotFound() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+
+		mockMvc.perform(patch(URL + "/" + UUID.randomUUID() + "/address")
+						.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"address\":\"Hamra Street\"}"))
+				.andExpect(status().isNotFound());
+		mockMvc.perform(patch(URL + "/" + id + "/address").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolB))
+						.contentType(MediaType.APPLICATION_JSON).content("{\"address\":\"Hamra Street\"}"))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void headOfTransportCanCorrectAStudentsMapPin() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+
+		mockMvc.perform(patch(URL + "/" + id + "/location").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"latitude\":33.8938,\"longitude\":35.5018}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.latitude").value(33.8938))
+				.andExpect(jsonPath("$.longitude").value(35.5018));
+	}
+
+	@Test
+	void locationMustBeWithinValidLatitudeAndLongitudeRanges() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+
+		mockMvc.perform(patch(URL + "/" + id + "/location").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"latitude\":91,\"longitude\":200}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.latitude").value("Latitude must be between -90 and 90"))
+				.andExpect(jsonPath("$.errors.longitude").value("Longitude must be between -180 and 180"));
+	}
+
+	@Test
+	void updatingLocationForUnknownOrOtherSchoolStudentIsNotFound() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+
+		mockMvc.perform(patch(URL + "/" + UUID.randomUUID() + "/location")
+						.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"latitude\":33.8938,\"longitude\":35.5018}"))
+				.andExpect(status().isNotFound());
+		mockMvc.perform(patch(URL + "/" + id + "/location").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolB))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"latitude\":33.8938,\"longitude\":35.5018}"))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void headOfTransportCanLinkAParentToAStudent() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+		UUID parentId = saveParent(schoolA);
+
+		mockMvc.perform(patch(URL + "/" + id + "/parent").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"parentUserId\":\"%s\"}".formatted(parentId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.parentUserId").value(parentId.toString()));
+	}
+
+	@Test
+	void linkingAUserThatIsNotAParentIsNotFound() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+		User notAParent = User.builder().email("hot@wassel.test").passwordHash("x")
+				.role(Role.HEAD_OF_TRANSPORT).schoolId(schoolA).build();
+		UUID notAParentId = userRepository.saveAndFlush(notAParent).getId();
+
+		mockMvc.perform(patch(URL + "/" + id + "/parent").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"parentUserId\":\"%s\"}".formatted(notAParentId)))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void linkingAParentFromAnotherSchoolIsNotFound() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+		UUID otherSchoolParentId = saveParent(schoolB);
+
+		mockMvc.perform(patch(URL + "/" + id + "/parent").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"parentUserId\":\"%s\"}".formatted(otherSchoolParentId)))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void linkingAParentForUnknownOrOtherSchoolStudentIsNotFound() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+		UUID parentId = saveParent(schoolA);
+		UUID parentOfSchoolB = saveParent(schoolB);
+
+		mockMvc.perform(patch(URL + "/" + UUID.randomUUID() + "/parent")
+						.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"parentUserId\":\"%s\"}".formatted(parentId)))
+				.andExpect(status().isNotFound());
+		mockMvc.perform(patch(URL + "/" + id + "/parent").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolB))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"parentUserId\":\"%s\"}".formatted(parentOfSchoolB)))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void editEndpointsAreForbiddenForNonHeadOfTransportRoles() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+
+		for (Role role : new Role[] { Role.ADMIN, Role.DRIVER, Role.PARENT }) {
+			mockMvc.perform(patch(URL + "/" + id + "/address").with(loggedInAs(role, schoolA))
+							.contentType(MediaType.APPLICATION_JSON).content("{\"address\":\"Hamra Street\"}"))
+					.andExpect(status().isForbidden());
+			mockMvc.perform(patch(URL + "/" + id + "/location").with(loggedInAs(role, schoolA))
+							.contentType(MediaType.APPLICATION_JSON)
+							.content("{\"latitude\":33.8938,\"longitude\":35.5018}"))
+					.andExpect(status().isForbidden());
+			mockMvc.perform(patch(URL + "/" + id + "/parent").with(loggedInAs(role, schoolA))
+							.contentType(MediaType.APPLICATION_JSON)
+							.content("{\"parentUserId\":\"%s\"}".formatted(UUID.randomUUID())))
+					.andExpect(status().isForbidden());
+		}
+	}
+
+	@Test
+	void searchFiltersByQueryAcrossNameAndGuardian() throws Exception {
+		addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+		addAs(schoolA, "Karim", "Nassar", "Grade 4", "Wael Nassar", "+961 70 222 333");
+
+		mockMvc.perform(get(URL).param("query", "chamoun").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].firstName").value("Layla"));
+		mockMvc.perform(get(URL).param("query", "wael").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].firstName").value("Karim"));
+		mockMvc.perform(get(URL).param("query", "nobody").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.length()").value(0));
+	}
+
+	@Test
+	void searchFiltersByStatus() throws Exception {
+		String activeId = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+		Student inactive = Student.builder().schoolId(schoolA).firstName("Karim").lastName("Nassar")
+				.grade("Grade 4").guardianName("Wael Nassar").guardianPhone("+961 70 222 333")
+				.status(StudentStatus.INACTIVE).build();
+		studentRepository.saveAndFlush(inactive);
+
+		mockMvc.perform(get(URL).param("status", "active").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].id").value(activeId));
+		mockMvc.perform(get(URL).param("status", "inactive").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].firstName").value("Karim"));
+		mockMvc.perform(get(URL).param("status", "all").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.length()").value(2));
+	}
+
+	@Test
+	void searchFiltersByGrade() throws Exception {
+		addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+		addAs(schoolA, "Karim", "Nassar", "Grade 4", "Wael Nassar", "+961 70 222 333");
+
+		mockMvc.perform(get(URL).param("grade", "Grade 4").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].firstName").value("Karim"));
+	}
+
+	@Test
+	void searchFiltersByRoute() throws Exception {
+		saveStudentWithRoute(schoolA, "Layla", "Route A");
+		saveStudentWithRoute(schoolA, "Karim", "Route B");
+		saveStudentWithRoute(schoolA, "Maya", null);
+
+		mockMvc.perform(get(URL).param("route", "Route A").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].firstName").value("Layla"));
+		mockMvc.perform(get(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.length()").value(3));
+	}
+
+	@Test
+	void searchIsScopedToTheCallersSchool() throws Exception {
+		addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+		addAs(schoolB, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+
+		mockMvc.perform(get(URL).param("query", "layla").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.length()").value(1));
 	}
 }
