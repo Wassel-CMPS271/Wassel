@@ -40,8 +40,7 @@ public class SchoolSettingsController {
 		return schoolSettingsService.updateTimes(schoolIdOf(admin), request);
 	}
 
-	// TODO (SCRUM-168): this assumes the JWT filter puts the User entity in the security
-	//  context as the principal. If the filter uses a different principal type, change it here.
+	// The auth module's JwtAuthenticationFilter sets the User entity as the principal.
 	private UUID schoolIdOf(User admin) {
 		if (admin == null) {
 			throw new AccessDeniedException("No authenticated school admin");

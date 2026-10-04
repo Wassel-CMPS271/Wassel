@@ -1,49 +1,59 @@
 package com.wassel.backend.auth.service;
 
+import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import com.wassel.backend.auth.config.JwtProperties;
 import com.wassel.backend.users.entity.User;
-import lombok.RequiredArgsConstructor;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Optional;
+import java.util.UUID;
 
-/**
- * Issues and verifies JWT access tokens.
- *
- * <p>Stub only — the real implementation lands in SCRUM-168. Every method fails
- * closed by throwing until then.
- */
 @Service
-@RequiredArgsConstructor
 public class JwtService {
 
 	private final JwtProperties jwtProperties;
 
-	/**
-	 * Creates a signed access token for the given user.
-	 */
+	private final JwtEncoder encoder;
+
+	private final JwtDecoder decoder;
+
+	public JwtService(JwtProperties jwtProperties) {
+		this.jwtProperties = jwtProperties;
+		SecretKey key = new SecretKeySpec(jwtProperties.secret().getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+		this.encoder = new NimbusJwtEncoder(new ImmutableSecret<>(key));
+		this.decoder = NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256).build();
+	}
+
 	public String generateToken(User user) {
-		// TODO (SCRUM-168): pick a JWT library (e.g. jjwt / nimbus-jose-jwt) and build a
-		//  token signed with jwtProperties.secret(), expiring after jwtProperties.expiration().
-		//  Claims should include at least: sub = user id, role, schoolId (tenant isolation).
-		throw new UnsupportedOperationException("JWT generation not implemented yet (SCRUM-168)");
+		Instant now = Instant.now();
+		JwtClaimsSet claims = JwtClaimsSet.builder()
+				.subject(user.getId().toString())
+				.issuedAt(now)
+				.expiresAt(now.plus(jwtProperties.expiration()))
+				.build();
+		return encoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
+				.getTokenValue();
 	}
 
-	/**
-	 * Returns true if the token has a valid signature, is not expired, and belongs to the given user.
-	 */
-	public boolean validateToken(String token, User user) {
-		// TODO (SCRUM-168): verify signature and expiry, check the subject matches the user,
-		//  and reject tokens for users whose account is disabled/suspended.
-		throw new UnsupportedOperationException("JWT validation not implemented yet (SCRUM-168)");
-	}
-
-	/**
-	 * Parses the token and returns its claims.
-	 */
-	public Map<String, Object> extractClaims(String token) {
-		// TODO (SCRUM-168): parse and verify the token, then return its claims.
-		//  Consider returning a typed claims object instead of a raw map.
-		throw new UnsupportedOperationException("JWT claim extraction not implemented yet (SCRUM-168)");
+	/** Empty for any malformed, tampered, wrong-key or expired token. */
+	public Optional<UUID> parseUserId(String token) {
+		try {
+			return Optional.of(UUID.fromString(decoder.decode(token).getSubject()));
+		} catch (JwtException | IllegalArgumentException e) {
+			return Optional.empty();
+		}
 	}
 }
