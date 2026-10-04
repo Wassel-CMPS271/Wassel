@@ -17,6 +17,9 @@ public interface DriverRepository extends JpaRepository<Driver, UUID> {
 
 	Optional<Driver> findBySchoolIdAndId(UUID schoolId, UUID id);
 
+	/** Not school-scoped: the only caller reacts to a user setting a password, before any school is known. */
+	Optional<Driver> findByUserId(UUID userId);
+
 	boolean existsBySchoolIdAndEmailIgnoreCase(UUID schoolId, String email);
 
 	boolean existsBySchoolIdAndPhone(UUID schoolId, String phone);
