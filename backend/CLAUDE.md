@@ -16,6 +16,20 @@ that's the structure this codebase moved away from.
   and sets the `User` entity as the principal, which is what controllers' `@AuthenticationPrincipal
   User` expects. Login failures are one generic 401 (unknown email, wrong password, disabled
   account). No refresh tokens. The app refuses to start if `JWT_SECRET` is under 32 bytes.
+  Two-factor (SCRUM-172): login is two steps and 2FA has no off switch. `POST /api/auth/login` checks
+  the password, emails a 6-digit code through `Mailer` and answers 204 with a pending cookie
+  (`wassel_2fa`, HttpOnly, `SameSite=Strict`, 15 min) and no session. `POST /api/auth/2fa/verify
+  {code}` exchanges the code for the `wassel_token` session and the user body, and
+  `POST /api/auth/2fa/resend` sends a fresh code. The pending token is a random opaque value, not a
+  JWT, and `JwtAuthenticationFilter` only reads `wassel_token`, so it can never act as a session.
+  `entity/LoginCode` (table `login_codes`, one row per user, unique `user_id`) stores only SHA-256
+  hashes of the code and the token. A code lasts 5 minutes and a pending login 15. Five wrong codes
+  end the pending login (the user signs in again). A new login or resend is allowed once per 60
+  seconds (429); a completed login doesn't count towards that. Attempts, used and resend are
+  conditional updates, not read-then-write, so parallel requests can't win twice or get extra
+  guesses. `TwoFactorService.verify` is `noRollbackFor` its two exceptions so the attempt count
+  survives them, which means `AuthService.completeLogin` must never be `@Transactional`. Statuses:
+  wrong or expired code 400, pending login gone 401, too soon 429. Locally, the code is in the log.
   Password flows (SCRUM-169): `POST /api/auth/forgot-password` (always 204; emails a link only
   for an existing, enabled account, at most once per 60 seconds) and `POST /api/auth/password`
   (sets the password from a token, for both first-time set and reset; a bad, expired or used
@@ -25,13 +39,18 @@ that's the structure this codebase moved away from.
   are 10+ characters and at most 72 UTF-8 bytes (BCrypt's limit, `dto/MaxBytes`). After a password
   is set, auth publishes `event/PasswordSetEvent`; other modules listen (drivers does), so auth
   never imports them. `service/Mailer` sends email; its only implementation, `LoggingMailer`,
-  prints the email, link included, to the application log (links point at `FRONTEND_BASE_URL`).
-  **Anyone who can read the logs can take over an account through those links: add an SMTP
-  `Mailer` and limit `LoggingMailer` to the local/test profiles before inviting any real user.**
+  prints the email, link or login code included, to the application log (links point at
+  `FRONTEND_BASE_URL`). **Anyone who can read the logs can take over an account through those links,
+  and can read the 2FA codes, so until there is an SMTP `Mailer` 2FA protects nothing against them:
+  add one and limit `LoggingMailer` to the local/test profiles before inviting any real user.**
+  Until then every login on staging needs someone to read the code out of the log.
   Known limits: a password change does not revoke existing sessions (tokens are stateless); the
   fix is a "tokens valid from" timestamp on `User` checked by `JwtAuthenticationFilter`. And
   anyone who knows an email can call forgot-password once a minute; each new link voids the
-  previous one, so they can keep that person's link from working and fill their inbox.
+  previous one, so they can keep that person's link from working and fill their inbox. Someone who
+  has a user's password can try 5 login codes a minute (about 7,200 a day against a million codes)
+  and, by logging in every minute, keep that user's code from being usable; the fix is account
+  lockout (SCRUM-171, skipped for now).
 - `users` — the `User` entity and `Role` enum, plus `UserRepository`/`UserService` for other
   modules to look up one of their own school's users by id and role (e.g. students, validating
   a parent-link target), and for auth to find users by email and create accounts. The foundational
@@ -108,15 +127,16 @@ DTOs live at the API boundary. Controllers must never return entities directly
 
 - Every endpoint has a `@PreAuthorize` check (`permitAll()` for the public auth routes,
   `isAuthenticated()` for `/me`). The only public routes are `POST /api/auth/login`,
-  `/api/auth/logout`, `/api/auth/forgot-password` and `/api/auth/password`, listed explicitly in
-  `SecurityConfig`.
+  `/api/auth/2fa/verify`, `/api/auth/2fa/resend`, `/api/auth/logout`, `/api/auth/forgot-password`
+  and `/api/auth/password`, listed explicitly in `SecurityConfig`.
 - Auth is a cookie, so CSRF protection relies on `SameSite=Strict` plus the CORS allow-list
   (`CORS_ALLOWED_ORIGINS`). Frontend and backend must be served from the same site, and the
   frontend must call the API with `credentials: "include"`. If the cookie is ever relaxed, turn
   CSRF protection back on.
 - Every query is scoped by `schoolId` (tenant isolation) — never trust a
   school/tenant id from the request; derive it from the authenticated
-  principal. The one exception is `password_tokens`, which is looked up by the token itself.
+  principal. The exceptions are `password_tokens` and `login_codes`, which are looked up by the
+  token itself, before any school is known.
 
 ## Logging
 
