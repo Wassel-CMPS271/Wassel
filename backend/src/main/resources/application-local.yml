@@ -13,6 +13,7 @@ spring:
 jwt:
   secret: ${JWT_SECRET:local-dev-secret-change-me-local-dev-secret-change-me}
   expiration: ${JWT_EXPIRATION:24h}
+  cookie-secure: ${JWT_COOKIE_SECURE:false}
 
 logging:
   level:

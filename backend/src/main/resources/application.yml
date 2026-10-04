@@ -17,3 +17,4 @@ jwt:
   # Must be overridden in every deployed environment.
   secret: ${JWT_SECRET:}
   expiration: ${JWT_EXPIRATION:1h}
+  cookie-secure: ${JWT_COOKIE_SECURE:true}

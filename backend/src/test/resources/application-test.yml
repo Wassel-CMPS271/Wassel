@@ -11,3 +11,4 @@ spring:
 jwt:
   secret: test-secret-test-secret-test-secret-test-secret
   expiration: 1h
+  cookie-secure: false
