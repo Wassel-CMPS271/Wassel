@@ -180,18 +180,22 @@ public class GlobalExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
 	}
 
+	// The three login-code handlers log because repeated wrong codes are what a guessing attempt looks like.
 	@ExceptionHandler(InvalidCodeException.class)
 	public ProblemDetail handleInvalidCode(InvalidCodeException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
 	}
 
 	@ExceptionHandler(LoginExpiredException.class)
 	public ProblemDetail handleLoginExpired(LoginExpiredException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
 	}
 
 	@ExceptionHandler(CodeCooldownException.class)
 	public ProblemDetail handleCodeCooldown(CodeCooldownException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
 	}
 
