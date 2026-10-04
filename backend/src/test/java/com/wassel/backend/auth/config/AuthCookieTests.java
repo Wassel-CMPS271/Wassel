@@ -23,6 +23,30 @@ class AuthCookieTests {
 	}
 
 	@Test
+	void thePendingCookieCarriesTheSameProtectionsAndLastsFifteenMinutes() {
+		String pending = cookie(true).createPending("t").toString();
+
+		assertThat(pending, containsString("wassel_2fa=t"));
+		assertThat(pending, containsString("HttpOnly"));
+		assertThat(pending, containsString("SameSite=Strict"));
+		assertThat(pending, containsString("Secure"));
+		assertThat(pending, containsString("Max-Age=900"));
+		assertThat(cookie(false).createPending("t").toString(), not(containsString("Secure")));
+	}
+
+	@Test
+	void clearingThePendingCookieKeepsTheSamePathAndFlags() {
+		String cleared = cookie(true).clearPending().toString();
+
+		assertThat(cleared, containsString("wassel_2fa=;"));
+		assertThat(cleared, containsString("Path=/"));
+		assertThat(cleared, containsString("HttpOnly"));
+		assertThat(cleared, containsString("SameSite=Strict"));
+		assertThat(cleared, containsString("Secure"));
+		assertThat(cleared, containsString("Max-Age=0"));
+	}
+
+	@Test
 	void clearingKeepsTheSamePathAndFlagsSoTheBrowserActuallyDeletesIt() {
 		String cleared = cookie(true).clear().toString();
 

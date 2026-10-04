@@ -29,7 +29,10 @@ that's the structure this codebase moved away from.
   conditional updates, not read-then-write, so parallel requests can't win twice or get extra
   guesses. `TwoFactorService.verify` is `noRollbackFor` its two exceptions so the attempt count
   survives them, which means `AuthService.completeLogin` must never be `@Transactional`. Statuses:
-  wrong or expired code 400, pending login gone 401, too soon 429. Locally, the code is in the log.
+  wrong or expired code 400, pending login gone 401, too soon 429. Logout clears both cookies.
+  `TwoFactorService` logs each wrong code at WARN with the user id and attempt number (never the
+  code), because the exception handler's line names no user and repeated wrong codes are what a
+  guessing attempt looks like. Locally, the code is in the log.
   Password flows (SCRUM-169): `POST /api/auth/forgot-password` (always 204; emails a link only
   for an existing, enabled account, at most once per 60 seconds) and `POST /api/auth/password`
   (sets the password from a token, for both first-time set and reset; a bad, expired or used

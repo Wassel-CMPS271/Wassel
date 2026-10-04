@@ -19,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
 import java.util.List;
@@ -322,6 +323,57 @@ class TwoFactorServiceTests {
 
 		assertEquals(1, results.stream().filter(won -> won).count());
 		verify(mailer, times(2)).send(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void aDisabledAccountCannotGetANewCode() {
+		User user = user();
+		String pending = twoFactor.start(user);
+		user.setEnabled(false);
+		userRepository.save(user);
+		jdbc.update("update login_codes set sent_at = ?", OffsetDateTime.now().minusSeconds(61));
+
+		assertThrows(LoginExpiredException.class, () -> twoFactor.resend(pending));
+
+		verify(mailer, times(1)).send(anyString(), anyString(), anyString());
+	}
+
+	private long codeLifetimeInSeconds() {
+		return jdbc.queryForObject("select sent_at, expires_at from login_codes",
+				(rs, row) -> Duration.between(rs.getObject(1, OffsetDateTime.class),
+						rs.getObject(2, OffsetDateTime.class)).toSeconds());
+	}
+
+	@Test
+	void aCodeLastsFiveMinutesFromEachSend() {
+		String pending = twoFactor.start(user());
+		assertEquals(300, codeLifetimeInSeconds());
+
+		jdbc.update("update login_codes set sent_at = ?", OffsetDateTime.now().minusSeconds(61));
+		twoFactor.resend(pending);
+
+		assertEquals(300, codeLifetimeInSeconds());
+	}
+
+	@Test
+	void aPendingLoginIsStillOpenJustBeforeFifteenMinutes() {
+		String pending = twoFactor.start(user());
+		jdbc.update("update login_codes set created_at = ?, expires_at = ?", OffsetDateTime.now().minusMinutes(14),
+				OffsetDateTime.now().plusMinutes(1));
+
+		twoFactor.verify(pending, lastCode());
+	}
+
+	@Test
+	void theCooldownStillHoldsJustBeforeAMinute() {
+		User user = user();
+		String pending = twoFactor.start(user);
+		jdbc.update("update login_codes set sent_at = ?", OffsetDateTime.now().minusSeconds(55));
+
+		assertThrows(CodeCooldownException.class, () -> twoFactor.start(user));
+		assertThrows(CodeCooldownException.class, () -> twoFactor.resend(pending));
+
+		verify(mailer, times(1)).send(anyString(), anyString(), anyString());
 	}
 
 	private static List<Boolean> runTogether(Callable<Boolean> attempt) throws Exception {

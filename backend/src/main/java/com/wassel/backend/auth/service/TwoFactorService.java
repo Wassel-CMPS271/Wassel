@@ -7,6 +7,7 @@ import com.wassel.backend.auth.exception.LoginExpiredException;
 import com.wassel.backend.auth.repository.LoginCodeRepository;
 import com.wassel.backend.users.entity.User;
 import com.wassel.backend.users.service.UserService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,12 +20,14 @@ import java.time.Instant;
 import java.util.Optional;
 
 /** The emailed one-time code that completes a login after the password step. */
+@Slf4j
 @Service
 public class TwoFactorService {
 
 	private static final Duration CODE_LIFETIME = Duration.ofMinutes(5);
 
-	private static final Duration PENDING_LIFETIME = Duration.ofMinutes(15);
+	/** How long after the password step the code step stays open. The pending cookie lives exactly as long. */
+	public static final Duration PENDING_LIFETIME = Duration.ofMinutes(15);
 
 	private static final Duration COOLDOWN = Duration.ofSeconds(60);
 
@@ -68,6 +71,8 @@ public class TwoFactorService {
 		}
 		catch (DataIntegrityViolationException ex) {
 			// Parallel logins for one user: the unique user_id is the backstop for the cooldown check above.
+			// Logged with its cause so any other constraint failure can't hide behind "wait a minute".
+			log.warn("Login code for user {} not stored: {}", user.getId(), ex.getMostSpecificCause().getMessage());
 			throw new CodeCooldownException();
 		}
 		// After the flush, so a request that lost the race above sends nothing.
@@ -105,6 +110,7 @@ public class TwoFactorService {
 		Instant now = Instant.now();
 		LoginCode stored = findLive(pendingToken, now);
 		if (codeRepository.recordAttempt(stored.getId(), MAX_ATTEMPTS) == 0) {
+			log.warn("Login code for user {} was used or ran out of attempts in a parallel request", stored.getUserId());
 			throw new LoginExpiredException();
 		}
 
@@ -112,7 +118,11 @@ public class TwoFactorService {
 				PasswordService.hash(code == null ? "" : code).getBytes(StandardCharsets.UTF_8),
 				stored.getCodeHash().getBytes(StandardCharsets.UTF_8));
 		if (!matches || !stored.getExpiresAt().isAfter(now)) {
-			throw stored.getAttempts() + 1 >= MAX_ATTEMPTS ? new LoginExpiredException() : new InvalidCodeException();
+			// The line the exception handler logs names no user; this one shows whose code is being guessed.
+			int attempt = stored.getAttempts() + 1;
+			log.warn("Wrong or expired login code for user {} (attempt {} of {})", stored.getUserId(), attempt,
+					MAX_ATTEMPTS);
+			throw attempt >= MAX_ATTEMPTS ? new LoginExpiredException() : new InvalidCodeException();
 		}
 		if (codeRepository.markUsed(stored.getId(), now) == 0) {
 			throw new LoginExpiredException();

@@ -24,13 +24,17 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -119,6 +123,9 @@ class AuthControllerTests {
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.detail").value(BAD_LOGIN_DETAIL))
 				.andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+		// A failed password step must not reach the code step: no email to the account, nothing stored.
+		verifyNoInteractions(mailer);
+		assertEquals(0, loginCodeRepository.count());
 	}
 
 	@Test
@@ -272,7 +279,9 @@ class AuthControllerTests {
 		mockMvc.perform(post("/api/auth/logout"))
 				.andExpect(status().isNoContent())
 				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString(COOKIE + "=;")))
-				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")));
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")))
+				.andExpect(header().stringValues(HttpHeaders.SET_COOKIE,
+						hasItem(allOf(startsWith(PENDING_COOKIE + "=;"), containsString("Max-Age=0")))));
 	}
 
 	@Test

@@ -1,5 +1,6 @@
 package com.wassel.backend.auth.config;
 
+import com.wassel.backend.auth.service.TwoFactorService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -23,9 +24,6 @@ public class AuthCookie {
 	/** Holds the pending-login token between the password step and the code step. It is not a session. */
 	public static final String PENDING_NAME = "wassel_2fa";
 
-	// How long the user has to enter the code; keep in step with TwoFactorService's pending lifetime.
-	private static final Duration PENDING_MAX_AGE = Duration.ofMinutes(15);
-
 	private final JwtProperties jwtProperties;
 
 	public ResponseCookie create(String token) {
@@ -41,7 +39,7 @@ public class AuthCookie {
 	}
 
 	public ResponseCookie createPending(String pendingToken) {
-		return base(PENDING_NAME, pendingToken).maxAge(PENDING_MAX_AGE).build();
+		return base(PENDING_NAME, pendingToken).maxAge(TwoFactorService.PENDING_LIFETIME).build();
 	}
 
 	public ResponseCookie clearPending() {

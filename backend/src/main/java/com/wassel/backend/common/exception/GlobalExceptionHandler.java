@@ -165,6 +165,7 @@ public class GlobalExceptionHandler {
 	// Same shape again, keyed by "email", for an account email that is already taken.
 	@ExceptionHandler(EmailAlreadyInUseException.class)
 	public ProblemDetail handleEmailAlreadyInUse(EmailAlreadyInUseException ex) {
+		logRejected(ex);
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Email already in use");
 		problem.setProperty("errors", Map.of("email", ex.getMessage()));
 		return problem;
@@ -172,15 +173,16 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(InvalidCredentialsException.class)
 	public ProblemDetail handleInvalidCredentials(InvalidCredentialsException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
 	}
 
 	@ExceptionHandler(InvalidPasswordTokenException.class)
 	public ProblemDetail handleInvalidPasswordToken(InvalidPasswordTokenException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
 	}
 
-	// The three login-code handlers log because repeated wrong codes are what a guessing attempt looks like.
 	@ExceptionHandler(InvalidCodeException.class)
 	public ProblemDetail handleInvalidCode(InvalidCodeException ex) {
 		logRejected(ex);

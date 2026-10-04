@@ -9,6 +9,7 @@ import com.wassel.backend.auth.dto.VerifyCodeRequest;
 import com.wassel.backend.auth.service.AuthService;
 import com.wassel.backend.auth.service.AuthService.LoginResult;
 import com.wassel.backend.auth.service.PasswordService;
+import com.wassel.backend.auth.service.TwoFactorService;
 import com.wassel.backend.users.entity.User;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -36,6 +37,8 @@ public class AuthController {
 
 	private final PasswordService passwordService;
 
+	private final TwoFactorService twoFactorService;
+
 	private final AuthCookie authCookie;
 
 	/** Step one of two: no session yet. The emailed code is exchanged for the session by {@link #verify}. */
@@ -62,7 +65,7 @@ public class AuthController {
 	@PostMapping("/2fa/resend")
 	@PreAuthorize("permitAll()")
 	public ResponseEntity<Void> resend(HttpServletRequest http) {
-		authService.resendCode(authCookie.readPending(http).orElse(null));
+		twoFactorService.resend(authCookie.readPending(http).orElse(null));
 		return ResponseEntity.noContent().build();
 	}
 
@@ -71,6 +74,7 @@ public class AuthController {
 	public ResponseEntity<Void> logout() {
 		return ResponseEntity.noContent()
 				.header(HttpHeaders.SET_COOKIE, authCookie.clear().toString())
+				.header(HttpHeaders.SET_COOKIE, authCookie.clearPending().toString())
 				.build();
 	}
 

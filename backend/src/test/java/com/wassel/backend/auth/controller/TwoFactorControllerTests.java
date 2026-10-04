@@ -186,6 +186,14 @@ class TwoFactorControllerTests {
 	}
 
 	@Test
+	void aCodePastedWithSurroundingSpacesIsAccepted() throws Exception {
+		saveUser();
+		Cookie pending = pendingCookie(login());
+
+		verifyCode(pending, " " + lastCode() + " ").andExpect(status().isOk());
+	}
+
+	@Test
 	void aSecondLoginWithinAMinuteIsTooManyRequestsAndSendsNoSecondCode() throws Exception {
 		saveUser();
 		login();

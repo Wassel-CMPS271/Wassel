@@ -17,6 +17,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.util.List;
@@ -103,9 +104,17 @@ class HeadOfTransportControllerTests {
 						.content("{\"token\":\"%s\",\"password\":\"a-brand-new-password\"}".formatted(matcher.group(1))))
 				.andExpect(status().isNoContent());
 
-		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+		MvcResult login = mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
 						.content("{\"email\":\"hot@wassel.test\",\"password\":\"a-brand-new-password\"}"))
-				.andExpect(status().isNoContent());
+				.andExpect(status().isNoContent()).andReturn();
+		verify(mailer, atLeastOnce()).send(anyString(), anyString(), mail.capture());
+		Matcher code = Pattern.compile("\\b(\\d{6})\\b").matcher(mail.getValue());
+		assertTrue(code.find());
+
+		mockMvc.perform(post("/api/auth/2fa/verify").cookie(login.getResponse().getCookie("wassel_2fa"))
+						.contentType(MediaType.APPLICATION_JSON).content("{\"code\":\"%s\"}".formatted(code.group(1))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.role").value("HEAD_OF_TRANSPORT"));
 	}
 
 	@Test
