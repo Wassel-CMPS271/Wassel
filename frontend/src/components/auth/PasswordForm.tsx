@@ -70,18 +70,21 @@ export function PasswordForm({ mode, token }: PasswordFormProps) {
 
     try {
       await savePassword(token, password);
+      // Stay disabled after success: the page is still navigating, and a second
+      // submit would only hit the used token and flash an error.
       router.replace("/login?passwordSet=1");
     } catch (error) {
+      setIsSubmitting(false);
       if (error instanceof ApiValidationError) {
-        setPasswordError(error.errors.password);
+        // A message for a field this form doesn't show must not vanish.
+        if (error.errors.password) setPasswordError(error.errors.password);
+        else setFormError(GENERIC_ERROR);
       } else if (error instanceof ApiError && error.status === 400) {
         // One generic answer for a bad, expired or already used link.
         setFormError(error.message);
       } else {
         setFormError(GENERIC_ERROR);
       }
-    } finally {
-      setIsSubmitting(false);
     }
   }
 

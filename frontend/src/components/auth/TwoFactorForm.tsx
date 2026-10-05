@@ -26,6 +26,7 @@ export function TwoFactorForm() {
   const [isResending, setIsResending] = useState(false);
   const [resendLocked, setResendLocked] = useState(true);
   const lockTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const codeInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     lockTimer.current = setTimeout(() => setResendLocked(false), RESEND_LOCK_MS);
@@ -49,20 +50,27 @@ export function TwoFactorForm() {
 
     try {
       const user = await verifyCode(trimmed);
+      // Stay disabled after success: the page is still navigating, and a second
+      // submit would be refused (the code is used and the pending cookie is gone),
+      // and its 401 would race this redirect and bounce a signed-in user to /login.
       router.replace(ROLE_HOME[user.role]);
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        // The pending login is gone. Leave the button disabled while leaving.
+        router.replace("/login?expired=1");
+        return;
+      }
+      setIsSubmitting(false);
       if (error instanceof ApiValidationError) {
-        setCodeError(error.errors.code);
+        // A message for a field this form doesn't show must not vanish.
+        if (error.errors.code) setCodeError(error.errors.code);
+        else setFormError(GENERIC_ERROR);
       } else if (error instanceof ApiError && error.status === 400) {
         // Wrong or expired code: stay and retry, or ask for a new one.
         setCodeError(error.message);
-      } else if (error instanceof ApiError && error.status === 401) {
-        router.replace("/login?expired=1");
       } else {
         setFormError(GENERIC_ERROR);
       }
-    } finally {
-      setIsSubmitting(false);
     }
   }
 
@@ -77,6 +85,8 @@ export function TwoFactorForm() {
       setResendLocked(true);
       clearTimeout(lockTimer.current);
       lockTimer.current = setTimeout(() => setResendLocked(false), RESEND_LOCK_MS);
+      // The button disables itself, which would drop keyboard focus to the page.
+      codeInput.current?.focus();
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         router.replace("/login?expired=1");
@@ -102,6 +112,7 @@ export function TwoFactorForm() {
         }}
       >
         <Input
+          ref={codeInput}
           label="Verification code"
           name="verificationCode"
           inputMode="numeric"
