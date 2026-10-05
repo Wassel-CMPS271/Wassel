@@ -6,10 +6,18 @@ export const metadata: Metadata = {
   title: "Set password",
 };
 
-export default function SetPasswordPage() {
+export default async function SetPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string | string[] }>;
+}) {
+  const { token } = await searchParams;
+  // Next gives an array for a repeated ?token=; a blank one counts as missing.
+  const value = (Array.isArray(token) ? token[0] : token)?.trim();
+
   return (
     <AuthShell headline="Welcome aboard.">
-      <PasswordForm mode="setup" />
+      <PasswordForm mode="setup" token={value || undefined} />
     </AuthShell>
   );
 }

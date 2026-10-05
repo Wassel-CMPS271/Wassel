@@ -1,36 +1,24 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Wassel frontend
 
-## Getting Started
+Next.js 15 (App Router), React 19, Tailwind v4. The design system and the conventions for API calls and route protection are in [CLAUDE.md](./CLAUDE.md). The root [README](../README.md) covers running the whole stack, including staging.
 
-First, run the development server:
+## Scripts
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3000
+npm run lint
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+CI runs `lint` and `build`. There is no test runner yet.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Running against the real backend
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Start PostgreSQL and the backend with the `local` profile, as in the root README.
+2. `npm run dev`. The API base URL is `NEXT_PUBLIC_API_BASE_URL` and defaults to `http://localhost:8080`, so a `.env.local` is only needed to point somewhere else. It is baked in at build time.
+3. Sign in at <http://localhost:3000/login> with the seeded admin (`ADMIN_EMAIL` and `ADMIN_PASSWORD`, defaults in `.env.example`). Signing in has two steps: the password, then a 6-digit code. Locally the code is not emailed. It is printed in the backend console, in the line starting `Email to`, which is also where invite and password-reset links appear.
 
-## Learn More
+The session cookies are `HttpOnly` and `SameSite=Strict`, so the frontend and the API must be served from the same site (`localhost` on different ports counts as one).
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Only the admin is seeded. To try the other roles, invite them: the admin invites a head of transport (`POST /api/admin/head-of-transport`), who invites parents and drivers. Each invite email contains a `/set-password?token=...` link, printed in the backend console.

@@ -6,10 +6,19 @@ export const metadata: Metadata = {
   title: "Sign in",
 };
 
-export default function LoginPage() {
+// Read here, not with useSearchParams in the form, which would need a Suspense
+// boundary to build.
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ expired?: string; passwordSet?: string }>;
+}) {
+  const { expired, passwordSet } = await searchParams;
+  const notice = expired ? "expired" : passwordSet ? "passwordSet" : undefined;
+
   return (
     <AuthShell headline="Welcome back.">
-      <LoginForm />
+      <LoginForm notice={notice} />
     </AuthShell>
   );
 }

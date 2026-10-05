@@ -4,6 +4,8 @@ import type { ComponentType, CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MotionConfig, motion } from "framer-motion";
+import { RoleGuard } from "@/components/auth/RoleGuard";
+import { UserBlock } from "@/components/auth/UserBlock";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { CalendarIcon, ClockIcon } from "@/components/ui/icons";
 import { colors, darkPageBackground, darkTheme, radius, sizing, spacing } from "@/styles/tokens";
@@ -20,9 +22,6 @@ const NAV_ITEMS: NavItem[] = [
   { label: "School calendar", href: "/admin/calendar", enabled: true, Icon: CalendarIcon },
 ];
 
-// Placeholder until SCRUM-176 (real auth) lands.
-const CURRENT_USER = { name: "School Admin", role: "Admin", initial: "A" };
-
 // Colors go through CSS variables so Tailwind's hover: variants can
 // override them — inline color/background would always win over :hover.
 function navLinkVars(isActive: boolean): CSSProperties {
@@ -36,11 +35,15 @@ function navLinkVars(isActive: boolean): CSSProperties {
   } as CSSProperties;
 }
 
-export default function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <RoleGuard role="ADMIN">
+      <AdminShell>{children}</AdminShell>
+    </RoleGuard>
+  );
+}
+
+function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
@@ -162,32 +165,7 @@ export default function AdminLayout({
               borderTop: `1px solid ${darkTheme.surface.cardBorder}`,
             }}
           >
-            <div className="flex items-center" style={{ gap: spacing.sm }}>
-              <div
-                aria-hidden="true"
-                className="flex items-center justify-center flex-shrink-0 rounded-full font-semibold text-sm"
-                style={{
-                  width: "34px",
-                  height: "34px",
-                  backgroundColor: "rgba(26, 86, 255, 0.2)",
-                  border: `1px solid ${darkTheme.surface.inputBorder}`,
-                  color: colors.primary[300],
-                }}
-              >
-                {CURRENT_USER.initial}
-              </div>
-              <div className="min-w-0">
-                <div
-                  className="text-sm font-medium truncate"
-                  style={{ color: darkTheme.text.primary }}
-                >
-                  {CURRENT_USER.name}
-                </div>
-                <div className="text-xs truncate" style={{ color: darkTheme.text.muted }}>
-                  {CURRENT_USER.role}
-                </div>
-              </div>
-            </div>
+            <UserBlock />
           </div>
         </aside>
 

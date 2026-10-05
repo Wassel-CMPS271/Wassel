@@ -3,6 +3,8 @@
 import type { ComponentType } from "react";
 import Link from "next/link";
 import { MotionConfig } from "framer-motion";
+import { RoleGuard } from "@/components/auth/RoleGuard";
+import { UserBlock } from "@/components/auth/UserBlock";
 import { DriverIcon, StudentIcon, VehicleIcon } from "@/components/ui/icons";
 import { colors, darkPageBackground, darkTheme, radius, spacing } from "@/styles/tokens";
 
@@ -19,14 +21,15 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Profile", Icon: DriverIcon },
 ];
 
-// Placeholder until SCRUM-176 (real auth) lands.
-const CURRENT_USER = { name: "Driver", role: "Driver", initial: "D" };
+export default function DriverLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <RoleGuard role="DRIVER">
+      <DriverShell>{children}</DriverShell>
+    </RoleGuard>
+  );
+}
 
-export default function DriverLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+function DriverShell({ children }: { children: React.ReactNode }) {
   return (
     <MotionConfig reducedMotion="user">
       <div
@@ -117,32 +120,7 @@ export default function DriverLayout({
               borderTop: `1px solid ${darkTheme.surface.cardBorder}`,
             }}
           >
-            <div className="flex items-center" style={{ gap: spacing.sm }}>
-              <div
-                aria-hidden="true"
-                className="flex items-center justify-center flex-shrink-0 rounded-full font-semibold text-sm"
-                style={{
-                  width: "34px",
-                  height: "34px",
-                  backgroundColor: "rgba(26, 86, 255, 0.2)",
-                  border: `1px solid ${darkTheme.surface.inputBorder}`,
-                  color: colors.primary[300],
-                }}
-              >
-                {CURRENT_USER.initial}
-              </div>
-              <div className="min-w-0">
-                <div
-                  className="text-sm font-medium truncate"
-                  style={{ color: darkTheme.text.primary }}
-                >
-                  {CURRENT_USER.name}
-                </div>
-                <div className="text-xs truncate" style={{ color: darkTheme.text.muted }}>
-                  {CURRENT_USER.role}
-                </div>
-              </div>
-            </div>
+            <UserBlock />
           </div>
         </aside>
 
