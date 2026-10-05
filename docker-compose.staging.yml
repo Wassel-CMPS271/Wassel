@@ -37,6 +37,12 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
+      # Real email (SmtpMailer). Compose refuses to start without the account, because the backend
+      # would otherwise start and fail on the first login.
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:?Set MAIL_USERNAME in .env.staging}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?Set MAIL_PASSWORD in .env.staging}
     depends_on:
       postgres:
         condition: service_healthy

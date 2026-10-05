@@ -59,9 +59,9 @@ Wassel is a web-based school transport management platform for private schools, 
 | Backend    | `http://localhost:8080` |
 | Frontend   | `http://localhost:3000` |
 
-There is no real email delivery yet. Invite and password-reset emails, including their
-links, are printed in the backend console (look for `Email to`). On staging they are in
-`docker compose -f docker-compose.staging.yml logs backend`.
+Locally no email is sent. Login codes, invite emails and password-reset links are printed in the
+backend console (look for `Email to`), so copy them from there. Staging sends real email; see
+[Email on staging](#email-on-staging).
 
 To stop the database: `docker compose down` (add `-v` to also delete its data).
 
@@ -79,7 +79,9 @@ demos and pre-release verification.
    ```
 
    Then edit `.env.staging` and set real, generated values for `DB_PASSWORD` and
-   `JWT_SECRET` — don't reuse the local-dev defaults.
+   `JWT_SECRET` — don't reuse the local-dev defaults — and the mail account (see
+   [Email on staging](#email-on-staging)). Compose will not start the backend without
+   `MAIL_USERNAME` and `MAIL_PASSWORD`.
 
 2. **Build and start the full stack** (Postgres, backend, frontend):
 
@@ -96,6 +98,29 @@ demos and pre-release verification.
 To stop the stack: `docker compose -f docker-compose.staging.yml down` (add `-v` to
 also delete the staging database's data). Rebuild after code changes with the same
 `up -d --build` command.
+
+### Email on staging
+
+Staging sends real email (login codes, set-password and reset links) through Gmail. Nothing is
+printed in the logs.
+
+- **Get an app password.** Use a Gmail account with 2-Step Verification turned on, then create an
+  app password at <https://myaccount.google.com/apppasswords> (not the account's normal password).
+  Put the address in `MAIL_USERNAME` and the password in `MAIL_PASSWORD` in `.env.staging`, as one
+  run of 16 letters with no spaces. Keep values to letters and digits: a `$`, space or quote in a
+  `.env.staging` value is misread. Never paste the password into chat or commit it; `.env.staging` is
+  gitignored.
+- **Every account you test with needs an inbox you can open,** because its login code goes there:
+  the admin you seed (`ADMIN_EMAIL`), and every driver, parent and head of transportation you
+  invite. Gmail ignores dots and `+tags`, so `you+driver@gmail.com` and `you+parent@gmail.com` all
+  reach `you@gmail.com`.
+- **If you only need codes while developing,** skip staging and run the `local` profile as above:
+  no setup, and the codes are in the console.
+- **A failed send** (wrong password, Gmail unreachable) answers a generic `500` and leaves nothing
+  behind, so just try again. The cause is an `ERROR` line in the backend logs.
+- **Limits.** Gmail allows about 500 emails a day, which is enough for this project and not for real
+  users; moving to another provider only changes these settings. Each login takes a second or so
+  longer than before because the email is sent during the request.
 
 ## Logs
 

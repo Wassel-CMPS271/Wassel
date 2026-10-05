@@ -162,7 +162,7 @@ class PasswordControllerTests {
 
 		setPassword(lastToken(), NEW_PASSWORD).andExpect(status().isNoContent());
 
-		login("new@wassel.test", NEW_PASSWORD).andExpect(status().isOk());
+		login("new@wassel.test", NEW_PASSWORD).andExpect(status().isNoContent());
 		assertEquals(List.of(new PasswordSetEvent(user.getId())),
 				applicationEvents.stream(PasswordSetEvent.class).toList());
 	}
@@ -177,7 +177,7 @@ class PasswordControllerTests {
 		setPassword(lastToken(), NEW_PASSWORD).andExpect(status().isNoContent());
 
 		login("par@wassel.test", OLD_PASSWORD).andExpect(status().isUnauthorized());
-		login("par@wassel.test", NEW_PASSWORD).andExpect(status().isOk());
+		login("par@wassel.test", NEW_PASSWORD).andExpect(status().isNoContent());
 	}
 
 	@Test
@@ -197,7 +197,7 @@ class PasswordControllerTests {
 		setPassword(token, NEW_PASSWORD).andExpect(status().isNoContent());
 
 		assertInvalidLink(setPassword(token, "another-new-password"));
-		login("new@wassel.test", NEW_PASSWORD).andExpect(status().isOk());
+		login("new@wassel.test", NEW_PASSWORD).andExpect(status().isNoContent());
 	}
 
 	@Test

@@ -1,7 +1,10 @@
 package com.wassel.backend.common.exception;
 
+import com.wassel.backend.auth.exception.CodeCooldownException;
+import com.wassel.backend.auth.exception.InvalidCodeException;
 import com.wassel.backend.auth.exception.InvalidCredentialsException;
 import com.wassel.backend.auth.exception.InvalidPasswordTokenException;
+import com.wassel.backend.auth.exception.LoginExpiredException;
 import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
@@ -162,6 +165,7 @@ public class GlobalExceptionHandler {
 	// Same shape again, keyed by "email", for an account email that is already taken.
 	@ExceptionHandler(EmailAlreadyInUseException.class)
 	public ProblemDetail handleEmailAlreadyInUse(EmailAlreadyInUseException ex) {
+		logRejected(ex);
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Email already in use");
 		problem.setProperty("errors", Map.of("email", ex.getMessage()));
 		return problem;
@@ -169,12 +173,32 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(InvalidCredentialsException.class)
 	public ProblemDetail handleInvalidCredentials(InvalidCredentialsException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
 	}
 
 	@ExceptionHandler(InvalidPasswordTokenException.class)
 	public ProblemDetail handleInvalidPasswordToken(InvalidPasswordTokenException ex) {
+		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidCodeException.class)
+	public ProblemDetail handleInvalidCode(InvalidCodeException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+	}
+
+	@ExceptionHandler(LoginExpiredException.class)
+	public ProblemDetail handleLoginExpired(LoginExpiredException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
+	}
+
+	@ExceptionHandler(CodeCooldownException.class)
+	public ProblemDetail handleCodeCooldown(CodeCooldownException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
 	}
 
 	// Thrown by @PreAuthorize checks inside the MVC layer.

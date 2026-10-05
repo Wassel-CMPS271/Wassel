@@ -22,6 +22,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -316,8 +317,16 @@ class DriverControllerTests {
 
 		mockMvc.perform(get(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
 				.andExpect(jsonPath("$[0].status").value("active"));
-		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+		MvcResult login = mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
 						.content("{\"email\":\"ahmad.khalil@example.com\",\"password\":\"%s\"}".formatted(NEW_PASSWORD)))
+				.andExpect(status().isNoContent()).andReturn();
+		ArgumentCaptor<String> mail = ArgumentCaptor.forClass(String.class);
+		verify(mailer, atLeastOnce()).send(anyString(), anyString(), mail.capture());
+		Matcher code = Pattern.compile("\\b(\\d{6})\\b").matcher(mail.getValue());
+		assertTrue(code.find());
+
+		mockMvc.perform(post("/api/auth/2fa/verify").cookie(login.getResponse().getCookie("wassel_2fa"))
+						.contentType(MediaType.APPLICATION_JSON).content("{\"code\":\"%s\"}".formatted(code.group(1))))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.role").value("DRIVER"));
 	}

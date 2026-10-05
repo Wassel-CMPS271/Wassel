@@ -1,11 +1,14 @@
 package com.wassel.backend.auth.controller;
 
+import com.wassel.backend.auth.repository.LoginCodeRepository;
+import com.wassel.backend.auth.service.Mailer;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.entity.User;
 import com.wassel.backend.users.repository.UserRepository;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -13,17 +16,29 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -34,6 +49,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthControllerTests {
 
 	private static final String COOKIE = "wassel_token";
+
+	private static final String PENDING_COOKIE = "wassel_2fa";
+
+	private static final Pattern CODE = Pattern.compile("\\b(\\d{6})\\b");
 
 	private static final String PASSWORD = "correct-horse-battery";
 
@@ -50,8 +69,15 @@ class AuthControllerTests {
 	@Autowired
 	private PasswordEncoder passwordEncoder;
 
+	@Autowired
+	private LoginCodeRepository loginCodeRepository;
+
+	@MockitoBean
+	private Mailer mailer;
+
 	@BeforeEach
 	void cleanDatabase() {
+		loginCodeRepository.deleteAll();
 		userRepository.deleteAll();
 	}
 
@@ -65,11 +91,30 @@ class AuthControllerTests {
 				.content("{\"email\":\"%s\",\"password\":\"%s\"}".formatted(email, password))).andReturn();
 	}
 
+	private String lastCode() {
+		ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+		verify(mailer, atLeastOnce()).send(anyString(), anyString(), body.capture());
+		Matcher matcher = CODE.matcher(body.getValue());
+		assertTrue(matcher.find(), "no code in the email");
+		return matcher.group(1);
+	}
+
+	private static String cookieValue(MvcResult result, String name) {
+		String header = result.getResponse().getHeaders(HttpHeaders.SET_COOKIE).stream()
+				.filter(candidate -> candidate.startsWith(name + "=")).findFirst().orElseThrow();
+		return header.substring((name + "=").length(), header.indexOf(';'));
+	}
+
+	/** Both steps of a login: the password, then the emailed code. Returns the session token. */
 	private String loginAndGetToken(String email) throws Exception {
-		MvcResult result = login(email, PASSWORD);
-		assertEquals(200, result.getResponse().getStatus());
-		String header = result.getResponse().getHeader(HttpHeaders.SET_COOKIE);
-		return header.substring((COOKIE + "=").length(), header.indexOf(';'));
+		MvcResult first = login(email, PASSWORD);
+		assertEquals(204, first.getResponse().getStatus());
+		MvcResult second = mockMvc.perform(post("/api/auth/2fa/verify")
+				.cookie(new Cookie(PENDING_COOKIE, cookieValue(first, PENDING_COOKIE)))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"code\":\"%s\"}".formatted(lastCode())))
+				.andReturn();
+		assertEquals(200, second.getResponse().getStatus());
+		return cookieValue(second, COOKIE);
 	}
 
 	private void assertGenericLoginFailure(String email, String password) throws Exception {
@@ -78,33 +123,33 @@ class AuthControllerTests {
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.detail").value(BAD_LOGIN_DETAIL))
 				.andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+		// A failed password step must not reach the code step: no email to the account, nothing stored.
+		verifyNoInteractions(mailer);
+		assertEquals(0, loginCodeRepository.count());
 	}
 
 	@Test
-	void loginReturnsTheUserAndSetsAnHttpOnlyStrictCookie() throws Exception {
-		User user = saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
+	void loginSetsOnlyThePendingCookieAndNoSession() throws Exception {
+		saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
 
 		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
 						.content("{\"email\":\"hot@wassel.test\",\"password\":\"%s\"}".formatted(PASSWORD)))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.id").value(user.getId().toString()))
-				.andExpect(jsonPath("$.email").value("hot@wassel.test"))
-				.andExpect(jsonPath("$.role").value("HEAD_OF_TRANSPORT"))
-				.andExpect(jsonPath("$.schoolId").value(school.toString()))
-				.andExpect(jsonPath("$.token").doesNotExist())
-				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString(COOKIE + "=")))
+				.andExpect(status().isNoContent())
+				.andExpect(content().string(""))
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString(PENDING_COOKIE + "=")))
 				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("HttpOnly")))
 				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("SameSite=Strict")))
 				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Path=/")))
-				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=3600")))
-				.andExpect(header().string(HttpHeaders.SET_COOKIE, not(containsString("Secure"))));
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=900")))
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, not(containsString("Secure"))))
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, not(containsString(COOKIE + "="))));
 	}
 
 	@Test
 	void emailMatchingIgnoresCaseAndSurroundingSpaces() throws Exception {
 		saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
 
-		assertEquals(200, login("  HoT@Wassel.TEST ", PASSWORD).getResponse().getStatus());
+		assertEquals(204, login("  HoT@Wassel.TEST ", PASSWORD).getResponse().getStatus());
 	}
 
 	@Test
@@ -153,7 +198,7 @@ class AuthControllerTests {
 		mockMvc.perform(post("/api/auth/login").cookie(new Cookie(COOKIE, "garbage"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{\"email\":\"hot@wassel.test\",\"password\":\"%s\"}".formatted(PASSWORD)))
-				.andExpect(status().isOk());
+				.andExpect(status().isNoContent());
 	}
 
 	@Test
@@ -234,7 +279,9 @@ class AuthControllerTests {
 		mockMvc.perform(post("/api/auth/logout"))
 				.andExpect(status().isNoContent())
 				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString(COOKIE + "=;")))
-				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")));
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")))
+				.andExpect(header().stringValues(HttpHeaders.SET_COOKIE,
+						hasItem(allOf(startsWith(PENDING_COOKIE + "=;"), containsString("Max-Age=0")))));
 	}
 
 	@Test

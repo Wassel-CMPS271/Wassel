@@ -7,6 +7,27 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
 
+  # Only used by SmtpMailer, i.e. outside the local and test profiles. The username is read strictly
+  # there (startup fails without it), but Boot binds a missing password leniently as the literal
+  # "${MAIL_PASSWORD}", so docker-compose.staging.yml is what refuses to start without it.
+  # Gmail wants an app password for the account, not its normal one.
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      # Never send the password unencrypted.
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true
+      # JavaMail waits forever by default. The send runs inside the request's transaction, so a hung
+      # connection would hang the login and hold a database connection. These are per network step,
+      # not per message: they bound a hang, not the whole send.
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+
   jpa:
     open-in-view: false
     hibernate:
