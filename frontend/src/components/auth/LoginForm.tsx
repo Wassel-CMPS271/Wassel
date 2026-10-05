@@ -1,19 +1,32 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { AuthCard, authFieldProps } from "@/components/auth/AuthCard";
 import { CtaButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { PasswordInput } from "@/components/ui/PasswordInput";
-import { spacing } from "@/styles/tokens";
+import { login } from "@/lib/api/auth";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
+import { colors, darkTheme, spacing } from "@/styles/tokens";
 
-export function LoginForm() {
-  const [identifier, setIdentifier] = useState("");
+const NOTICES = {
+  expired: "Your sign-in has expired. Please sign in again.",
+};
+
+interface LoginFormProps {
+  notice?: keyof typeof NOTICES;
+}
+
+export function LoginForm({ notice }: LoginFormProps) {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const [identifierError, setIdentifierError] = useState<string>();
+  const [emailError, setEmailError] = useState<string>();
   const [passwordError, setPasswordError] = useState<string>();
+  const [formError, setFormError] = useState<string>();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -21,11 +34,12 @@ export function LoginForm() {
 
     let hasError = false;
 
-    setIdentifierError(undefined);
+    setEmailError(undefined);
     setPasswordError(undefined);
+    setFormError(undefined);
 
-    if (!identifier.trim()) {
-      setIdentifierError("Please enter your account identifier.");
+    if (!email.trim()) {
+      setEmailError("Please enter your email.");
       hasError = true;
     }
 
@@ -41,12 +55,20 @@ export function LoginForm() {
     setIsSubmitting(true);
 
     try {
-      // SCRUM-173:
-      // Connect this form to Hashem's authentication mock once
-      // its exact request/response contract is confirmed.
-      console.log("Login submitted", {
-        identifier: identifier.trim(),
-      });
+      await login(email.trim(), password);
+      router.push("/verify-2fa");
+    } catch (error) {
+      if (error instanceof ApiValidationError) {
+        setEmailError(error.errors.email);
+        setPasswordError(error.errors.password);
+      } else if (error instanceof ApiError && error.status === 401) {
+        setFormError(error.message);
+      } else if (error instanceof ApiError && error.status === 429) {
+        // A code went out under a minute ago and its cookie is usually still good.
+        router.push("/verify-2fa");
+      } else {
+        setFormError("Something went wrong. Please try again.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -63,14 +85,21 @@ export function LoginForm() {
         }}
         noValidate
       >
+        {notice && (
+          <p role="status" className="text-sm" style={{ color: darkTheme.text.secondary }}>
+            {NOTICES[notice]}
+          </p>
+        )}
+
         <Input
-          label="Account identifier"
-          name="identifier"
-          autoComplete="username"
-          value={identifier}
-          onChange={(event) => setIdentifier(event.target.value)}
-          error={identifierError}
-          placeholder="Enter your account identifier"
+          label="Email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          error={emailError}
+          placeholder="Enter your email"
           {...authFieldProps}
         />
 
@@ -84,6 +113,12 @@ export function LoginForm() {
           placeholder="Enter your password"
           {...authFieldProps}
         />
+
+        {formError && (
+          <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>
+            {formError}
+          </p>
+        )}
 
         <CtaButton type="submit" disabled={isSubmitting} className="w-full">
           {isSubmitting ? "Signing in..." : "Sign in"}
