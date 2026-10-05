@@ -51,15 +51,16 @@ public class TwoFactorService {
 	@Transactional
 	public String start(User user) {
 		Instant now = Instant.now();
+		Instant cutoff = now.minus(COOLDOWN);
 		codeRepository.findByUserId(user.getId())
-				.filter(last -> last.getUsedAt() == null && last.getSentAt().isAfter(now.minus(COOLDOWN)))
+				.filter(last -> last.getUsedAt() == null && last.getSentAt().isAfter(cutoff))
 				.ifPresent(last -> {
 					throw new CodeCooldownException();
 				});
 
 		String pendingToken = PasswordService.randomToken();
 		String code = newCode();
-		codeRepository.deleteForUser(user.getId());
+		codeRepository.deleteReplaceable(user.getId(), cutoff);
 		try {
 			codeRepository.saveAndFlush(LoginCode.builder()
 					.userId(user.getId())

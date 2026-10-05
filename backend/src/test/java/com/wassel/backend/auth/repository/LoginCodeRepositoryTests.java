@@ -15,6 +15,7 @@ import java.util.function.IntSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The guards that hold when two requests race, checked one call at a time. Two threads started together
@@ -108,6 +109,33 @@ class LoginCodeRepositoryTests {
 
 		assertEquals(0, inTransaction(() -> repository.reissue(used, "new", longAfter, longAfter, longAfter, MAX)));
 		assertEquals(0, inTransaction(() -> repository.reissue(exhausted, "new", longAfter, longAfter, longAfter, MAX)));
+	}
+
+	// The fresh row is the one a racing login just committed. If the delete took it, this login's insert
+	// would succeed and both would get a code; because it stays, the insert hits the unique user_id.
+	@Test
+	void aNewLoginReplacesAUsedOrOldRowButNeverAFreshOne() {
+		Instant now = Instant.now();
+		Instant cutoff = now.minusSeconds(60);
+		UUID freshUser = UUID.randomUUID();
+		UUID oldUser = UUID.randomUUID();
+		UUID usedUser = UUID.randomUUID();
+		savedFor(freshUser, now);
+		savedFor(oldUser, now.minusSeconds(61));
+		UUID used = savedFor(usedUser, now);
+		inTransaction(() -> repository.markUsed(used, now));
+
+		inTransaction(() -> {
+			repository.deleteReplaceable(freshUser, cutoff);
+			repository.deleteReplaceable(oldUser, cutoff);
+			repository.deleteReplaceable(usedUser, cutoff);
+			return 0;
+		});
+
+		assertTrue(repository.findByUserId(freshUser).isPresent());
+		assertTrue(repository.findByUserId(oldUser).isEmpty());
+		assertTrue(repository.findByUserId(usedUser).isEmpty());
+		assertThrows(DataIntegrityViolationException.class, () -> savedFor(freshUser, now));
 	}
 
 	@Test

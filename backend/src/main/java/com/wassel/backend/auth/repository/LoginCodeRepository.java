@@ -17,11 +17,18 @@ public interface LoginCodeRepository extends JpaRepository<LoginCode, UUID> {
 
 	Optional<LoginCode> findByUserId(UUID userId);
 
+	/**
+	 * Removes the user's row only if a new login may replace it: the code was used, or was sent at or
+	 * before {@code cutoff}. It must not be unconditional. A login racing this one can commit its row
+	 * between this request's cooldown check and this delete; deleting that fresh row would let the
+	 * insert that follows succeed, and both logins would get a code. Left in place, it makes that
+	 * insert hit the unique user_id instead.
+	 */
 	// An explicit query, not a derived delete: a derived one would be flushed after the replacement
 	// row's insert and trip the unique user_id.
 	@Modifying
-	@Query("delete from LoginCode c where c.userId = :userId")
-	void deleteForUser(@Param("userId") UUID userId);
+	@Query("delete from LoginCode c where c.userId = :userId and (c.usedAt is not null or c.sentAt <= :cutoff)")
+	void deleteReplaceable(@Param("userId") UUID userId, @Param("cutoff") Instant cutoff);
 
 	/** Returns 0 once the code is used or has had its attempts, so parallel guesses can't exceed the limit. */
 	@Modifying

@@ -27,7 +27,9 @@ that's the structure this codebase moved away from.
   end the pending login (the user signs in again). A new login or resend is allowed once per 60
   seconds (429); a completed login doesn't count towards that. Attempts, used and resend are
   conditional updates, not read-then-write, so parallel requests can't win twice or get extra
-  guesses. `TwoFactorService.verify` is `noRollbackFor` its two exceptions so the attempt count
+  guesses. A new login deletes the user's row only if it may replace it (used, or older than the
+  cooldown): a racing login's fresh row then survives, and the insert hits the unique `user_id`
+  instead of both logins getting a code. `TwoFactorService.verify` is `noRollbackFor` its two exceptions so the attempt count
   survives them, which means `AuthService.completeLogin` must never be `@Transactional`. Statuses:
   wrong or expired code 400, pending login gone 401, too soon 429. Logout clears both cookies.
   `TwoFactorService` logs each wrong code at WARN with the user id and attempt number (never the
