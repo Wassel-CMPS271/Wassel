@@ -1,5 +1,7 @@
 package com.wassel.backend.drivers.service;
 
+import com.wassel.backend.auth.event.PasswordSetEvent;
+import com.wassel.backend.auth.service.PasswordService;
 import com.wassel.backend.drivers.dto.AssignVehicleRequest;
 import com.wassel.backend.drivers.dto.CreateDriverRequest;
 import com.wassel.backend.drivers.dto.DriverResponse;
@@ -10,9 +12,13 @@ import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
 import com.wassel.backend.drivers.repository.DriverRepository;
+import com.wassel.backend.users.entity.Role;
+import com.wassel.backend.users.entity.User;
+import com.wassel.backend.users.service.UserService;
 import com.wassel.backend.vehicles.dto.VehicleResponse;
 import com.wassel.backend.vehicles.service.VehicleService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.event.EventListener;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +49,10 @@ public class DriverService {
 
 	private final VehicleService vehicleService;
 
+	private final UserService userService;
+
+	private final PasswordService passwordService;
+
 	/** The school's drivers, in invite order. */
 	@Transactional(readOnly = true)
 	public List<DriverResponse> listDrivers(UUID schoolId) {
@@ -60,6 +70,7 @@ public class DriverService {
 			throw new DriverAlreadyExistsException("phone", PHONE_TAKEN_MESSAGE);
 		}
 
+		User user = userService.createInvitedUser(request.email(), Role.DRIVER, schoolId);
 		Driver driver = Driver.builder()
 				.schoolId(schoolId)
 				.firstName(request.firstName())
@@ -68,14 +79,26 @@ public class DriverService {
 				.email(request.email())
 				.status(DriverStatus.INVITED)
 				.invitedAt(Instant.now())
+				.userId(user.getId())
 				.build();
 		try {
-			return toResponse(driverRepository.saveAndFlush(driver));
+			driverRepository.saveAndFlush(driver);
 		} catch (DataIntegrityViolationException e) {
 			// Two requests adding the same email/phone at once: the unique constraints are the
 			// backstop for the checks above.
 			throw new DriverAlreadyExistsException("email", EMAIL_TAKEN_MESSAGE);
 		}
+		passwordService.sendInvite(user);
+		return toResponse(driver);
+	}
+
+	/** Runs in the transaction that sets the password, so the driver and the password change together. */
+	@EventListener
+	@Transactional
+	public void activateDriverWhoSetAPassword(PasswordSetEvent event) {
+		driverRepository.findByUserId(event.userId())
+				.filter(driver -> driver.getStatus() == DriverStatus.INVITED)
+				.ifPresent(driver -> driver.setStatus(DriverStatus.ACTIVE));
 	}
 
 	@Transactional
@@ -85,8 +108,18 @@ public class DriverService {
 			throw new DriverStatusConflictException(
 					"Cannot resend invite: driver is already %s.".formatted(statusLabel(driver)));
 		}
+		passwordService.sendInvite(accountOf(driver));
 		driver.setInvitedAt(Instant.now());
 		return toResponse(driver);
+	}
+
+	private User accountOf(Driver driver) {
+		if (driver.getUserId() == null) {
+			User user = userService.createInvitedUser(driver.getEmail(), Role.DRIVER, driver.getSchoolId());
+			driver.setUserId(user.getId());
+			return user;
+		}
+		return userService.findById(driver.getUserId()).orElseThrow();
 	}
 
 	@Transactional

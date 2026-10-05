@@ -2,13 +2,17 @@ package com.wassel.backend.drivers.controller;
 
 import com.wassel.backend.drivers.entity.Driver;
 import com.wassel.backend.drivers.entity.DriverStatus;
+import com.wassel.backend.auth.service.Mailer;
 import com.wassel.backend.drivers.repository.DriverRepository;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.entity.User;
+import com.wassel.backend.users.repository.UserRepository;
+import com.wassel.backend.users.service.UserService;
 import com.wassel.backend.vehicles.entity.Vehicle;
 import com.wassel.backend.vehicles.repository.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -16,7 +20,9 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.time.Instant;
@@ -26,6 +32,16 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -41,6 +57,8 @@ class DriverControllerTests {
 
 	private static final String URL = "/api/head-of-transport/drivers";
 
+	private static final String NEW_PASSWORD = "a-brand-new-password";
+
 	private final UUID schoolA = UUID.randomUUID();
 	private final UUID schoolB = UUID.randomUUID();
 
@@ -53,10 +71,33 @@ class DriverControllerTests {
 	@Autowired
 	private VehicleRepository vehicleRepository;
 
+	@Autowired
+	private UserRepository userRepository;
+
+	@Autowired
+	private UserService userService;
+
+	@MockitoBean
+	private Mailer mailer;
+
 	@BeforeEach
 	void cleanDatabase() {
 		driverRepository.deleteAll();
 		vehicleRepository.deleteAll();
+		userRepository.deleteAll();
+	}
+
+	private String lastToken() {
+		ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+		verify(mailer, atLeastOnce()).send(anyString(), anyString(), body.capture());
+		Matcher matcher = Pattern.compile("token=([\\w-]+)").matcher(body.getValue());
+		assertTrue(matcher.find());
+		return matcher.group(1);
+	}
+
+	private ResultActions setPassword(String token) throws Exception {
+		return mockMvc.perform(post("/api/auth/password").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"token\":\"%s\",\"password\":\"%s\"}".formatted(token, NEW_PASSWORD)));
 	}
 
 	private RequestPostProcessor loggedInAs(Role role, UUID schoolId) {
@@ -184,9 +225,101 @@ class DriverControllerTests {
 	}
 
 	@Test
-	void differentSchoolsCanHaveDriversWithTheSameEmailAndPhone() throws Exception {
+	void differentSchoolsCanShareAPhoneButNotAnEmail() throws Exception {
 		addAs(schoolA, "Ahmad", "Khalil", "+961 3 123 456", "ahmad.khalil@example.com");
-		addAs(schoolB, "Ahmad", "Khalil", "+961 3 123 456", "ahmad.khalil@example.com");
+
+		// Emails are unique across the whole platform because each driver gets a login account.
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolB))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(driver("Ahmad", "Khalil", "+961 3 123 456", "ahmad.khalil@example.com")))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.errors.email").value("An account with this email already exists."));
+		assertEquals(1, driverRepository.count());
+		assertEquals(1, userRepository.count());
+
+		addAs(schoolB, "Sara", "Haddad", "+961 3 123 456", "sara.haddad@example.com");
+	}
+
+	@Test
+	void addingADriverCreatesAnInvitedDriverAccountAndSendsOneInvite() throws Exception {
+		addAs(schoolA, "Ahmad", "Khalil", "+961 3 123 456", "Ahmad.Khalil@example.com");
+
+		User user = userRepository.findByEmailIgnoreCase("ahmad.khalil@example.com").orElseThrow();
+		assertEquals(Role.DRIVER, user.getRole());
+		assertEquals(schoolA, user.getSchoolId());
+		assertFalse(user.hasPassword());
+		assertEquals(user.getId(), driverRepository.findAll().getFirst().getUserId());
+		verify(mailer, times(1)).send(eq("ahmad.khalil@example.com"), anyString(), contains("/set-password?token="));
+	}
+
+	@Test
+	void aDriverWhoseEmailBelongsToAnotherAccountIsAConflictAndNothingIsSaved() throws Exception {
+		userService.createUser("shared@example.com", "a-long-enough-password", Role.PARENT, schoolA);
+
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(driver("Ahmad", "Khalil", "+961 3 123 456", "shared@example.com")))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.errors.email").value("An account with this email already exists."));
+
+		assertEquals(0, driverRepository.count());
+		verify(mailer, never()).send(any(), any(), any());
+	}
+
+	@Test
+	void resendingSendsANewLinkAndVoidsTheOldOne() throws Exception {
+		String id = addAs(schoolA, "Ahmad", "Khalil", "+961 3 123 456", "ahmad.khalil@example.com");
+		String oldToken = lastToken();
+
+		mockMvc.perform(patch(URL + "/" + id + "/resend-invite").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(status().isOk());
+		String newToken = lastToken();
+
+		verify(mailer, times(2)).send(eq("ahmad.khalil@example.com"), anyString(), anyString());
+		setPassword(oldToken).andExpect(status().isBadRequest());
+		setPassword(newToken).andExpect(status().isNoContent());
+	}
+
+	@Test
+	void resendingToADriverWithoutAnAccountCreatesOne() throws Exception {
+		Driver driver = Driver.builder().schoolId(schoolA).firstName("Ahmad").lastName("Khalil")
+				.phone("+961 3 123 456").email("ahmad.khalil@example.com").status(DriverStatus.INVITED)
+				.invitedAt(Instant.now()).build();
+		UUID id = driverRepository.saveAndFlush(driver).getId();
+
+		mockMvc.perform(patch(URL + "/" + id + "/resend-invite").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(status().isOk());
+
+		User user = userRepository.findByEmailIgnoreCase("ahmad.khalil@example.com").orElseThrow();
+		assertEquals(Role.DRIVER, user.getRole());
+		assertEquals(user.getId(), driverRepository.findById(id).orElseThrow().getUserId());
+		verify(mailer, times(1)).send(eq("ahmad.khalil@example.com"), anyString(), contains("/set-password?token="));
+	}
+
+	@Test
+	void aDeactivatedDriverWhoSetsAPasswordStaysDeactivated() throws Exception {
+		UUID id = UUID.fromString(addAs(schoolA, "Ahmad", "Khalil", "+961 3 123 456", "ahmad.khalil@example.com"));
+		Driver driver = driverRepository.findById(id).orElseThrow();
+		driver.setStatus(DriverStatus.DEACTIVATED);
+		driverRepository.saveAndFlush(driver);
+
+		setPassword(lastToken()).andExpect(status().isNoContent());
+
+		assertEquals(DriverStatus.DEACTIVATED, driverRepository.findById(id).orElseThrow().getStatus());
+	}
+
+	@Test
+	void aDriverWhoSetsAPasswordBecomesActiveAndCanLogIn() throws Exception {
+		addAs(schoolA, "Ahmad", "Khalil", "+961 3 123 456", "ahmad.khalil@example.com");
+
+		setPassword(lastToken()).andExpect(status().isNoContent());
+
+		mockMvc.perform(get(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$[0].status").value("active"));
+		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"email\":\"ahmad.khalil@example.com\",\"password\":\"%s\"}".formatted(NEW_PASSWORD)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.role").value("DRIVER"));
 	}
 
 	@Test

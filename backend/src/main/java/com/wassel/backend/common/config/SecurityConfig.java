@@ -42,7 +42,8 @@ public class SecurityConfig {
 						// An exception in the filter chain is re-dispatched to /error; without this it would
 						// be answered with 401 instead of the real 500.
 						.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-						.requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/logout").permitAll()
+						.requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/logout",
+								"/api/auth/forgot-password", "/api/auth/password").permitAll()
 						.anyRequest().authenticated())
 				.exceptionHandling(ex -> ex.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
 				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

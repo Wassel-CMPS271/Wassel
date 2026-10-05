@@ -127,6 +127,17 @@ class AuthControllerTests {
 	}
 
 	@Test
+	void anInvitedAccountWithNoPasswordFailsExactlyLikeAWrongPassword() throws Exception {
+		userRepository.save(User.builder().email("new@wassel.test").passwordHash(User.NO_PASSWORD_HASH)
+				.role(Role.PARENT).schoolId(school).build());
+
+		assertGenericLoginFailure("new@wassel.test", PASSWORD);
+		assertGenericLoginFailure("new@wassel.test", User.NO_PASSWORD_HASH);
+		// The password AuthService hashes for unknown emails must not open an invited account either.
+		assertGenericLoginFailure("new@wassel.test", "not-a-real-password");
+	}
+
+	@Test
 	void blankFieldsAreRejectedWithFieldErrors() throws Exception {
 		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
 						.content("{\"email\":\"\",\"password\":\"\"}"))

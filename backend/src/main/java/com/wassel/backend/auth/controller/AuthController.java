@@ -2,9 +2,12 @@ package com.wassel.backend.auth.controller;
 
 import com.wassel.backend.auth.config.AuthCookie;
 import com.wassel.backend.auth.dto.AuthUserResponse;
+import com.wassel.backend.auth.dto.ForgotPasswordRequest;
 import com.wassel.backend.auth.dto.LoginRequest;
+import com.wassel.backend.auth.dto.SetPasswordRequest;
 import com.wassel.backend.auth.service.AuthService;
 import com.wassel.backend.auth.service.AuthService.LoginResult;
+import com.wassel.backend.auth.service.PasswordService;
 import com.wassel.backend.users.entity.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +32,8 @@ public class AuthController {
 
 	private final AuthService authService;
 
+	private final PasswordService passwordService;
+
 	private final AuthCookie authCookie;
 
 	@PostMapping("/login")
@@ -46,6 +51,21 @@ public class AuthController {
 		return ResponseEntity.noContent()
 				.header(HttpHeaders.SET_COOKIE, authCookie.clear().toString())
 				.build();
+	}
+
+	@PostMapping("/forgot-password")
+	@PreAuthorize("permitAll()")
+	public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+		passwordService.forgotPassword(request.email());
+		return ResponseEntity.noContent().build();
+	}
+
+	/** Both the first-time set (invite link) and the reset (forgot-password link) end here. */
+	@PostMapping("/password")
+	@PreAuthorize("permitAll()")
+	public ResponseEntity<Void> setPassword(@Valid @RequestBody SetPasswordRequest request) {
+		passwordService.setPassword(request.token(), request.password());
+		return ResponseEntity.noContent().build();
 	}
 
 	@GetMapping("/me")

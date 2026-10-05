@@ -35,11 +35,12 @@ public class AuthService {
 	/** Unknown email, wrong password and disabled account all fail the same way. */
 	public LoginResult login(LoginRequest request) {
 		Optional<User> found = userService.findByEmail(request.email());
-		String hash = found.map(User::getPasswordHash).orElse(unknownUserHash);
+		// An invited account has no password yet: treat it like an unknown email.
+		String hash = found.filter(User::hasPassword).map(User::getPasswordHash).orElse(unknownUserHash);
 		boolean passwordMatches = passwordEncoder.matches(request.password(), hash);
 
 		User user = found
-				.filter(candidate -> passwordMatches && candidate.isEnabled())
+				.filter(candidate -> candidate.hasPassword() && passwordMatches && candidate.isEnabled())
 				.orElseThrow(InvalidCredentialsException::new);
 		return new LoginResult(toResponse(user), jwtService.generateToken(user));
 	}

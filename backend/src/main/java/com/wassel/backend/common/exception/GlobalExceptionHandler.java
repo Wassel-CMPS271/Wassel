@@ -1,6 +1,7 @@
 package com.wassel.backend.common.exception;
 
 import com.wassel.backend.auth.exception.InvalidCredentialsException;
+import com.wassel.backend.auth.exception.InvalidPasswordTokenException;
 import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
@@ -10,6 +11,7 @@ import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
 import com.wassel.backend.students.exception.StudentAlreadyExistsException;
 import com.wassel.backend.students.exception.StudentNotFoundException;
+import com.wassel.backend.users.exception.EmailAlreadyInUseException;
 import com.wassel.backend.users.exception.UserNotFoundException;
 import com.wassel.backend.vehicles.exception.VehicleAlreadyExistsException;
 import com.wassel.backend.vehicles.exception.VehicleNotFoundException;
@@ -157,9 +159,22 @@ public class GlobalExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
 
+	// Same shape again, keyed by "email", for an account email that is already taken.
+	@ExceptionHandler(EmailAlreadyInUseException.class)
+	public ProblemDetail handleEmailAlreadyInUse(EmailAlreadyInUseException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Email already in use");
+		problem.setProperty("errors", Map.of("email", ex.getMessage()));
+		return problem;
+	}
+
 	@ExceptionHandler(InvalidCredentialsException.class)
 	public ProblemDetail handleInvalidCredentials(InvalidCredentialsException ex) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidPasswordTokenException.class)
+	public ProblemDetail handleInvalidPasswordToken(InvalidPasswordTokenException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
 	}
 
 	// Thrown by @PreAuthorize checks inside the MVC layer.

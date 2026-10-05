@@ -67,4 +67,8 @@ public class Driver {
 
 	@Column(name = "assigned_vehicle_id")
 	private UUID assignedVehicleId;
+
+	// The login account. Null for drivers added before accounts existed; the next resend creates it.
+	@Column(name = "user_id")
+	private UUID userId;
 }
