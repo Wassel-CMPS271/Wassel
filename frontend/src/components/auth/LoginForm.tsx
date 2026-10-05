@@ -13,6 +13,7 @@ import { colors, darkTheme, spacing } from "@/styles/tokens";
 
 const NOTICES = {
   expired: "Your sign-in has expired. Please sign in again.",
+  passwordSet: "Your password is set. Sign in to continue.",
 };
 
 interface LoginFormProps {

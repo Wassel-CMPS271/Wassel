@@ -6,10 +6,16 @@ export const metadata: Metadata = {
   title: "Set password",
 };
 
-export default function SetPasswordPage() {
+export default async function SetPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>;
+}) {
+  const { token } = await searchParams;
+
   return (
     <AuthShell headline="Welcome aboard.">
-      <PasswordForm mode="setup" />
+      <PasswordForm mode="setup" token={token} />
     </AuthShell>
   );
 }

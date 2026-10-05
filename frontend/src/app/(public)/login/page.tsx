@@ -11,13 +11,14 @@ export const metadata: Metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ expired?: string }>;
+  searchParams: Promise<{ expired?: string; passwordSet?: string }>;
 }) {
-  const { expired } = await searchParams;
+  const { expired, passwordSet } = await searchParams;
+  const notice = expired ? "expired" : passwordSet ? "passwordSet" : undefined;
 
   return (
     <AuthShell headline="Welcome back.">
-      <LoginForm notice={expired ? "expired" : undefined} />
+      <LoginForm notice={notice} />
     </AuthShell>
   );
 }
