@@ -35,7 +35,8 @@ that's the structure this codebase moved away from.
   `TwoFactorService` logs each wrong code at WARN with the user id and attempt number (never the
   code), because the exception handler's line names no user and repeated wrong codes are what a
   guessing attempt looks like. Locally, the code is in the log.
-  Password flows (SCRUM-169): `POST /api/auth/forgot-password` (always 204; emails a link only
+  Password flows (SCRUM-169): `POST /api/auth/forgot-password` (204 for any email, unless the send
+  fails; see the limits below; emails a link only
   for an existing, enabled account, at most once per 60 seconds) and `POST /api/auth/password`
   (sets the password from a token, for both first-time set and reset; a bad, expired or used
   token is one generic 400). Tokens (`entity/PasswordToken`) are 32 random bytes, stored only as
@@ -43,19 +44,41 @@ that's the structure this codebase moved away from.
   24h for an invite and 30min for a reset, and a new token voids the user's older ones. Passwords
   are 10+ characters and at most 72 UTF-8 bytes (BCrypt's limit, `dto/MaxBytes`). After a password
   is set, auth publishes `event/PasswordSetEvent`; other modules listen (drivers does), so auth
-  never imports them. `service/Mailer` sends email; its only implementation, `LoggingMailer`,
-  prints the email, link or login code included, to the application log (links point at
-  `FRONTEND_BASE_URL`). **Anyone who can read the logs can take over an account through those links,
-  and can read the 2FA codes, so until there is an SMTP `Mailer` 2FA protects nothing against them:
-  add one and limit `LoggingMailer` to the local/test profiles before inviting any real user.**
-  Until then every login on staging needs someone to read the code out of the log.
+  never imports them. `service/Mailer` sends email (links point at `FRONTEND_BASE_URL`), and which
+  implementation runs is decided by profile (SCRUM-187): `SmtpMailer` everywhere except `local` and
+  `test`, where `LoggingMailer` prints the email, link or login code included, to the log instead.
+  The split is by `@Profile`, so a deployed environment can't print a code or link, and if the two
+  ever drift there are zero or two `Mailer` beans and startup fails. `SmtpMailer` uses
+  `spring-boot-starter-mail` with `MAIL_HOST`/`MAIL_PORT`/`MAIL_USERNAME`/`MAIL_PASSWORD` (Gmail and an
+  app password for now; Gmail sends as the signed-in account whatever the from address says, so the
+  sender is `MAIL_USERNAME`). A failed send throws, which rolls back the caller's transaction (no
+  login code or token is left behind) and answers a generic 500, so the user retries; the cause is
+  logged at ERROR. The send runs inside the request's transaction, so `spring.mail` has 5 second
+  timeouts; they are per network step, so they bound a hang, not the whole send. A missing
+  `MAIL_USERNAME` stops startup, but a missing `MAIL_PASSWORD` does not (Boot binds it as the literal
+  text), so `docker-compose.staging.yml` is what refuses to start without it.
   Known limits: a password change does not revoke existing sessions (tokens are stateless); the
   fix is a "tokens valid from" timestamp on `User` checked by `JwtAuthenticationFilter`. And
   anyone who knows an email can call forgot-password once a minute; each new link voids the
   previous one, so they can keep that person's link from working and fill their inbox. Someone who
   has a user's password can try 5 login codes a minute (about 7,200 a day against a million codes)
   and, by logging in every minute, keep that user's code from being usable; the fix is account
-  lockout (SCRUM-171, skipped for now).
+  lockout (SCRUM-171, skipped for now). Limits that real email adds:
+  - **Forgot-password reveals which emails have accounts.** An unknown email, or one in its cooldown,
+    answers 204 at once; a registered one waits for the send (a second or so) and is a 500 if Gmail
+    fails. The old "always 204, reveals nothing" held only because logging took no time. Accepted
+    for now. The fix is to send off the request thread and always answer 204. Login is not affected:
+    its email only goes out after a correct password.
+  - **One account can stop every login.** Login and forgot-password each allow one email a minute
+    per account, about 1,440 a day, against Gmail's roughly 500. Once Gmail refuses, every login
+    answers 500, because 2FA has no off switch. Account lockout and a provider with a higher limit are
+    the fixes; Gmail is not meant for real users.
+  - The forgot-password cooldown is read-then-write and a slow send widens that window, so parallel
+    requests for one account can each send an email.
+  - If Gmail accepts a message but the reply times out, the transaction rolls back and the user holds
+    a code or link that doesn't work; they ask for another.
+  - Each login opens a fresh encrypted connection to Gmail inside the request, so it takes a second or
+    more longer than when the email was only logged (not measured).
 - `users` — the `User` entity and `Role` enum, plus `UserRepository`/`UserService` for other
   modules to look up one of their own school's users by id and role (e.g. students, validating
   a parent-link target), and for auth to find users by email and create accounts. The foundational
