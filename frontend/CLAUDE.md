@@ -19,7 +19,7 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
 
 - **Page background**: apply `darkPageBackground` once, in the role's `layout.tsx`. Individual pages must not set their own page background. That's what keeps the product feeling like one continuous surface.
 - **Shared components** (`src/components/ui/`: `Button`, `Input`, `Card`) default to `theme="dark"`. Pass `theme="light"` only when a surface is deliberately light (an explicit opt-in, e.g. a printable view). Don't mix light cards into a dark page.
-- New role areas (`driver`, `parent`, `admin`) should get a `layout.tsx` modeled on the head-of-transport one: sidebar, brand header, nav with icons, user block. The brand header is `<BrandMark size={sizing.brandSidebar} />` next to the "Wassel" text; don't redraw the logo.
+- New role areas (`driver`, `parent`, `admin`) should get a `layout.tsx` modeled on the head-of-transport one: sidebar, brand header, nav with icons, user block. The brand header is `<BrandMark size={sizing.brandSidebar} />` next to the "Wassel" text; don't redraw the logo. The layout wraps itself in `RoleGuard` and renders `<UserBlock />` for the user block (see Route protection below). `parent/layout.tsx` is only that guard, the background and the user block until the area gets its screens.
 
 ## Color palette (`tokens.ts`)
 
@@ -61,7 +61,24 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
 - `AuthShell` (`components/auth/`) is the page: lg and up, a split screen with the hero photo, a navy scrim (`auth.panelScrim`) and a headline on the left (`auth.panelColumns`), the form column on the right. Below lg the photo is a fixed, dimmed backdrop (`auth.backdropScrim`). It also renders the "Back to home" link. Pass a short `headline`; the subline is fixed.
 - `AuthCard` is the frosted card (`auth.cardSurface` + `auth.cardBlur`): brand lockup, `h1`, description, then the form. Spread `authFieldProps` on every field (44px height and the two-tone focus ring, since the card can sit over the photo). Submit with `CtaButton className="w-full"`.
 - Password fields use `PasswordInput` (`components/ui/`), which adds the show/hide toggle (fixed name "Show password", state in `aria-pressed`). It's built on `Input`'s `endAdornment` slot.
+- Messages: a field's own error goes through `Input`'s `error` prop. A message about the whole form (the backend refused, or "try again") is a `<p role="alert" className="text-sm">` in `colors.error[500]` above the submit button. A notice that isn't an error ("Your sign-in has expired", "Your password is set") is a `role="status"` paragraph in `darkTheme.text.secondary`. `/login` takes its notice from `?expired=1` or `?passwordSet=1`, read in the server page and passed to `LoginForm`, because `useSearchParams` in the form would need a Suspense boundary to build.
+- The code step (`/verify-2fa`) locks "Send a new code" for 60 seconds from page load and after each resend, because the server allows one new code a minute per account.
 - New auth screens reuse these; don't give them their own background or card.
+
+## API calls
+
+- Every call to the backend goes through `request()` in `src/lib/api/client.ts`. Don't call `fetch` directly. It sends the session cookies (`credentials: "include"`), prefixes `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8080`; an empty value counts as unset; it is baked in at build time, so staging passes it as a Docker build arg), and sends `Content-Type` only when there is a body, because the backend's CORS allows only that header.
+- One module per backend area in `src/lib/api/`; `auth.ts` is the model. The vehicles, drivers, students, holidays, school times and half-days modules are still mocks that keep the real signatures.
+- A failed call throws `ApiValidationError` (a 400 with an `errors` map: show each message next to its field) or `ApiError` (any other non-2xx: `status` says what to do, `message` is the backend's `detail`). A network failure rejects as it is. Forms say "Something went wrong. Please try again." for anything they don't handle by status.
+- The auth cookies are `HttpOnly` and `SameSite=Strict`. The frontend never reads them, and it must be served from the same site as the API.
+
+## Route protection
+
+- There is no middleware. The session token carries no role (the backend reloads the role from the database on every request, so a role change applies at once), so only `GET /api/auth/me` can say who is signed in.
+- Every role layout wraps itself in `RoleGuard role="..."` (`components/auth/RoleGuard.tsx`). It renders nothing until `/me` answers. A 401 goes to `/login`, a user with another role goes to their own area (`ROLE_HOME` in `lib/api/auth.ts`), and any other failure shows an alert and never redirects to login, so an API outage doesn't sign anyone out. `useCurrentUser()` gives the user to anything inside it.
+- `UserBlock` is the shared user block: the email, the role and Sign out.
+- This only decides which shell to show. The backend checks the session and the role on every endpoint, so never ship data in a role page's bundle that another role shouldn't see.
+- Why in the browser and not in a middleware or server layout: a server call would need a second, runtime API URL inside the staging container, and would break if the frontend and API ever got different hostnames, because the cookie is host-only.
 
 ## Surfaces
 
