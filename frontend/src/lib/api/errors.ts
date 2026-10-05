@@ -13,3 +13,16 @@ export class ApiValidationError extends Error {
     this.errors = errors;
   }
 }
+
+// Any other non-2xx answer: the status tells callers what to do (401 means
+// signed out, 429 means wait), and the message is the backend's `detail` when
+// it sent one. A 401 from /api/auth/me has an empty body, so there is a fallback.
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, detail?: string) {
+    super(detail || "Request failed");
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
