@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card } from "@/components/ui/Card";
 import type { NewVehicle } from "@/lib/api/vehicles";
-import { darkTheme, spacing } from "@/styles/tokens";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
+import { colors, darkTheme, spacing } from "@/styles/tokens";
 
 interface FormErrors {
   plateNumber?: string;
   capacity?: string;
+  form?: string;
 }
 
 // Lebanese private plate format: 1-3 letters, a space, then 1-6 digits
@@ -36,8 +38,8 @@ export function AddVehicleForm({ onAdd }: AddVehicleFormProps) {
       next.plateNumber = 'Use a format like "A 123456" (1-3 letters, space, 1-6 digits).';
     }
     const capacityNumber = Number(capacity);
-    if (!capacity.trim() || !Number.isFinite(capacityNumber) || capacityNumber <= 0) {
-      next.capacity = "Capacity must be a positive number.";
+    if (!capacity.trim() || !Number.isInteger(capacityNumber) || capacityNumber <= 0) {
+      next.capacity = "Capacity must be a positive whole number.";
     }
     return next;
   }
@@ -53,11 +55,26 @@ export function AddVehicleForm({ onAdd }: AddVehicleFormProps) {
       await onAdd({
         plateNumber: plateNumber.trim(),
         capacity: Number(capacity),
-        isActive: true,
       });
       setPlateNumber("");
       setCapacity("");
       setErrors({});
+    } catch (error) {
+      if (error instanceof ApiValidationError) {
+        setErrors({
+          plateNumber: error.errors.plateNumber,
+          capacity: error.errors.capacity,
+          form: !error.errors.plateNumber && !error.errors.capacity
+            ? "Please check the information and try again."
+            : undefined,
+        });
+      } else {
+        setErrors({
+          form: error instanceof ApiError && error.status < 500
+            ? error.message
+            : "Something went wrong. Please try again.",
+        });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -92,6 +109,11 @@ export function AddVehicleForm({ onAdd }: AddVehicleFormProps) {
             placeholder="e.g. 14"
           />
         </div>
+        {errors.form && (
+          <p role="alert" style={{ color: colors.error[500], marginTop: spacing.md }}>
+            {errors.form}
+          </p>
+        )}
         <div style={{ marginTop: spacing.md }}>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Adding..." : "Add vehicle"}
