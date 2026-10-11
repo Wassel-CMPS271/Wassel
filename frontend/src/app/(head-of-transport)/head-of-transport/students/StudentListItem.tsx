@@ -2,17 +2,19 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import type { Student } from "@/lib/api/students";
+import { EditStudentAddressForm } from "./EditStudentAddressForm";
 import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
 
 interface StudentListItemProps {
   student: Student;
+  onUpdateAddress: (id: string, address: string) => Promise<void>;
 }
 
 const GLOW_REST = "0 0 0px 0px rgba(18, 183, 106, 0)";
 const GLOW_PEAK = "0 0 12px 4px rgba(18, 183, 106, 0.55)";
 const GLOW_STATIC = "0 0 8px 2px rgba(18, 183, 106, 0.45)";
 
-export function StudentListItem({ student }: StudentListItemProps) {
+export function StudentListItem({ student, onUpdateAddress }: StudentListItemProps) {
   const prefersReducedMotion = useReducedMotion();
   const isActive = student.status === "active";
 
@@ -42,6 +44,9 @@ export function StudentListItem({ student }: StudentListItemProps) {
         </span>
         <span className="text-sm" style={{ color: darkTheme.text.secondary }}>
           Guardian: {student.guardianName} · {student.guardianPhone}
+        </span>
+        <span className="text-sm" style={{ color: darkTheme.text.secondary }}>
+          Pickup address: {student.address || "Not set"}
         </span>
       </div>
 
@@ -78,7 +83,8 @@ export function StudentListItem({ student }: StudentListItemProps) {
           </span>
         </div>
 
-        <span aria-disabled="true" className="text-xs" style={{ color: darkTheme.text.muted }}>Editing and status changes coming soon</span>
+        <EditStudentAddressForm student={student} onSave={onUpdateAddress} />
+        <span aria-disabled="true" className="text-xs" style={{ color: darkTheme.text.muted }}>Other edits and status changes coming soon</span>
       </div>
     </motion.li>
   );
