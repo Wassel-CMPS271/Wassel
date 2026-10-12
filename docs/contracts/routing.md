@@ -4,12 +4,14 @@ The agreement between the people building routes, the optimizer and the route sc
 
 The JSON examples live in [`samples/routing/`](samples/routing). They are the source of truth for field names and types; this page explains what the fields mean and what the endpoints do.
 
-| File | Shape | Used by |
-|---|---|---|
-| [`routes.json`](samples/routing/routes.json) | `RouteSummary[]`, the list | routes screen |
-| [`route.json`](samples/routing/route.json) | `Route`, with a stop that has no pin | route page, map |
-| [`proposal.json`](samples/routing/proposal.json) | `Proposal`, feasible | optimize preview |
-| [`proposal-infeasible.json`](samples/routing/proposal-infeasible.json) | `Proposal`, not feasible | optimize preview |
+| File | Shape | Which route | Used by |
+|---|---|---|---|
+| [`routes.json`](samples/routing/routes.json) | `RouteSummary[]`, the list | all three | routes screen |
+| [`route.json`](samples/routing/route.json) | `Route`, with a stop that has no pin | Verdun morning run | route page, map |
+| [`proposal.json`](samples/routing/proposal.json) | `Proposal`, feasible | Hamra morning run | optimize preview |
+| [`proposal-infeasible.json`](samples/routing/proposal-infeasible.json) | `Proposal`, not feasible (4 students, 3 seats) | Achrafieh morning run | optimize preview |
+
+The school in every sample is the one in `route.json`.
 
 ## Conventions
 
@@ -53,7 +55,7 @@ Everything in `RouteSummary`, plus:
 
 | Field | Type | Notes |
 |---|---|---|
-| `school` | `{ latitude, longitude, arrivalTime }` | where the route ends, and the arrival time it works back from. Same for every route |
+| `school` | `{ latitude, longitude, arrivalTime }` | where the route ends, and the arrival time it works back from. Same for every route. `arrivalTime` is the school's arrival time from the school settings and is **null until an admin sets it**: while it is null, every stop's `arrivalTime` is null too and optimizing answers 409 |
 | `stops` | `Stop[]` | in `position` order |
 
 ### Proposal
@@ -64,7 +66,7 @@ What the optimizer suggests. Making one never changes the route.
 |---|---|---|
 | `id` | uuid or null | the handle for apply and discard. **Null when not feasible**: nothing is saved |
 | `feasible` | boolean | |
-| `current` | `{ drivingMinutes, stops }` | the route's order right now, for the side-by-side view |
+| `current` | `{ drivingMinutes, stops }` | the route's order right now, for the side-by-side view. Built by the optimize endpoint with the [arrival-time rule](#arrival-times), the same rule that fills `Route.stops[].arrivalTime` |
 | `proposed` | `{ drivingMinutes, stops }` or null | the suggested order. Null when not feasible |
 | `reasons` | `{ code, message }[]` | empty when feasible. Switch on `code`, show `message` |
 
@@ -109,11 +111,11 @@ Until the road provider client exists (SCRUM-204) the legs are **straight-line d
 
 ### Optimizing
 
-- A route can only be optimized when it has at least one stop and **every stop has a pin**. Otherwise the request answers 409 and says which students (see [Errors](#errors)).
+- A route can only be optimized when it has at least one stop, **every stop has a pin**, and the school's arrival time is set. Otherwise the request answers 409 (see [Errors](#errors)): a `detail` for no stops or no school time, and a `detail` naming the students plus `studentIds` for stops without a pin.
 - The optimizer only orders the stops inside one route. It never moves students between routes.
 - The route is an open path: the first pickup is the start and the school is the end. There is no depot leg.
 - Not being able to find an order is **not an error**. It is a 201 with `feasible: false`, `id: null`, `proposed: null` and `reasons`.
-- A route has at most one pending proposal. Proposing again replaces it.
+- A route has at most one pending proposal. **Every propose clears it first**, even when the new answer is not feasible, so an earlier proposal can never be applied after a later one found nothing.
 - **Apply** makes the proposal the route's order and keeps the previous order as a version. It answers 404 if the proposal was discarded, replaced or never existed, and **409 if the route's stops or their order have changed since the proposal was made** (compare with `current`). The screen should say so and offer to optimize again.
 - **Discard** drops the proposal. The route is untouched.
 
@@ -128,19 +130,26 @@ More codes may be added later. A client must show `message` for a code it does n
 
 ## Errors
 
-The same `ProblemDetail` the other modules return, so the existing `request()` helper in `frontend/src/lib/api/client.ts` handles them: a body with an `errors` map throws `ApiValidationError`, anything else throws `ApiError(status, detail)`.
+The same `ProblemDetail` the other modules return, so the existing `request()` helper in `frontend/src/lib/api/client.ts` reads them the same way: a body with an `errors` map throws `ApiValidationError`, anything else throws `ApiError(status, detail)`. One frontend change comes first: `request()` types `method` as `"GET" | "POST"` today, so it must be widened for the PUT and DELETE calls (the backend's CORS already allows them).
 
 | Case | Status | Body |
 |---|---|---|
 | Invalid create or edit input | 400 | `errors: { field: message }` |
 | Not found, or another school's route | 404 | `detail` |
-| Vehicle or driver already on an overlapping route | 409 | `errors: { vehicleId: message }`, naming the conflicting route |
+| Vehicle or driver already on another route (see [Draft rules](#draft-rules-for-moustafa-to-confirm)) | 409 | `errors: { vehicleId: message }` or `{ driverId: message }`, naming the conflicting route |
+| Inactive vehicle or driver | 409 | `errors: { vehicleId: message }` or `{ driverId: message }` |
 | Adding beyond capacity | 409 | `detail`, including the current count and the capacity |
 | Optimize with no stops | 409 | `detail` |
+| Optimize before the school's arrival time is set | 409 | `detail` |
 | Optimize with stops that have no pin | 409 | `detail` naming them, and `studentIds: [uuid, ...]` as an extra property |
 | Apply on a route that changed since the proposal | 409 | `detail` |
 
 `studentIds` is an extra property, not part of `errors`, because `errors` is for field messages. The current client keeps only `detail`; the stops already say which students have no pin (`latitude: null`), so a screen does not need it.
+
+## Draft rules for Moustafa to confirm
+
+- All routes are the same morning run, so a vehicle and a driver can each be on **at most one route**. "Overlapping" has no other meaning until routes have times.
+- The old text `students.route` column keeps working until the screens use `routes` (SCRUM-208). Whether assigning a student also writes it is Moustafa's call.
 
 ## Known limits
 
@@ -154,8 +163,8 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 
 In `com.wassel.backend.routing.service`:
 
-- `TravelTimes.matrix(List<Coordinate>)`: square matrix of `Duration`, `[i][j]` is point i to point j in input order, never null, zero on the diagonal, not assumed symmetric. One call per route, because the road provider is rate limited. `StraightLineTravelTimes` is the stand-in; the road client (SCRUM-204) wraps it as its fallback and becomes the injected implementation.
-- `RouteOptimizer.optimize(stops, school, capacity, schoolArrivalTime)`: returns a `Plan` with the order, arrival times, total driving time and reasons. The solver (SCRUM-202) implements it.
+- `TravelTimes.matrix(List<Coordinate>)`: square matrix of `Duration`, `[i][j]` is point i to point j in input order, never null, zero on the diagonal, not assumed symmetric. Every entry is a whole number of minutes, rounded up. One call per route, because the road provider is rate limited. `StraightLineTravelTimes` is the stand-in; the road client (SCRUM-204) wraps it as its fallback and is `@Primary`, because two `TravelTimes` beans stop startup.
+- `RouteOptimizer.optimize(stops, school, capacity, schoolArrivalTime)`: returns a `Plan` with the order, arrival times, total driving time and reasons, which become `proposed` and `reasons`. A plan that is not feasible has reasons, no stops and zero time, and the `Plan` constructor enforces it. `Reason.code` is the `RouteOptimizer.Code` enum, so the codes above cannot be misspelled. The caller checks that stops are non-empty and pinned first. The arrival-time rule is written once and reused for the route's own arrival times (SCRUM-212); it comes with the solver (SCRUM-202), which implements `RouteOptimizer`.
 
 ## Changing this contract
 

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -17,11 +18,26 @@ class StraightLineTravelTimesTests {
 	private static final Coordinate ORIGIN = new Coordinate(0, 0);
 	private static final Coordinate TENTH_OF_A_DEGREE_NORTH = new Coordinate(0.1, 0);
 
+	private Duration between(Coordinate from, Coordinate to) {
+		return travelTimes.matrix(List.of(from, to))[0][1];
+	}
+
 	@Test
 	void aKnownDistanceIsTimedAtThirtyKilometresAnHourRoundedUp() {
-		Duration[][] matrix = travelTimes.matrix(List.of(ORIGIN, TENTH_OF_A_DEGREE_NORTH));
+		assertEquals(Duration.ofMinutes(23), between(ORIGIN, TENTH_OF_A_DEGREE_NORTH));
+	}
 
-		assertEquals(Duration.ofMinutes(23), matrix[0][1]);
+	@Test
+	void eastWestDistanceShrinksWithLatitude() {
+		// 0.1 degrees of longitude at 33.9N is about 9.23 km, 18.46 minutes, so 19. Ignoring the
+		// latitude, or swapping latitude and longitude, would give 23 as at the equator.
+		assertEquals(Duration.ofMinutes(19), between(new Coordinate(33.9, 35.5), new Coordinate(33.9, 35.6)));
+	}
+
+	@Test
+	void aDiagonalUsesBothAxes() {
+		// About 14.45 km, 28.9 minutes, so 29.
+		assertEquals(Duration.ofMinutes(29), between(new Coordinate(33.9, 35.5), new Coordinate(33.8, 35.6)));
 	}
 
 	@Test
@@ -56,9 +72,19 @@ class StraightLineTravelTimesTests {
 	}
 
 	@Test
+	void coordinatesOnTheEdgeOfTheRangeAreAccepted() {
+		assertDoesNotThrow(() -> new Coordinate(90, 180));
+		assertDoesNotThrow(() -> new Coordinate(-90, -180));
+	}
+
+	@Test
 	void outOfRangeCoordinatesAreRejected() {
 		assertThrows(IllegalArgumentException.class, () -> new Coordinate(90.1, 0));
+		assertThrows(IllegalArgumentException.class, () -> new Coordinate(-90.1, 0));
+		assertThrows(IllegalArgumentException.class, () -> new Coordinate(0, 180.1));
 		assertThrows(IllegalArgumentException.class, () -> new Coordinate(0, -180.1));
 		assertThrows(IllegalArgumentException.class, () -> new Coordinate(Double.NaN, 0));
+		assertThrows(IllegalArgumentException.class, () -> new Coordinate(0, Double.NaN));
+		assertThrows(IllegalArgumentException.class, () -> new Coordinate(0, Double.POSITIVE_INFINITY));
 	}
 }

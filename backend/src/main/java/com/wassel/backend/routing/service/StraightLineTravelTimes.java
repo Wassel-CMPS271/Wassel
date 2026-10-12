@@ -10,6 +10,9 @@ import java.util.List;
  * minutes. It lets the solver and the arrival times work before the road provider exists, and it
  * is the fallback when that provider fails. The speed and the rounding are part of the routing
  * contract, because sample arrival times and tests depend on them.
+ *
+ * <p>Only one {@link TravelTimes} bean may be injected. When the road client arrives it uses this
+ * class as its fallback and must be {@code @Primary}, otherwise startup fails with two beans.
  */
 @Component
 public class StraightLineTravelTimes implements TravelTimes {
