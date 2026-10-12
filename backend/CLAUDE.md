@@ -110,6 +110,14 @@ that's the structure this codebase moved away from.
   CSV import and the active/inactive toggle are not built yet, and there's no endpoint to assign
   a student's route (the `route` column exists for filtering; it's expected to be populated by a
   future routing feature, not edited by hand here).
+- `routing` — the contracts the route features code against (SCRUM-201). `service/RouteOptimizer`
+  orders one route's stops and `service/TravelTimes` gives a driving-time matrix between points, so
+  the solver (SCRUM-202) and the road provider client (SCRUM-204) swap in without their callers
+  changing. `StraightLineTravelTimes` (30 km/h, rounded up to whole minutes) is the stand-in and the
+  fallback. Other modules use `routing.service` only, never anything deeper, and `routing` imports
+  no other module: it takes plain `Coordinate`s and ids so it does not depend on the routes
+  entities. The JSON shapes, endpoint table and rules are in `docs/contracts/routing.md`, with
+  samples in `docs/contracts/samples/routing/`; change them by pull request that tags the owners.
 
 ## Where things go
 
