@@ -1,0 +1,303 @@
+package com.wassel.backend.auth.controller;
+
+import com.wassel.backend.auth.repository.LoginCodeRepository;
+import com.wassel.backend.auth.service.Mailer;
+import com.wassel.backend.users.entity.Role;
+import com.wassel.backend.users.entity.User;
+import com.wassel.backend.users.repository.UserRepository;
+import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+class AuthControllerTests {
+
+	private static final String COOKIE = "wassel_token";
+
+	private static final String PENDING_COOKIE = "wassel_2fa";
+
+	private static final Pattern CODE = Pattern.compile("\\b(\\d{6})\\b");
+
+	private static final String PASSWORD = "correct-horse-battery";
+
+	private static final String BAD_LOGIN_DETAIL = "Invalid email or password.";
+
+	private final UUID school = UUID.randomUUID();
+
+	@Autowired
+	private MockMvc mockMvc;
+
+	@Autowired
+	private UserRepository userRepository;
+
+	@Autowired
+	private PasswordEncoder passwordEncoder;
+
+	@Autowired
+	private LoginCodeRepository loginCodeRepository;
+
+	@MockitoBean
+	private Mailer mailer;
+
+	@BeforeEach
+	void cleanDatabase() {
+		loginCodeRepository.deleteAll();
+		userRepository.deleteAll();
+	}
+
+	private User saveUser(String email, Role role, boolean enabled) {
+		return userRepository.save(User.builder().email(email).passwordHash(passwordEncoder.encode(PASSWORD))
+				.role(role).schoolId(school).enabled(enabled).build());
+	}
+
+	private MvcResult login(String email, String password) throws Exception {
+		return mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"%s\",\"password\":\"%s\"}".formatted(email, password))).andReturn();
+	}
+
+	private String lastCode() {
+		ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+		verify(mailer, atLeastOnce()).send(anyString(), anyString(), body.capture());
+		Matcher matcher = CODE.matcher(body.getValue());
+		assertTrue(matcher.find(), "no code in the email");
+		return matcher.group(1);
+	}
+
+	private static String cookieValue(MvcResult result, String name) {
+		String header = result.getResponse().getHeaders(HttpHeaders.SET_COOKIE).stream()
+				.filter(candidate -> candidate.startsWith(name + "=")).findFirst().orElseThrow();
+		return header.substring((name + "=").length(), header.indexOf(';'));
+	}
+
+	/** Both steps of a login: the password, then the emailed code. Returns the session token. */
+	private String loginAndGetToken(String email) throws Exception {
+		MvcResult first = login(email, PASSWORD);
+		assertEquals(204, first.getResponse().getStatus());
+		MvcResult second = mockMvc.perform(post("/api/auth/2fa/verify")
+				.cookie(new Cookie(PENDING_COOKIE, cookieValue(first, PENDING_COOKIE)))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"code\":\"%s\"}".formatted(lastCode())))
+				.andReturn();
+		assertEquals(200, second.getResponse().getStatus());
+		return cookieValue(second, COOKIE);
+	}
+
+	private void assertGenericLoginFailure(String email, String password) throws Exception {
+		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"email\":\"%s\",\"password\":\"%s\"}".formatted(email, password)))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.detail").value(BAD_LOGIN_DETAIL))
+				.andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+		// A failed password step must not reach the code step: no email to the account, nothing stored.
+		verifyNoInteractions(mailer);
+		assertEquals(0, loginCodeRepository.count());
+	}
+
+	@Test
+	void loginSetsOnlyThePendingCookieAndNoSession() throws Exception {
+		saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
+
+		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"email\":\"hot@wassel.test\",\"password\":\"%s\"}".formatted(PASSWORD)))
+				.andExpect(status().isNoContent())
+				.andExpect(content().string(""))
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString(PENDING_COOKIE + "=")))
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("HttpOnly")))
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("SameSite=Strict")))
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Path=/")))
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=900")))
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, not(containsString("Secure"))))
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, not(containsString(COOKIE + "="))));
+	}
+
+	@Test
+	void emailMatchingIgnoresCaseAndSurroundingSpaces() throws Exception {
+		saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
+
+		assertEquals(204, login("  HoT@Wassel.TEST ", PASSWORD).getResponse().getStatus());
+	}
+
+	@Test
+	void aWrongPasswordIsUnauthorized() throws Exception {
+		saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
+
+		assertGenericLoginFailure("hot@wassel.test", "wrong-password");
+	}
+
+	@Test
+	void anUnknownEmailFailsExactlyLikeAWrongPassword() throws Exception {
+		assertGenericLoginFailure("nobody@wassel.test", PASSWORD);
+	}
+
+	@Test
+	void aDisabledAccountFailsExactlyLikeAWrongPasswordEvenWithTheRightPassword() throws Exception {
+		saveUser("off@wassel.test", Role.PARENT, false);
+
+		assertGenericLoginFailure("off@wassel.test", PASSWORD);
+	}
+
+	@Test
+	void anInvitedAccountWithNoPasswordFailsExactlyLikeAWrongPassword() throws Exception {
+		userRepository.save(User.builder().email("new@wassel.test").passwordHash(User.NO_PASSWORD_HASH)
+				.role(Role.PARENT).schoolId(school).build());
+
+		assertGenericLoginFailure("new@wassel.test", PASSWORD);
+		assertGenericLoginFailure("new@wassel.test", User.NO_PASSWORD_HASH);
+		// The password AuthService hashes for unknown emails must not open an invited account either.
+		assertGenericLoginFailure("new@wassel.test", "not-a-real-password");
+	}
+
+	@Test
+	void blankFieldsAreRejectedWithFieldErrors() throws Exception {
+		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"email\":\"\",\"password\":\"\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.email").value("Email is required"))
+				.andExpect(jsonPath("$.errors.password").value("Password is required"));
+	}
+
+	@Test
+	void aStaleOrGarbageCookieNeverBlocksSigningInAgain() throws Exception {
+		saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
+
+		mockMvc.perform(post("/api/auth/login").cookie(new Cookie(COOKIE, "garbage"))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"email\":\"hot@wassel.test\",\"password\":\"%s\"}".formatted(PASSWORD)))
+				.andExpect(status().isNoContent());
+	}
+
+	@Test
+	void meReturnsTheSignedInUserFromTheCookie() throws Exception {
+		User user = saveUser("par@wassel.test", Role.PARENT, true);
+		String token = loginAndGetToken("par@wassel.test");
+
+		mockMvc.perform(get("/api/auth/me").cookie(new Cookie(COOKIE, token)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(user.getId().toString()))
+				.andExpect(jsonPath("$.role").value("PARENT"));
+	}
+
+	@Test
+	void meWithoutACookieIsUnauthorized() throws Exception {
+		mockMvc.perform(get("/api/auth/me")).andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void meWithAGarbageCookieIsUnauthorized() throws Exception {
+		mockMvc.perform(get("/api/auth/me").cookie(new Cookie(COOKIE, "garbage")))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void aValidTokenForAUserWhoNoLongerExistsIsUnauthorized() throws Exception {
+		User user = saveUser("par@wassel.test", Role.PARENT, true);
+		String token = loginAndGetToken("par@wassel.test");
+		userRepository.deleteById(user.getId());
+
+		mockMvc.perform(get("/api/auth/me").cookie(new Cookie(COOKIE, token)))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void disablingAnAccountCutsOffItsExistingToken() throws Exception {
+		User user = saveUser("par@wassel.test", Role.PARENT, true);
+		String token = loginAndGetToken("par@wassel.test");
+		user.setEnabled(false);
+		userRepository.save(user);
+
+		mockMvc.perform(get("/api/auth/me").cookie(new Cookie(COOKIE, token)))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void aRoleChangeTakesEffectImmediatelyNotWhenTheTokenExpires() throws Exception {
+		User user = saveUser("par@wassel.test", Role.PARENT, true);
+		String token = loginAndGetToken("par@wassel.test");
+		user.setRole(Role.ADMIN);
+		userRepository.save(user);
+
+		mockMvc.perform(get("/api/auth/me").cookie(new Cookie(COOKIE, token)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.role").value("ADMIN"));
+	}
+
+	@Test
+	void theCookieAuthenticatesRoleProtectedEndpoints() throws Exception {
+		saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
+		String token = loginAndGetToken("hot@wassel.test");
+
+		mockMvc.perform(get("/api/head-of-transport/vehicles").cookie(new Cookie(COOKIE, token)))
+				.andExpect(status().isOk());
+	}
+
+	@Test
+	void aSignedInUserWithTheWrongRoleIsForbidden() throws Exception {
+		saveUser("par@wassel.test", Role.PARENT, true);
+		String token = loginAndGetToken("par@wassel.test");
+
+		mockMvc.perform(get("/api/head-of-transport/vehicles").cookie(new Cookie(COOKIE, token)))
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void logoutClearsTheCookieEvenWhenNotSignedIn() throws Exception {
+		mockMvc.perform(post("/api/auth/logout"))
+				.andExpect(status().isNoContent())
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString(COOKIE + "=;")))
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")))
+				.andExpect(header().stringValues(HttpHeaders.SET_COOKIE,
+						hasItem(allOf(startsWith(PENDING_COOKIE + "=;"), containsString("Max-Age=0")))));
+	}
+
+	@Test
+	void theFrontendOriginMayCallTheApiWithCredentials() throws Exception {
+		mockMvc.perform(options("/api/auth/login").header(HttpHeaders.ORIGIN, "http://localhost:3000")
+						.header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+						.header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "content-type"))
+				.andExpect(status().isOk())
+				.andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000"))
+				.andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+	}
+
+	@Test
+	void anyOtherOriginIsRefused() throws Exception {
+		mockMvc.perform(options("/api/auth/login").header(HttpHeaders.ORIGIN, "http://evil.example")
+						.header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+				.andExpect(status().isForbidden());
+	}
+}
