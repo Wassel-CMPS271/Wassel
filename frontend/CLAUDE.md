@@ -72,6 +72,17 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
 - A failed call throws `ApiValidationError` (a 400 with an `errors` map: show each message next to its field) or `ApiError` (any other non-2xx: `status` says what to do, `message` is the backend's `detail`). A network failure rejects as it is. Forms say "Something went wrong. Please try again." for anything they don't handle by status.
 - The auth cookies are `HttpOnly` and `SameSite=Strict`. The frontend never reads them, and it must be served from the same site as the API.
 
+## Tests
+
+- Vitest + Testing Library. Config is `vitest.config.mts` (an `.mts` file so it can use ESM
+  without `"type": "module"` in `package.json`, which would also affect Next's own config).
+- A test file sits next to what it tests: `src/lib/api/client.test.ts` is the model, and the
+  one to copy for a `request()`-based module. Mock `fetch` with `vi.stubGlobal` rather than
+  hitting a real backend.
+- `npm test` runs once and exits non-zero on a failure (CI's `frontend-build` job runs this
+  and fails the build). `npm run test:watch` re-runs on save during development.
+- `vitest.setup.ts` loads the jest-dom matchers (`toBeInTheDocument`, etc.) for every test.
+
 ## Route protection
 
 - There is no middleware. The session token carries no role (the backend reloads the role from the database on every request, so a role change applies at once), so only `GET /api/auth/me` can say who is signed in.
