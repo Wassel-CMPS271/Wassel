@@ -110,6 +110,16 @@ that's the structure this codebase moved away from.
   CSV import and the active/inactive toggle are not built yet, and there's no endpoint to assign
   a student's route (the `route` column exists for filtering; it's expected to be populated by a
   future routing feature, not edited by hand here).
+- `routes` — a school's routes (SCRUM-208): create, list, get, edit, delete, each with one
+  vehicle and one driver, under `/api/head-of-transport/routes`. A vehicle or driver can be on
+  at most one route (checked in `RouteService`, backed by a unique constraint on `Route` as the
+  race-condition backstop); an inactive vehicle can't be assigned. Depends on `vehicles`
+  (`VehicleService.getOwnedVehicle`) and `drivers` (`DriverService.getOwnedDriver`) for
+  eligibility, and `schools` (`SchoolSettingsService.getTimes`) plus the new
+  `schools.config.SchoolLocationProperties` (`wassel.school.latitude`/`longitude`, required —
+  the app refuses to start without it) for the `Route.school` block. No route has stops yet —
+  `studentCount` is always 0 and `stops` always empty — until assignment (SCRUM-209) and manual
+  reorder (SCRUM-210) exist. Response shapes follow `docs/contracts/routing.md`.
 - `routing` — the contracts the route features code against (SCRUM-201). `service/RouteOptimizer`
   orders one route's stops and `service/TravelTimes` gives a driving-time matrix between points, so
   the solver (SCRUM-202) and the road provider client (SCRUM-204) swap in without their callers
