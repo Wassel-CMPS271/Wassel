@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { LicensePlate } from "@/components/ui/LicensePlate";
 import type { Vehicle } from "@/lib/api/vehicles";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
 
 interface VehicleListItemProps {
@@ -29,6 +30,7 @@ export function VehicleListItem({
   const [isEditing, setIsEditing] = useState(false);
   const [capacityInput, setCapacityInput] = useState(String(vehicle.capacity));
   const [capacityError, setCapacityError] = useState<string | undefined>();
+  const [actionError, setActionError] = useState<string | undefined>();
   const [isConfirmingDeactivate, setIsConfirmingDeactivate] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -92,8 +94,8 @@ export function VehicleListItem({
 
   async function handleSaveCapacity() {
     const value = Number(capacityInput);
-    if (!capacityInput.trim() || !Number.isFinite(value) || value <= 0) {
-      setCapacityError("Capacity must be a positive number.");
+    if (!capacityInput.trim() || !Number.isInteger(value) || value <= 0) {
+      setCapacityError("Capacity must be a positive whole number.");
       return;
     }
     setIsSaving(true);
@@ -102,6 +104,14 @@ export function VehicleListItem({
       shouldRestoreEditFocusRef.current = true;
       setIsEditing(false);
       setCapacityError(undefined);
+    } catch (error) {
+      setCapacityError(
+        error instanceof ApiValidationError
+          ? error.errors.capacity || "Could not update capacity."
+          : error instanceof ApiError && error.status < 500
+            ? error.message
+            : "Something went wrong. Please try again.",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -131,10 +141,14 @@ export function VehicleListItem({
 
   async function handleConfirmDeactivate() {
     setIsSaving(true);
+    setActionError(undefined);
     try {
       await onDeactivate(vehicle.id);
       justDeactivatedRef.current = true;
       setIsConfirmingDeactivate(false);
+    } catch (error) {
+      setActionError(error instanceof ApiError && error.status < 500
+        ? error.message : "Something went wrong. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -144,9 +158,13 @@ export function VehicleListItem({
   // (deactivating) is destructive enough to warrant one.
   async function handleReactivate() {
     setIsSaving(true);
+    setActionError(undefined);
     try {
       await onReactivate(vehicle.id);
       justReactivatedRef.current = true;
+    } catch (error) {
+      setActionError(error instanceof ApiError && error.status < 500
+        ? error.message : "Something went wrong. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -199,6 +217,11 @@ export function VehicleListItem({
           <span className="text-sm" style={{ color: darkTheme.text.secondary }}>
             Capacity: {vehicle.capacity}
           </span>
+        )}
+        {actionError && (
+          <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>
+            {actionError}
+          </p>
         )}
       </div>
 
