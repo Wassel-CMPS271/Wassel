@@ -38,6 +38,11 @@ export function login(email: string, password: string): Promise<void> {
   return request("/api/auth/login", { method: "POST", body: { email, password } });
 }
 
+// A 204 is deliberately identical for existing and unknown accounts.
+export function forgotPassword(email: string): Promise<void> {
+  return request("/api/auth/forgot-password", { method: "POST", body: { email } });
+}
+
 export function verifyCode(code: string): Promise<AuthUser> {
   return request<AuthUser>("/api/auth/2fa/verify", { method: "POST", body: { code } });
 }

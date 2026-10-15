@@ -131,6 +131,14 @@ export function LoginForm({ notice }: LoginFormProps) {
           {...authFieldProps}
         />
 
+        <Link
+          href="/forgot-password"
+          className={`inline-flex items-center self-start text-sm font-medium underline ${focusRingClass}`}
+          style={{ ...focusRingStyle, color: colors.primary[300], minHeight: sizing.tapTarget, borderRadius: radius.md }}
+        >
+          Forgot password?
+        </Link>
+
         {formError && (
           <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>
             {formError}
