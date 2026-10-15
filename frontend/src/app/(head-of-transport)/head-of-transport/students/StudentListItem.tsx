@@ -48,6 +48,14 @@ export function StudentListItem({ student, onUpdateAddress }: StudentListItemPro
         <span className="text-sm" style={{ color: darkTheme.text.secondary }}>
           Pickup address: {student.address || "Not set"}
         </span>
+        {(student.latitude == null || student.longitude == null) && (
+        <span
+          className="text-xs font-medium"
+          style={{ color: darkTheme.text.secondary }}
+        >
+        Needs a pin
+        </span>
+)}
       </div>
 
       <div className="flex items-center flex-wrap" style={{ gap: spacing.sm }}>

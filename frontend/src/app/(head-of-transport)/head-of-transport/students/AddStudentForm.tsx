@@ -232,6 +232,7 @@ export function AddStudentForm({ onAdd }: AddStudentFormProps) {
                     />
                     <Input
                       label="Pickup address"
+                      maxLength={255}
                       value={address}
                       onChange={(event) => setAddress(event.target.value)}
                       error={errors.address}
