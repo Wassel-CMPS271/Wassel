@@ -136,6 +136,7 @@ export function EditStudentAddressForm({ student, onSave }: Props) {
                   <Input
                     ref={addressRef}
                     label="Pickup address"
+                    maxLength={255}
                     value={address}
                     onChange={(event) => setAddress(event.target.value)}
                     error={error}
