@@ -1,38 +1,20 @@
 "use client";
 
-import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Button } from "@/components/ui/Button";
 import type { Student } from "@/lib/api/students";
 import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
-import { EditStudentForm } from "./EditStudentForm";
 
 interface StudentListItemProps {
   student: Student;
-  onEdit: (
-    id: string,
-    updates: Partial<Omit<Student, "id" | "createdAt">>,
-  ) => Promise<void>;
-  onToggleStatus: (id: string, status: Student["status"]) => Promise<void>;
 }
 
 const GLOW_REST = "0 0 0px 0px rgba(18, 183, 106, 0)";
 const GLOW_PEAK = "0 0 12px 4px rgba(18, 183, 106, 0.55)";
 const GLOW_STATIC = "0 0 8px 2px rgba(18, 183, 106, 0.45)";
 
-export function StudentListItem({ student, onEdit, onToggleStatus }: StudentListItemProps) {
+export function StudentListItem({ student }: StudentListItemProps) {
   const prefersReducedMotion = useReducedMotion();
-  const [isTogglingStatus, setIsTogglingStatus] = useState(false);
   const isActive = student.status === "active";
-
-  async function handleToggleStatus() {
-    setIsTogglingStatus(true);
-    try {
-      await onToggleStatus(student.id, isActive ? "inactive" : "active");
-    } finally {
-      setIsTogglingStatus(false);
-    }
-  }
 
   return (
     <motion.li
@@ -96,22 +78,7 @@ export function StudentListItem({ student, onEdit, onToggleStatus }: StudentList
           </span>
         </div>
 
-        <EditStudentForm student={student} onEdit={onEdit} />
-
-        <Button
-          variant={isActive ? "danger" : "primary"}
-          onClick={handleToggleStatus}
-          disabled={isTogglingStatus}
-          aria-label={`Mark ${student.firstName} ${student.lastName} ${isActive ? "inactive" : "active"}`}
-        >
-          {isTogglingStatus
-            ? isActive
-              ? "Deactivating..."
-              : "Activating..."
-            : isActive
-              ? "Deactivate"
-              : "Activate"}
-        </Button>
+        <span aria-disabled="true" className="text-xs" style={{ color: darkTheme.text.muted }}>Editing and status changes coming soon</span>
       </div>
     </motion.li>
   );

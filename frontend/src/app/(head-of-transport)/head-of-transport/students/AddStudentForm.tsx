@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card } from "@/components/ui/Card";
 import type { NewStudent } from "@/lib/api/students";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import { colors, darkTheme, spacing } from "@/styles/tokens";
 
 interface FormErrors {
@@ -106,8 +107,15 @@ export function AddStudentForm({ onAdd }: AddStudentFormProps) {
       });
       closeForm();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
-      setErrors((prev) => ({ ...prev, form: message }));
+      if (err instanceof ApiValidationError) {
+        setErrors((prev) => ({ ...prev, ...err.errors }));
+      } else if (err instanceof ApiError && err.status === 401) {
+        setErrors((prev) => ({ ...prev, form: "Your session expired. Please sign in again." }));
+      } else if (err instanceof ApiError && err.status === 403) {
+        setErrors((prev) => ({ ...prev, form: "You do not have permission to add students." }));
+      } else {
+        setErrors((prev) => ({ ...prev, form: "Something went wrong. Please try again." }));
+      }
     } finally {
       setIsSubmitting(false);
     }
