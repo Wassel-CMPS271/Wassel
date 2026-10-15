@@ -2,12 +2,14 @@ package com.wassel.backend.routes.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.util.UUID;
 
 /** Shared by create and edit: the contract uses the same body for both. */
 public record RouteRequest(
 		@NotBlank(message = "Name is required")
+		@Size(max = 100, message = "Name must be at most 100 characters")
 		String name,
 
 		@NotNull(message = "Vehicle id is required")

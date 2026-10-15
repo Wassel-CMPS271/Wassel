@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -73,17 +74,7 @@ public class RouteService {
 	public RouteResponse createRoute(UUID schoolId, RouteRequest request) {
 		VehicleResponse vehicle = requireActiveVehicle(schoolId, request.vehicleId());
 		DriverResponse driver = requireUsableDriver(schoolId, request.driverId());
-
-		routeRepository.findBySchoolIdAndVehicleId(schoolId, vehicle.id())
-				.ifPresent(taken -> {
-					throw new RouteAssignmentConflictException("vehicleId",
-							"Vehicle is already on route \"%s\".".formatted(taken.getName()));
-				});
-		routeRepository.findBySchoolIdAndDriverId(schoolId, driver.id())
-				.ifPresent(taken -> {
-					throw new RouteAssignmentConflictException("driverId",
-							"Driver is already on route \"%s\".".formatted(taken.getName()));
-				});
+		checkNoConflict(schoolId, vehicle.id(), driver.id(), null);
 
 		Route route = Route.builder()
 				.schoolId(schoolId)
@@ -94,8 +85,10 @@ public class RouteService {
 		try {
 			route = routeRepository.saveAndFlush(route);
 		} catch (DataIntegrityViolationException e) {
-			// Two requests claiming the same vehicle or driver at once: the unique constraints
-			// are the backstop for the checks above.
+			// Two requests claiming the same vehicle or driver at once: the unique constraints are
+			// the backstop for the check above. Re-check now that the conflicting row is committed,
+			// so the race is reported on the same field the non-race case would use.
+			checkNoConflict(schoolId, vehicle.id(), driver.id(), null);
 			throw new RouteAssignmentConflictException("vehicleId", "Vehicle or driver is already on another route.");
 		}
 		return toResponse(schoolId, route, vehicle, driver);
@@ -106,17 +99,7 @@ public class RouteService {
 		Route route = findOwned(schoolId, routeId);
 		VehicleResponse vehicle = requireActiveVehicle(schoolId, request.vehicleId());
 		DriverResponse driver = requireUsableDriver(schoolId, request.driverId());
-
-		routeRepository.findBySchoolIdAndVehicleIdAndIdNot(schoolId, vehicle.id(), routeId)
-				.ifPresent(taken -> {
-					throw new RouteAssignmentConflictException("vehicleId",
-							"Vehicle is already on route \"%s\".".formatted(taken.getName()));
-				});
-		routeRepository.findBySchoolIdAndDriverIdAndIdNot(schoolId, driver.id(), routeId)
-				.ifPresent(taken -> {
-					throw new RouteAssignmentConflictException("driverId",
-							"Driver is already on route \"%s\".".formatted(taken.getName()));
-				});
+		checkNoConflict(schoolId, vehicle.id(), driver.id(), routeId);
 
 		route.setName(request.name());
 		route.setVehicleId(vehicle.id());
@@ -124,6 +107,7 @@ public class RouteService {
 		try {
 			routeRepository.saveAndFlush(route);
 		} catch (DataIntegrityViolationException e) {
+			checkNoConflict(schoolId, vehicle.id(), driver.id(), routeId);
 			throw new RouteAssignmentConflictException("vehicleId", "Vehicle or driver is already on another route.");
 		}
 		return toResponse(schoolId, route, vehicle, driver);
@@ -148,6 +132,28 @@ public class RouteService {
 			throw new RouteAssignmentConflictException("driverId", DRIVER_DEACTIVATED_MESSAGE);
 		}
 		return driver;
+	}
+
+	/** {@code excludedRouteId} is null for create (no route to exclude yet) or the route being edited. */
+	private void checkNoConflict(UUID schoolId, UUID vehicleId, UUID driverId, UUID excludedRouteId) {
+		findByVehicle(schoolId, vehicleId, excludedRouteId).ifPresent(taken -> {
+			throw new RouteAssignmentConflictException("vehicleId",
+					"Vehicle is already on route \"%s\".".formatted(taken.getName()));
+		});
+		findByDriver(schoolId, driverId, excludedRouteId).ifPresent(taken -> {
+			throw new RouteAssignmentConflictException("driverId",
+					"Driver is already on route \"%s\".".formatted(taken.getName()));
+		});
+	}
+
+	private Optional<Route> findByVehicle(UUID schoolId, UUID vehicleId, UUID excludedRouteId) {
+		return excludedRouteId == null ? routeRepository.findBySchoolIdAndVehicleId(schoolId, vehicleId)
+				: routeRepository.findBySchoolIdAndVehicleIdAndIdNot(schoolId, vehicleId, excludedRouteId);
+	}
+
+	private Optional<Route> findByDriver(UUID schoolId, UUID driverId, UUID excludedRouteId) {
+		return excludedRouteId == null ? routeRepository.findBySchoolIdAndDriverId(schoolId, driverId)
+				: routeRepository.findBySchoolIdAndDriverIdAndIdNot(schoolId, driverId, excludedRouteId);
 	}
 
 	private Route findOwned(UUID schoolId, UUID routeId) {

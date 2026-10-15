@@ -214,6 +214,18 @@ class RouteControllerTests {
 	}
 
 	@Test
+	void aNameOver100CharactersIsRejectedAsValidationNotAConflict() throws Exception {
+		String tooLong = "A".repeat(101);
+
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(route(tooLong, aVehicle(schoolA, true), aDriver(schoolA))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.name").value("Name must be at most 100 characters"));
+		assertEquals(0, routeRepository.count());
+	}
+
+	@Test
 	void creatingWithAnUnknownVehicleOrDriverIsNotFound() throws Exception {
 		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
 						.contentType(MediaType.APPLICATION_JSON)
