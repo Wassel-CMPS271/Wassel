@@ -1,0 +1,95 @@
+{
+  "id": "50000000-0000-4000-8000-000000000001",
+  "feasible": true,
+  "current": {
+    "drivingMinutes": 22,
+    "stops": [
+      {
+        "studentId": "40000000-0000-4000-8000-000000000001",
+        "position": 1,
+        "firstName": "Rami",
+        "lastName": "Nasr",
+        "address": "Rue Hamra, Beirut",
+        "latitude": 33.8995,
+        "longitude": 35.521,
+        "arrivalTime": "07:08"
+      },
+      {
+        "studentId": "40000000-0000-4000-8000-000000000002",
+        "position": 2,
+        "firstName": "Salma",
+        "lastName": "Khoury",
+        "address": "Clemenceau Street, Beirut",
+        "latitude": 33.887,
+        "longitude": 35.488,
+        "arrivalTime": "07:15"
+      },
+      {
+        "studentId": "40000000-0000-4000-8000-000000000003",
+        "position": 3,
+        "firstName": "Tarek",
+        "lastName": "Mansour",
+        "address": "Bliss Street, Beirut",
+        "latitude": 33.905,
+        "longitude": 35.51,
+        "arrivalTime": "07:21"
+      },
+      {
+        "studentId": "40000000-0000-4000-8000-000000000004",
+        "position": 4,
+        "firstName": "Dana",
+        "lastName": "Fares",
+        "address": "Jeanne d'Arc Street, Beirut",
+        "latitude": 33.891,
+        "longitude": 35.48,
+        "arrivalTime": "07:28"
+      }
+    ]
+  },
+  "proposed": {
+    "drivingMinutes": 13,
+    "stops": [
+      {
+        "studentId": "40000000-0000-4000-8000-000000000001",
+        "position": 1,
+        "firstName": "Rami",
+        "lastName": "Nasr",
+        "address": "Rue Hamra, Beirut",
+        "latitude": 33.8995,
+        "longitude": 35.521,
+        "arrivalTime": "07:17"
+      },
+      {
+        "studentId": "40000000-0000-4000-8000-000000000003",
+        "position": 2,
+        "firstName": "Tarek",
+        "lastName": "Mansour",
+        "address": "Bliss Street, Beirut",
+        "latitude": 33.905,
+        "longitude": 35.51,
+        "arrivalTime": "07:20"
+      },
+      {
+        "studentId": "40000000-0000-4000-8000-000000000002",
+        "position": 3,
+        "firstName": "Salma",
+        "lastName": "Khoury",
+        "address": "Clemenceau Street, Beirut",
+        "latitude": 33.887,
+        "longitude": 35.488,
+        "arrivalTime": "07:26"
+      },
+      {
+        "studentId": "40000000-0000-4000-8000-000000000004",
+        "position": 4,
+        "firstName": "Dana",
+        "lastName": "Fares",
+        "address": "Jeanne d'Arc Street, Beirut",
+        "latitude": 33.891,
+        "longitude": 35.48,
+        "arrivalTime": "07:28"
+      }
+    ]
+  },
+  "reasons": []
+}

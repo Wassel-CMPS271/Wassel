@@ -6,7 +6,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card } from "@/components/ui/Card";
-import type { NewStudent } from "@/lib/api/students";
+import type { NewStudentWithAddress } from "@/lib/api/students";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import { colors, darkTheme, spacing } from "@/styles/tokens";
 
 interface FormErrors {
@@ -15,6 +16,7 @@ interface FormErrors {
   grade?: string;
   guardianName?: string;
   guardianPhone?: string;
+  address?: string;
   form?: string;
 }
 
@@ -24,7 +26,7 @@ interface FormErrors {
 const LEBANESE_PHONE_PATTERN = /^\+961 \d{1,2} \d{3} \d{3}$/;
 
 interface AddStudentFormProps {
-  onAdd: (data: NewStudent) => Promise<void>;
+  onAdd: (data: NewStudentWithAddress) => Promise<void>;
 }
 
 export function AddStudentForm({ onAdd }: AddStudentFormProps) {
@@ -34,6 +36,7 @@ export function AddStudentForm({ onAdd }: AddStudentFormProps) {
   const [grade, setGrade] = useState("");
   const [guardianName, setGuardianName] = useState("");
   const [guardianPhone, setGuardianPhone] = useState("");
+  const [address, setAddress] = useState("");
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -59,6 +62,7 @@ export function AddStudentForm({ onAdd }: AddStudentFormProps) {
     setGrade("");
     setGuardianName("");
     setGuardianPhone("");
+    setAddress("");
     setErrors({});
   }
 
@@ -78,6 +82,7 @@ export function AddStudentForm({ onAdd }: AddStudentFormProps) {
     if (!lastName.trim()) next.lastName = "Last name is required.";
     if (!grade.trim()) next.grade = "Grade is required.";
     if (!guardianName.trim()) next.guardianName = "Guardian name is required.";
+    if (!address.trim()) next.address = "Pickup address is required.";
 
     const trimmedPhone = guardianPhone.trim();
     if (!trimmedPhone) {
@@ -103,11 +108,19 @@ export function AddStudentForm({ onAdd }: AddStudentFormProps) {
         grade: grade.trim(),
         guardianName: guardianName.trim(),
         guardianPhone: guardianPhone.trim(),
+        address: address.trim(),
       });
       closeForm();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
-      setErrors((prev) => ({ ...prev, form: message }));
+      if (err instanceof ApiValidationError) {
+        setErrors((prev) => ({ ...prev, ...err.errors }));
+      } else if (err instanceof ApiError && err.status === 401) {
+        setErrors((prev) => ({ ...prev, form: "Your session expired. Please sign in again." }));
+      } else if (err instanceof ApiError && err.status === 403) {
+        setErrors((prev) => ({ ...prev, form: "You do not have permission to add students." }));
+      } else {
+        setErrors((prev) => ({ ...prev, form: "Something went wrong. Please try again." }));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -216,6 +229,14 @@ export function AddStudentForm({ onAdd }: AddStudentFormProps) {
                       error={errors.guardianPhone}
                       placeholder="e.g. +961 3 123 456"
                       autoComplete="tel"
+                    />
+                    <Input
+                      label="Pickup address"
+                      value={address}
+                      onChange={(event) => setAddress(event.target.value)}
+                      error={errors.address}
+                      placeholder="Street, building, area, city"
+                      autoComplete="street-address"
                     />
                   </div>
 
