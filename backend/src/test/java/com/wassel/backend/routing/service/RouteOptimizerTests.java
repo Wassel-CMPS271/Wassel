@@ -65,4 +65,28 @@ class RouteOptimizerTests {
 	void aStopNeedsAPin() {
 		assertThrows(NullPointerException.class, () -> new Stop(UUID.randomUUID(), null));
 	}
+	@Test
+	void proposedRoutePreservesStudentOrderAndArrivalTimes() {
+		UUID firstStudent = UUID.randomUUID();
+		UUID secondStudent = UUID.randomUUID();
+
+		PlannedStop firstStop = new PlannedStop(
+			firstStudent, LocalTime.of(7, 15)
+	);
+
+		PlannedStop secondStop = new PlannedStop(
+			secondStudent, LocalTime.of(7, 25)
+	);
+
+		Plan plan = new Plan(
+			true,
+			List.of(firstStop, secondStop),
+			Duration.ofMinutes(20),
+			List.of()
+	);
+
+	assertEquals(List.of(firstStop, secondStop), plan.stops());
+	assertEquals(LocalTime.of(7, 15), plan.stops().get(0).arrivalTime());
+	assertEquals(LocalTime.of(7, 25), plan.stops().get(1).arrivalTime());
+}
 }
