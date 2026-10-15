@@ -160,6 +160,12 @@ public class DriverService {
 		return toResponse(driver);
 	}
 
+	/** For other modules (e.g. routes, putting a driver on a route) to look up one driver. */
+	@Transactional(readOnly = true)
+	public DriverResponse getOwnedDriver(UUID schoolId, UUID driverId) {
+		return toResponse(findOwned(schoolId, driverId));
+	}
+
 	private Driver findOwned(UUID schoolId, UUID driverId) {
 		return driverRepository.findBySchoolIdAndId(schoolId, driverId)
 				.orElseThrow(() -> new DriverNotFoundException(NOT_FOUND_MESSAGE));

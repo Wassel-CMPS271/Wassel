@@ -76,15 +76,15 @@ What the optimizer suggests. Making one never changes the route.
 
 ## Endpoints
 
-Moustafa's rows are **draft**: the response shapes above are what Majd should build against, and Moustafa confirms the request bodies in his PR to this file.
+SCRUM-208's rows are confirmed: the request bodies below are what's actually built, and `GET`/`POST`/`PUT`/`DELETE` on `/api/head-of-transport/routes` are real endpoints. Moustafa's remaining rows (SCRUM-209/210) are still **draft** until those land.
 
 | Method | Path | Body | Success | Owner |
 |---|---|---|---|---|
-| GET | `/api/head-of-transport/routes` | | 200 `RouteSummary[]` | Moustafa, SCRUM-208 (draft) |
-| POST | `/api/head-of-transport/routes` | `{ name, vehicleId, driverId }` | 201 `Route` | Moustafa, SCRUM-208 (draft) |
-| GET | `/api/head-of-transport/routes/{routeId}` | | 200 `Route` | Moustafa, SCRUM-208 (draft) |
-| PUT | `/api/head-of-transport/routes/{routeId}` | `{ name, vehicleId, driverId }` | 200 `Route` | Moustafa, SCRUM-208 (draft) |
-| DELETE | `/api/head-of-transport/routes/{routeId}` | | 204 | Moustafa, SCRUM-208 (draft) |
+| GET | `/api/head-of-transport/routes` | | 200 `RouteSummary[]` | Moustafa, SCRUM-208 |
+| POST | `/api/head-of-transport/routes` | `{ name, vehicleId, driverId }` | 201 `Route` | Moustafa, SCRUM-208 |
+| GET | `/api/head-of-transport/routes/{routeId}` | | 200 `Route` | Moustafa, SCRUM-208 |
+| PUT | `/api/head-of-transport/routes/{routeId}` | `{ name, vehicleId, driverId }` | 200 `Route` | Moustafa, SCRUM-208 |
+| DELETE | `/api/head-of-transport/routes/{routeId}` | | 204 | Moustafa, SCRUM-208 |
 | POST | `/api/head-of-transport/routes/{routeId}/students` | `{ studentId }` | 200 `Route` | Moustafa, SCRUM-209 (draft) |
 | DELETE | `/api/head-of-transport/routes/{routeId}/students/{studentId}` | | 200 `Route` | Moustafa, SCRUM-209 (draft) |
 | PUT | `/api/head-of-transport/routes/{routeId}/stops` | `{ studentIds }`, the full new order | 200 `Route` | Moustafa, SCRUM-210 (draft) |
@@ -128,6 +128,10 @@ Until the road provider client exists (SCRUM-204) the legs are **straight-line d
 
 More codes may be added later. A client must show `message` for a code it does not know.
 
+### Vehicle and driver assignment
+
+All routes are the same morning run, so a vehicle and a driver can each be on **at most one route**. "Overlapping" has no other meaning until routes have times. An inactive vehicle, or a deactivated driver, cannot be put on a route — both must be reactivated first (confirmed, SCRUM-208). There is no deactivate endpoint for drivers yet; the check exists for when one lands.
+
 ## Errors
 
 The same `ProblemDetail` the other modules return, so the existing `request()` helper in `frontend/src/lib/api/client.ts` reads them the same way: a body with an `errors` map throws `ApiValidationError`, anything else throws `ApiError(status, detail)`. One frontend change comes first: `request()` types `method` as `"GET" | "POST"` today, so it must be widened for the PUT and DELETE calls (the backend's CORS already allows them).
@@ -136,7 +140,7 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 |---|---|---|
 | Invalid create or edit input | 400 | `errors: { field: message }` |
 | Not found, or another school's route | 404 | `detail` |
-| Vehicle or driver already on another route (see [Draft rules](#draft-rules-for-moustafa-to-confirm)) | 409 | `errors: { vehicleId: message }` or `{ driverId: message }`, naming the conflicting route |
+| Vehicle or driver already on another route (see [Rules](#rules)) | 409 | `errors: { vehicleId: message }` or `{ driverId: message }`, naming the conflicting route |
 | Inactive vehicle or driver | 409 | `errors: { vehicleId: message }` or `{ driverId: message }` |
 | Adding beyond capacity | 409 | `detail`, including the current count and the capacity |
 | Optimize with no stops | 409 | `detail` |
@@ -148,8 +152,7 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 
 ## Draft rules for Moustafa to confirm
 
-- All routes are the same morning run, so a vehicle and a driver can each be on **at most one route**. "Overlapping" has no other meaning until routes have times.
-- The old text `students.route` column keeps working until the screens use `routes` (SCRUM-208). Whether assigning a student also writes it is Moustafa's call.
+- The old text `students.route` column keeps working until the screens use `routes` (SCRUM-208, confirmed: the column is untouched). Whether assigning a student also writes it is Moustafa's call (SCRUM-209).
 
 ## Known limits
 

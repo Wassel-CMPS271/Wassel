@@ -43,6 +43,9 @@ services:
       MAIL_PORT: ${MAIL_PORT:-587}
       MAIL_USERNAME: ${MAIL_USERNAME:?Set MAIL_USERNAME in .env.staging}
       MAIL_PASSWORD: ${MAIL_PASSWORD:?Set MAIL_PASSWORD in .env.staging}
+      # The school's location (routing contract): required, the MVP serves one school.
+      SCHOOL_LATITUDE: ${SCHOOL_LATITUDE:?Set SCHOOL_LATITUDE in .env.staging}
+      SCHOOL_LONGITUDE: ${SCHOOL_LONGITUDE:?Set SCHOOL_LONGITUDE in .env.staging}
     depends_on:
       postgres:
         condition: service_healthy
