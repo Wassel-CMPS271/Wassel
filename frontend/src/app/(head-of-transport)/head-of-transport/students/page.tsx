@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, MotionConfig } from "framer-motion";
-import { addStudent, getStudents, importStudents, matchesFilters, type ImportRowResult, type NewStudent, type Student } from "@/lib/api/students";
+import { addStudentWithAddress, getStudents, importStudents, matchesFilters, updateStudentAddress, type ImportRowResult, type NewStudent, type NewStudentWithAddress, type Student } from "@/lib/api/students";
 import { AddStudentForm } from "./AddStudentForm";
 import { ImportStudentsForm } from "./ImportStudentsForm";
 import { StudentFilters, type StatusFilterValue } from "./StudentFilters";
@@ -68,10 +68,21 @@ export default function StudentsPage() {
     loadStudents();
   }, [loadStudents]);
 
-  async function handleAdd(data: NewStudent) {
-    const student = await addStudent(data);
+  async function handleAdd(data: NewStudentWithAddress) {
+    const { student, addressSaved } = await addStudentWithAddress(data);
     setStudents((prev) => [...prev, student]);
-    pushToast(`${student.firstName} ${student.lastName} added.`);
+    if (addressSaved) {
+      pushToast(`${student.firstName} ${student.lastName} added with pickup address.`);
+    } else {
+      // POST succeeded, but PATCH did not: don't pretend the address was saved.
+      pushToast(`${student.firstName} ${student.lastName} was created, but the address was not saved. Use Edit address to retry.`);
+    }
+  }
+
+  async function handleUpdateAddress(id: string, address: string) {
+    const updated = await updateStudentAddress(id, address);
+    setStudents((prev) => prev.map((student) => student.id === id ? updated : student));
+    pushToast(`Pickup address updated for ${updated.firstName} ${updated.lastName}.`);
   }
 
   async function handleImport(rows: NewStudent[]): Promise<ImportRowResult[]> {
@@ -243,6 +254,7 @@ export default function StudentsPage() {
                   <StudentListItem
                     key={student.id}
                     student={student}
+                    onUpdateAddress={handleUpdateAddress}
                   />
                 ))}
               </AnimatePresence>

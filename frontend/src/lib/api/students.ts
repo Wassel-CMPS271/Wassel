@@ -27,6 +27,10 @@ export type NewStudent = Pick<
   "firstName" | "lastName" | "grade" | "guardianName" | "guardianPhone"
 >;
 
+// Address is mandatory in the interactive Add Student form (SCRUM-227).
+// CSV imports still use NewStudent because the existing CSV format has no address.
+export type NewStudentWithAddress = NewStudent & { address: string };
+
 // Preserve the Sprint 1 CSV UI using the backend student-creation endpoint.
 // Per-row failures are reported without producing mock records.
 export type ImportErrorReason =
@@ -80,7 +84,7 @@ export function searchStudents(query: string): Promise<Student[]> {
   return getStudents({ query });
 }
 
-export function addStudent(data: NewStudent): Promise<Student> {
+export function addStudent(data: NewStudent | NewStudentWithAddress): Promise<Student> {
   return request<Student>(STUDENTS_PATH, {
     method: "POST",
     body: {
@@ -89,8 +93,40 @@ export function addStudent(data: NewStudent): Promise<Student> {
       grade: data.grade.trim(),
       guardianName: data.guardianName.trim(),
       guardianPhone: data.guardianPhone.trim(),
+      // SCRUM-213 will make the create endpoint save this atomically.
+      // Until then the post-create PATCH fallback below ensures persistence.
+      ...("address" in data ? { address: data.address.trim() } : {}),
     },
   });
+}
+
+// The existing backend supports PATCH /{id}/address even before SCRUM-213 lands.
+export function updateStudentAddress(id: string, address: string): Promise<Student> {
+  return request<Student>(`${STUDENTS_PATH}/${encodeURIComponent(id)}/address`, {
+    method: "PATCH",
+    body: { address: address.trim() },
+  });
+}
+
+// POST includes address for SCRUM-213. If the old backend ignores that field,
+// PATCH persists it. A partially created student is returned as such, so the
+// UI never says the address was saved when it wasn't.
+export async function addStudentWithAddress(
+  data: NewStudentWithAddress,
+): Promise<{ student: Student; addressSaved: boolean }> {
+  const created = await addStudent(data);
+  if (created.address?.trim() === data.address.trim()) {
+    return { student: created, addressSaved: true };
+  }
+  try {
+    const updated = await updateStudentAddress(created.id, data.address);
+    return {
+      student: updated,
+      addressSaved: updated.address?.trim() === data.address.trim(),
+    };
+  } catch {
+    return { student: created, addressSaved: false };
+  }
 }
 
 // The backend has no bulk endpoint yet. Import each row with the existing
