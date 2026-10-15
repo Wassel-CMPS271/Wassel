@@ -12,7 +12,7 @@ Wassel is a web-based school transport management platform for private schools, 
 ### Prerequisites
 
 - Java 21
-- Node.js 20+ (with npm)
+- Node.js 24+ (with npm) — required by the frontend's test tooling (Vitest, jsdom)
 - Docker (with Docker Compose v2)
 
 ### Run locally
