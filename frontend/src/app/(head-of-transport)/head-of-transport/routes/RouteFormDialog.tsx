@@ -49,6 +49,7 @@ export function RouteFormDialog({
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [isLoadingOptions, setIsLoadingOptions] = useState(true);
+  const [optionsFailed, setOptionsFailed] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -76,6 +77,7 @@ export function RouteFormDialog({
       })
       .catch(() => {
         if (cancelled) return;
+        setOptionsFailed(true);
         setErrors((prev) => ({
           ...prev,
           form: "Couldn't load vehicles and drivers. Close this and try again.",
@@ -95,12 +97,22 @@ export function RouteFormDialog({
     current && !activeVehicles.some((vehicle) => vehicle.id === current.vehicle.id);
   const showCurrentDriver =
     current && !activeDrivers.some((driver) => driver.id === current.driver.id);
+  // Without the options there is nothing valid to pick, and submitting would
+  // replace the "couldn't load" message with field errors that can't be fixed.
+  const canSubmit = !isSubmitting && !isLoadingOptions && !optionsFailed;
 
-  // Shows the errors and moves focus to the first field that has one.
+  // Shows the errors and moves focus to the first field that has one. A
+  // generic (non-field) error has nowhere else to go, so it moves focus
+  // back to the Name field instead of leaving it on the disabled submit
+  // button, which would otherwise drop focus to <body>.
   function showErrors(next: FormErrors) {
     setErrors(next);
     const firstInvalid = FIELDS.find((field) => next[field]);
-    if (firstInvalid) fieldRefs[firstInvalid].current?.focus();
+    if (firstInvalid) {
+      fieldRefs[firstInvalid].current?.focus();
+    } else if (next.form) {
+      fieldRefs.name.current?.focus();
+    }
   }
 
   function validate(): FormErrors {
@@ -113,6 +125,7 @@ export function RouteFormDialog({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canSubmit) return;
     const clientErrors = validate();
     if (Object.keys(clientErrors).length > 0) {
       showErrors(clientErrors);
@@ -260,7 +273,7 @@ export function RouteFormDialog({
             )}
 
             <div className="flex" style={{ gap: spacing.sm, marginTop: spacing.lg }}>
-              <Button type="submit" disabled={isSubmitting || isLoadingOptions}>
+              <Button type="submit" disabled={!canSubmit}>
                 {isSubmitting ? submittingLabel : submitLabel}
               </Button>
               <Button variant="ghost" type="button" onClick={onClose} disabled={isSubmitting}>

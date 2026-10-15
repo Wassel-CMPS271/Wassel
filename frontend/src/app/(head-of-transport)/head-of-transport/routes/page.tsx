@@ -61,7 +61,7 @@ export default function RoutesPage() {
               See every morning pickup route, its vehicle, driver and seats left.
             </p>
           </div>
-          <AddRouteForm onAdd={handleCreate} />
+          <AddRouteForm onAdd={handleCreate} disabled={isLoading || !!loadError} />
         </header>
 
         <section aria-labelledby="route-list-heading">

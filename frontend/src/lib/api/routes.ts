@@ -136,6 +136,10 @@ const SAMPLE_STOPS: Record<string, Stop[]> = {
   [sampleRoute.id]: sampleRoute.stops,
 };
 
+// crypto.randomUUID() needs a secure context (HTTPS/localhost); staging runs
+// over plain HTTP, so a counter is used instead.
+let nextSampleId = 1;
+
 let sampleState: Route[] = (sampleRouteList satisfies RouteSummary[]).map((summary) => ({
   ...structuredClone(summary),
   school: structuredClone(SAMPLE_SCHOOL),
@@ -219,7 +223,7 @@ const sampleRoutes: RoutesApi = {
   async create(input) {
     const fields = await resolveSampleInput(input);
     const route: Route = {
-      id: crypto.randomUUID(),
+      id: `sample-${nextSampleId++}`,
       ...fields,
       studentCount: 0,
       seatsLeft: fields.vehicle.capacity,

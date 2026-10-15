@@ -8,11 +8,15 @@ import { RouteFormDialog } from "./RouteFormDialog";
 
 interface AddRouteFormProps {
   onAdd: (data: RouteInput) => Promise<void>;
+  // Disables the trigger until the route list has loaded successfully, so a
+  // route can't be created (and silently dropped) while the list is loading
+  // or failed to load.
+  disabled?: boolean;
 }
 
 const EMPTY_ROUTE: RouteInput = { name: "", vehicleId: "", driverId: "" };
 
-export function AddRouteForm({ onAdd }: AddRouteFormProps) {
+export function AddRouteForm({ onAdd, disabled }: AddRouteFormProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const shouldRestoreFocusRef = useRef(false);
@@ -31,7 +35,7 @@ export function AddRouteForm({ onAdd }: AddRouteFormProps) {
 
   return (
     <>
-      <Button ref={triggerRef} variant="primary" onClick={() => setIsOpen(true)}>
+      <Button ref={triggerRef} variant="primary" onClick={() => setIsOpen(true)} disabled={disabled}>
         Create route
       </Button>
 

@@ -205,6 +205,22 @@ describe("sample client (temporary, delete with SCRUM-208)", () => {
     expect(list.map((route) => route.id)).toContain(created.id);
   });
 
+  // crypto.randomUUID only exists in a secure context, and staging is plain HTTP.
+  it("creates routes with distinct ids without crypto.randomUUID", async () => {
+    vi.stubGlobal("crypto", undefined);
+    try {
+      const first = await routes.createRoute({ name: "First", vehicleId: "v-free", driverId: "d-free" });
+      await routes.deleteRoute(first.id);
+      const second = await routes.createRoute({ name: "Second", vehicleId: "v-free", driverId: "d-free" });
+
+      expect(first.id).toEqual(expect.any(String));
+      expect(second.id).not.toBe(first.id);
+      await expect(routes.getRoute(second.id)).resolves.toMatchObject({ name: "Second" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("edits a route, keeping its stops and recomputing the seats left", async () => {
     const updated = await routes.updateRoute(VERDUN_ID, {
       name: "Verdun early run",
