@@ -184,6 +184,10 @@ export const darkTheme = {
     sidebar: "rgba(16, 18, 24, 0.78)", // translucent nav rail over the page gradient
     sidebarBlur: "blur(12px)", // backdropFilter that pairs with `sidebar`
     recede: "rgba(255, 255, 255, 0.03)", // inactive/"before" items that should sit back
+    emptyState: "rgba(20, 22, 29, 0.5)", // dashed "nothing here yet" panel: surface.card at half strength
+    emptyStateBadge: "rgba(255, 255, 255, 0.05)", // icon circle inside the empty state
+    skeleton: "rgba(255, 255, 255, 0.08)", // pulsing blocks of a loading placeholder list
+    overlay: "rgba(5, 6, 10, 0.72)", // modal dialog backdrop, a tint of background.base
   },
   interactive: {
     hoverBg: "rgba(251, 191, 36, 0.06)", // accent tint for hovered nav items/cards
@@ -203,7 +207,17 @@ export const darkTheme = {
     activeDot: colors.success[500],
     activeGlow: "rgba(18, 183, 106, 0.55)",
     inactiveDot: colors.neutral[400],
+    liveBadgeBg: "rgba(18, 183, 106, 0.14)", // circle behind a section heading's live dot, from success[500]
   },
+} as const;
+
+/**
+ * Field colors for the explicit light opt-in (theme="light" on Select).
+ * text on fill ~18.9:1.
+ */
+export const lightTheme = {
+  inputFill: "#ffffff",
+  inputText: "#111111",
 } as const;
 
 /**
@@ -235,6 +249,11 @@ export const brand = {
 export const sizing = {
   tapTarget: "44px",
   brandSidebar: "40px", // BrandMark beside the wordmark in the role sidebars (was the old "W" badge size)
+  pageMaxWidth: "768px", // content column of a role-area list page
+  dialogMaxWidth: "420px", // modal form panel
+  sectionBadge: "24px", // live-dot circle beside a section heading
+  emptyStateBadge: "48px", // icon circle in an empty state
+  emptyStateText: "320px", // max line length of the empty-state helper text
 } as const;
 
 /** Icon pixel sizes, so call sites don't pass bare numbers. */
