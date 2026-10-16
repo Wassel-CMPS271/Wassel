@@ -61,6 +61,32 @@ describe("request", () => {
     );
   });
 
+  it.each(["PUT", "DELETE"] as const)("sends %s as the method", async (method) => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 204 });
+
+    await request("/api/head-of-transport/routes/r-1", { method });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ method }),
+    );
+  });
+
+  it("sends the JSON body with a PUT", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, json: () => Promise.resolve({}) });
+
+    await request("/api/head-of-transport/routes/r-1", { method: "PUT", body: { name: "Hamra" } });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Hamra" }),
+      }),
+    );
+  });
+
   it("sends no body and no Content-Type for a plain GET", async () => {
     const fetchMock = mockFetchOnce({ ok: true, status: 200, json: () => Promise.resolve({}) });
 

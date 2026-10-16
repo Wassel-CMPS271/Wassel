@@ -9,6 +9,8 @@ import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
+import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
+import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
@@ -154,6 +156,22 @@ public class GlobalExceptionHandler {
 	public ProblemDetail handleStudentNotFound(StudentNotFoundException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	@ExceptionHandler(RouteNotFoundException.class)
+	public ProblemDetail handleRouteNotFound(RouteNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// Same shape again, keyed by whichever field conflicted (vehicleId or driverId): the vehicle
+	// or driver is already on a different route, or the vehicle is inactive.
+	@ExceptionHandler(RouteAssignmentConflictException.class)
+	public ProblemDetail handleRouteAssignmentConflict(RouteAssignmentConflictException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Route assignment conflict");
+		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
+		return problem;
 	}
 
 	@ExceptionHandler(UserNotFoundException.class)

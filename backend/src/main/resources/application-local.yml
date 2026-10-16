@@ -19,6 +19,10 @@ wassel:
   seed-admin:
     email: ${ADMIN_EMAIL:admin@wassel.local}
     password: ${ADMIN_PASSWORD:local-admin-password}
+  # Verdun, Beirut — same coordinates as docs/contracts/samples/routing/route.json.
+  school:
+    latitude: ${SCHOOL_LATITUDE:33.896}
+    longitude: ${SCHOOL_LONGITUDE:35.484}
 
 logging:
   level:

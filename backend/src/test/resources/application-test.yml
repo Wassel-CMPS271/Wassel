@@ -12,3 +12,8 @@ jwt:
   secret: test-secret-test-secret-test-secret-test-secret
   expiration: 1h
   cookie-secure: false
+
+wassel:
+  school:
+    latitude: 33.896
+    longitude: 35.484

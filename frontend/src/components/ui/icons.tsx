@@ -54,6 +54,16 @@ export function StudentIcon(props: IconProps) {
   );
 }
 
+export function RouteIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="5" cy="6" r="2" />
+      <circle cx="19" cy="18" r="2" />
+      <path d="M5 8c0 5 14 1 14 8" />
+    </Icon>
+  );
+}
+
 export function ClockIcon(props: IconProps) {
   return (
     <Icon {...props}>
