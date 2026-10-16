@@ -68,7 +68,7 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
 ## API calls
 
 - Every call to the backend goes through `request()` in `src/lib/api/client.ts`. Don't call `fetch` directly. It sends the session cookies (`credentials: "include"`), prefixes `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8080`; an empty value counts as unset; it is baked in at build time, so staging passes it as a Docker build arg), and sends `Content-Type` only when there is a body, because the backend's CORS allows only that header.
-- One module per backend area in `src/lib/api/`; `auth.ts` is the model. The vehicles, drivers, students, holidays, school times and half-days modules are still mocks that keep the real signatures.
+- One module per backend area in `src/lib/api/`; `auth.ts` is the model. The vehicles, drivers and students modules are still mocks that keep the real signatures.
 - A failed call throws `ApiValidationError` (a 400 with an `errors` map: show each message next to its field) or `ApiError` (any other non-2xx: `status` says what to do, `message` is the backend's `detail`). A network failure rejects as it is. Forms say "Something went wrong. Please try again." for anything they don't handle by status.
 - The auth cookies are `HttpOnly` and `SameSite=Strict`. The frontend never reads them, and it must be served from the same site as the API.
 
