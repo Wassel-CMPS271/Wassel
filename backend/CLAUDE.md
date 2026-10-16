@@ -120,11 +120,20 @@ that's the structure this codebase moved away from.
   the app refuses to start without it) for the `Route.school` block. No route has stops yet —
   `studentCount` is always 0 and `stops` always empty — until assignment (SCRUM-209) and manual
   reorder (SCRUM-210) exist. Response shapes follow `docs/contracts/routing.md`.
-- `routing` — the contracts the route features code against (SCRUM-201). `service/RouteOptimizer`
-  orders one route's stops and `service/TravelTimes` gives a driving-time matrix between points, so
-  the solver (SCRUM-202) and the road provider client (SCRUM-204) swap in without their callers
-  changing. `StraightLineTravelTimes` (30 km/h, rounded up to whole minutes) is the stand-in and the
-  fallback. Other modules use `routing.service` only, never anything deeper, and `routing` imports
+- `routing` — the contracts the route features code against (SCRUM-201) and the solver behind them
+  (SCRUM-202). `service/RouteOptimizer` orders one route's stops and `service/TravelTimes` gives a
+  driving-time matrix between points, so the road provider client (SCRUM-204) swaps in without its
+  callers changing. `StraightLineTravelTimes` (30 km/h, rounded up to whole minutes) is the stand-in
+  and the fallback. `OrToolsRouteOptimizer` is the only `RouteOptimizer`: Google OR-Tools
+  (`ortools-java`, native libraries loaded on the first solve), guided local search seeded with the
+  given order (50 ms per stop, capped at 2 s) and never worse than that order. It asks for one
+  matrix per route and checks capacity first. `RouteTimings` is the one place the arrival-time rule
+  is written (backwards from the school's arrival time); the propose endpoint's `current` and the
+  route's own arrival times must use it rather than redo the arithmetic. A first pickup before
+  `RouteTimings.EARLIEST_FIRST_PICKUP` (06:00, a constant while there is one school) or before
+  midnight makes a plan `ARRIVAL_TIME_UNREACHABLE`. Run the packaged jar once after upgrading
+  `ortools-java`: the natives are extracted at runtime, and a container that mounts `/tmp` as
+  `noexec` fails to load them. Other modules use `routing.service` only, never anything deeper, and `routing` imports
   no other module: it takes plain `Coordinate`s and ids so it does not depend on the routes
   entities. The JSON shapes, endpoint table and rules are in `docs/contracts/routing.md`, with
   samples in `docs/contracts/samples/routing/`; change them by pull request that tags the owners.
