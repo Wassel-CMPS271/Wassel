@@ -76,7 +76,7 @@ What the optimizer suggests. Making one never changes the route.
 
 ## Endpoints
 
-SCRUM-208's rows are confirmed: the request bodies below are what's actually built, and `GET`/`POST`/`PUT`/`DELETE` on `/api/head-of-transport/routes` are real endpoints. Moustafa's remaining rows (SCRUM-209/210) are still **draft** until those land.
+SCRUM-208 and SCRUM-209's rows are confirmed: the request bodies below are what's actually built. Moustafa's remaining row (SCRUM-210) is still **draft** until it lands.
 
 | Method | Path | Body | Success | Owner |
 |---|---|---|---|---|
@@ -85,8 +85,8 @@ SCRUM-208's rows are confirmed: the request bodies below are what's actually bui
 | GET | `/api/head-of-transport/routes/{routeId}` | | 200 `Route` | Moustafa, SCRUM-208 |
 | PUT | `/api/head-of-transport/routes/{routeId}` | `{ name, vehicleId, driverId }` | 200 `Route` | Moustafa, SCRUM-208 |
 | DELETE | `/api/head-of-transport/routes/{routeId}` | | 204 | Moustafa, SCRUM-208 |
-| POST | `/api/head-of-transport/routes/{routeId}/students` | `{ studentId }` | 200 `Route` | Moustafa, SCRUM-209 (draft) |
-| DELETE | `/api/head-of-transport/routes/{routeId}/students/{studentId}` | | 200 `Route` | Moustafa, SCRUM-209 (draft) |
+| POST | `/api/head-of-transport/routes/{routeId}/students` | `{ studentId }` | 200 `Route` | Moustafa, SCRUM-209 |
+| DELETE | `/api/head-of-transport/routes/{routeId}/students/{studentId}` | | 200 `Route` | Moustafa, SCRUM-209 |
 | PUT | `/api/head-of-transport/routes/{routeId}/stops` | `{ studentIds }`, the full new order | 200 `Route` | Moustafa, SCRUM-210 (draft) |
 | POST | `/api/head-of-transport/routes/{routeId}/optimization` | none | 201 `Proposal` | Hashem, SCRUM-203 |
 | POST | `/api/head-of-transport/routes/{routeId}/optimization/{proposalId}/apply` | none | 200 `Route` | Hashem, SCRUM-203 |
@@ -132,6 +132,15 @@ More codes may be added later. A client must show `message` for a code it does n
 
 All routes are the same morning run, so a vehicle and a driver can each be on **at most one route**. "Overlapping" has no other meaning until routes have times. An inactive vehicle, or a deactivated driver, cannot be put on a route — both must be reactivated first (confirmed, SCRUM-208). There is no deactivate endpoint for drivers yet; the check exists for when one lands.
 
+### Student assignment (confirmed, SCRUM-209)
+
+- **Capacity is checked against the route's current occupants before the student is resolved**, so adding to a full route answers `CAPACITY_EXCEEDED`-shaped 409 even for an unknown student id — the same "cheapest check first" order the solver uses for capacity vs. arrival time.
+- **A student is on at most one route.** Adding a student already on a different route moves them: they leave the old route (its `studentCount` drops) and join the new one. There is nothing to undo on the old route beyond that — no version history, unlike optimizer apply/discard.
+- **Only an active student can be added.** Removing has no such restriction — an inactive student already on a route can still be taken off it.
+- **Removing a student who exists but isn't a stop on *that* route is 404**, the same as a route or student that doesn't exist — the endpoint describes a relationship between the two ids, not just whether the student exists.
+- The old text `students.route` column is untouched by any of this (still SCRUM-209's call per the earlier draft note, now settled: it keeps working for filtering, nothing here writes it).
+- A stop's position comes from insertion order (each new stop goes to the end); there's no gap-filling when a stop is removed. Manual reordering (SCRUM-210) is the only way to change it.
+
 ## Errors
 
 The same `ProblemDetail` the other modules return, so the existing `request()` helper in `frontend/src/lib/api/client.ts` reads them the same way: a body with an `errors` map throws `ApiValidationError`, anything else throws `ApiError(status, detail)`. One frontend change comes first: `request()` types `method` as `"GET" | "POST"` today, so it must be widened for the PUT and DELETE calls (the backend's CORS already allows them).
@@ -143,16 +152,14 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 | Vehicle or driver already on another route (see [Rules](#rules)) | 409 | `errors: { vehicleId: message }` or `{ driverId: message }`, naming the conflicting route |
 | Inactive vehicle or driver | 409 | `errors: { vehicleId: message }` or `{ driverId: message }` |
 | Adding beyond capacity | 409 | `detail`, including the current count and the capacity |
+| Adding an inactive student | 409 | `errors: { studentId: message }` |
+| Removing a student who isn't a stop on that route | 404 | `detail` |
 | Optimize with no stops | 409 | `detail` |
 | Optimize before the school's arrival time is set | 409 | `detail` |
 | Optimize with stops that have no pin | 409 | `detail` naming them, and `studentIds: [uuid, ...]` as an extra property |
 | Apply on a route that changed since the proposal | 409 | `detail` |
 
 `studentIds` is an extra property, not part of `errors`, because `errors` is for field messages. The current client keeps only `detail`; the stops already say which students have no pin (`latitude: null`), so a screen does not need it.
-
-## Draft rules for Moustafa to confirm
-
-- The old text `students.route` column keeps working until the screens use `routes` (SCRUM-208, confirmed: the column is untouched). Whether assigning a student also writes it is Moustafa's call (SCRUM-209).
 
 ## Known limits
 

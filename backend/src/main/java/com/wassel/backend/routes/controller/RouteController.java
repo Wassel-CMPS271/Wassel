@@ -1,5 +1,6 @@
 package com.wassel.backend.routes.controller;
 
+import com.wassel.backend.routes.dto.AssignStudentRequest;
 import com.wassel.backend.routes.dto.RouteRequest;
 import com.wassel.backend.routes.dto.RouteResponse;
 import com.wassel.backend.routes.dto.RouteSummaryResponse;
@@ -64,6 +65,18 @@ public class RouteController {
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void deleteRoute(@AuthenticationPrincipal User headOfTransport, @PathVariable UUID id) {
 		routeService.deleteRoute(schoolIdOf(headOfTransport), id);
+	}
+
+	@PostMapping("/{id}/students")
+	public RouteResponse addStudent(@AuthenticationPrincipal User headOfTransport, @PathVariable UUID id,
+			@Valid @RequestBody AssignStudentRequest request) {
+		return routeService.addStudent(schoolIdOf(headOfTransport), id, request);
+	}
+
+	@DeleteMapping("/{id}/students/{studentId}")
+	public RouteResponse removeStudent(@AuthenticationPrincipal User headOfTransport, @PathVariable UUID id,
+			@PathVariable UUID studentId) {
+		return routeService.removeStudent(schoolIdOf(headOfTransport), id, studentId);
 	}
 
 	private UUID schoolIdOf(User headOfTransport) {

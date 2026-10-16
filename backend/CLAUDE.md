@@ -107,19 +107,29 @@ that's the structure this codebase moved away from.
   the `User` only has an email. Depends on `auth` and `users`.
 - `students` — student roster. Real module: add, list, search/filter by query/status/grade/route
   (SCRUM-167), and editing address, map-pin location, and parent-linking (SCRUM-166) are done.
-  CSV import and the active/inactive toggle are not built yet, and there's no endpoint to assign
-  a student's route (the `route` column exists for filtering; it's expected to be populated by a
-  future routing feature, not edited by hand here).
-- `routes` — a school's routes (SCRUM-208): create, list, get, edit, delete, each with one
-  vehicle and one driver, under `/api/head-of-transport/routes`. A vehicle or driver can be on
-  at most one route (checked in `RouteService`, backed by a unique constraint on `Route` as the
-  race-condition backstop); an inactive vehicle can't be assigned. Depends on `vehicles`
-  (`VehicleService.getOwnedVehicle`) and `drivers` (`DriverService.getOwnedDriver`) for
-  eligibility, and `schools` (`SchoolSettingsService.getTimes`) plus the new
-  `schools.config.SchoolLocationProperties` (`wassel.school.latitude`/`longitude`, required —
-  the app refuses to start without it) for the `Route.school` block. No route has stops yet —
-  `studentCount` is always 0 and `stops` always empty — until assignment (SCRUM-209) and manual
-  reorder (SCRUM-210) exist. Response shapes follow `docs/contracts/routing.md`.
+  CSV import and the active/inactive toggle are not built yet. The old `route` string column
+  exists for filtering only and is never written; real route membership (SCRUM-209) is
+  `routeId`/`stopPosition`, a student is a stop on at most one route, and `stopPosition` is a
+  watermark (next = current max + 1 on that route), not a compacted sequence — removing a stop
+  never renumbers another student's position, and display order always comes from sorting by it,
+  never from its raw value. `StudentService.assignToRoute`/`removeFromRoute`/`countOnRoute`/
+  `listOnRoute` are for the `routes` module to call; this module never imports `routes` (it takes
+  a plain route id, the same way `route` is a plain string).
+- `routes` — a school's routes (SCRUM-208) and which students ride each one (SCRUM-209), under
+  `/api/head-of-transport/routes`. A vehicle or driver can be on at most one route (checked in
+  `RouteService`, backed by a unique constraint on `Route` as the race-condition backstop); an
+  inactive vehicle or deactivated driver can't be assigned (there's no deactivate endpoint for
+  drivers yet; the check exists for when one lands). Adding a student checks capacity against the
+  route's current occupants before resolving the student (so a full route 409s even for an
+  unknown student id), then only an active student can be added, and a student already on
+  another route is moved rather than rejected. `studentCount`/`seatsLeft`/`stops` are computed
+  fresh from `StudentService` on every response, never cached on `Route`; every stop's
+  `arrivalTime` is still always null until SCRUM-212. Depends on `vehicles`
+  (`VehicleService.getOwnedVehicle`), `drivers` (`DriverService.getOwnedDriver`) and `students`
+  (`StudentService`) for eligibility, and `schools` (`SchoolSettingsService.getTimes`) plus the
+  `schools.config.SchoolLocationProperties` (`wassel.school.latitude`/`longitude`, required — the
+  app refuses to start without it) for the `Route.school` block. Manual reorder (SCRUM-210) is
+  still open. Response shapes follow `docs/contracts/routing.md`.
 - `routing` — the contracts the route features code against (SCRUM-201). `service/RouteOptimizer`
   orders one route's stops and `service/TravelTimes` gives a driving-time matrix between points, so
   the solver (SCRUM-202) and the road provider client (SCRUM-204) swap in without their callers

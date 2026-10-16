@@ -30,6 +30,14 @@ import java.util.UUID;
  * are set after creation via the edit endpoints (SCRUM-166); {@code route} is filterable
  * (SCRUM-167) but nothing sets it yet, pending a future routing feature. All four are nullable:
  * a newly added student has none of them yet.
+ *
+ * <p>{@code routeId} and {@code stopPosition} (SCRUM-209) are the real route assignment: a
+ * student is a stop on at most one route, and {@code stopPosition} orders the stops within it.
+ * The old text {@code route} column is untouched and keeps working for filtering until the
+ * screens use {@code routeId} instead (routing contract, "Draft rules"). {@code stopPosition} is
+ * a watermark (next = current max + 1), not a compacted 1..n sequence, so removing a stop never
+ * reassigns another student's position; display order always comes from sorting by it, never
+ * from its raw value.
  */
 @Entity
 @Table(name = "students")
@@ -80,6 +88,12 @@ public class Student {
 
 	@Column(name = "parent_user_id")
 	private UUID parentUserId;
+
+	@Column(name = "route_id")
+	private UUID routeId;
+
+	@Column(name = "stop_position")
+	private Integer stopPosition;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)

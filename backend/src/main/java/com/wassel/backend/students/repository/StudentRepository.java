@@ -23,6 +23,16 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
 	boolean existsBySchoolIdAndFirstNameIgnoreCaseAndLastNameIgnoreCaseAndGuardianPhone(
 			UUID schoolId, String firstName, String lastName, String guardianPhone);
 
+	long countBySchoolIdAndRouteId(UUID schoolId, UUID routeId);
+
+	boolean existsBySchoolIdAndIdAndRouteId(UUID schoolId, UUID id, UUID routeId);
+
+	List<Student> findBySchoolIdAndRouteIdOrderByStopPositionAsc(UUID schoolId, UUID routeId);
+
+	/** Null when the route has no stops yet. The next stop's position is this plus one. */
+	@Query("SELECT MAX(s.stopPosition) FROM Student s WHERE s.schoolId = :schoolId AND s.routeId = :routeId")
+	Integer findMaxStopPosition(@Param("schoolId") UUID schoolId, @Param("routeId") UUID routeId);
+
 	// Each filter is skipped when its parameter is null; "query" matches firstName, lastName, or
 	// guardianName case-insensitively (SCRUM-167).
 	@Query("""

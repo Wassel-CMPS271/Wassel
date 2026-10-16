@@ -4,6 +4,9 @@ import com.wassel.backend.drivers.entity.Driver;
 import com.wassel.backend.drivers.entity.DriverStatus;
 import com.wassel.backend.drivers.repository.DriverRepository;
 import com.wassel.backend.routes.repository.RouteRepository;
+import com.wassel.backend.students.entity.Student;
+import com.wassel.backend.students.entity.StudentStatus;
+import com.wassel.backend.students.repository.StudentRepository;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.entity.User;
 import com.wassel.backend.vehicles.entity.Vehicle;
@@ -20,6 +23,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -58,11 +62,15 @@ class RouteControllerTests {
 	@Autowired
 	private DriverRepository driverRepository;
 
+	@Autowired
+	private StudentRepository studentRepository;
+
 	@BeforeEach
 	void cleanDatabase() {
 		routeRepository.deleteAll();
 		driverRepository.deleteAll();
 		vehicleRepository.deleteAll();
+		studentRepository.deleteAll();
 	}
 
 	private RequestPostProcessor loggedInAs(Role role, UUID schoolId) {
@@ -73,8 +81,13 @@ class RouteControllerTests {
 	}
 
 	private UUID aVehicle(UUID schoolId, boolean active) {
+		return aVehicle(schoolId, active, 14);
+	}
+
+	private UUID aVehicle(UUID schoolId, boolean active, int capacity) {
 		Vehicle vehicle = vehicleRepository.save(Vehicle.builder().schoolId(schoolId)
-				.plateNumber("A " + (100000 + (int) (Math.random() * 900000))).capacity(14).active(active).build());
+				.plateNumber("A " + (100000 + (int) (Math.random() * 900000))).capacity(capacity).active(active)
+				.build());
 		return vehicle.getId();
 	}
 
@@ -104,6 +117,31 @@ class RouteControllerTests {
 		Matcher matcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(body);
 		matcher.find();
 		return matcher.group(1);
+	}
+
+	private UUID aStudent(UUID schoolId) {
+		return aStudent(schoolId, StudentStatus.ACTIVE);
+	}
+
+	private UUID aStudent(UUID schoolId, StudentStatus status) {
+		Student student = studentRepository.save(Student.builder().schoolId(schoolId)
+				.firstName("Hadi").lastName("Rizk").grade("5").guardianName("Guardian Name")
+				.guardianPhone("0" + (int) (Math.random() * 100000000)).status(status)
+				.address("Verdun Street, Beirut").latitude(BigDecimal.valueOf(33.886))
+				.longitude(BigDecimal.valueOf(35.485)).build());
+		return student.getId();
+	}
+
+	private org.springframework.test.web.servlet.ResultActions assignAs(UUID schoolId, String routeId, UUID studentId)
+			throws Exception {
+		return mockMvc.perform(post(URL + "/" + routeId + "/students").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolId))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"studentId\":\"%s\"}".formatted(studentId)));
+	}
+
+	private org.springframework.test.web.servlet.ResultActions removeAs(UUID schoolId, String routeId, UUID studentId)
+			throws Exception {
+		return mockMvc.perform(delete(URL + "/" + routeId + "/students/" + studentId)
+				.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolId)));
 	}
 
 	@Test
@@ -311,6 +349,18 @@ class RouteControllerTests {
 	}
 
 	@Test
+	void deletingARouteReleasesItsStudents() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		UUID studentId = aStudent(schoolA);
+		assignAs(schoolA, id, studentId).andExpect(status().isOk());
+
+		mockMvc.perform(delete(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(status().isNoContent());
+
+		assertEquals(null, studentRepository.findById(studentId).orElseThrow().getRouteId());
+	}
+
+	@Test
 	void deletingAnUnknownOrOtherSchoolRouteIsNotFound() throws Exception {
 		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
 
@@ -339,6 +389,134 @@ class RouteControllerTests {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(route("Verdun morning run", aVehicle(schoolB, true), aDriver(schoolA))))
 				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void headOfTransportCanAddAStudentAndSeeThemAsAStop() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		UUID studentId = aStudent(schoolA);
+
+		assignAs(schoolA, id, studentId)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.studentCount").value(1))
+				.andExpect(jsonPath("$.seatsLeft").value(13))
+				.andExpect(jsonPath("$.stops.length()").value(1))
+				.andExpect(jsonPath("$.stops[0].studentId").value(studentId.toString()))
+				.andExpect(jsonPath("$.stops[0].position").value(1))
+				.andExpect(jsonPath("$.stops[0].firstName").value("Hadi"))
+				.andExpect(jsonPath("$.stops[0].address").value("Verdun Street, Beirut"))
+				.andExpect(jsonPath("$.stops[0].arrivalTime").isEmpty());
+	}
+
+	@Test
+	void stopsAreInInsertionOrderWithSequentialPositions() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		UUID first = aStudent(schoolA);
+		UUID second = aStudent(schoolA);
+
+		assignAs(schoolA, id, first).andExpect(status().isOk());
+		assignAs(schoolA, id, second)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.stops.length()").value(2))
+				.andExpect(jsonPath("$.stops[0].studentId").value(first.toString()))
+				.andExpect(jsonPath("$.stops[0].position").value(1))
+				.andExpect(jsonPath("$.stops[1].studentId").value(second.toString()))
+				.andExpect(jsonPath("$.stops[1].position").value(2));
+	}
+
+	@Test
+	void addingBeyondCapacityIsRejectedWithTheCountAndCapacity() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true, 1), aDriver(schoolA));
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+
+		assignAs(schoolA, id, aStudent(schoolA))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value("The route has 1 students but the vehicle seats 1."));
+	}
+
+	@Test
+	void reAddingAStudentAlreadyOnAFullRouteIsNotACapacityError() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true, 1), aDriver(schoolA));
+		UUID studentId = aStudent(schoolA);
+		assignAs(schoolA, id, studentId).andExpect(status().isOk());
+
+		assignAs(schoolA, id, studentId)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.studentCount").value(1));
+	}
+
+	@Test
+	void capacityIsCheckedBeforeTheStudentIsResolvedSoAnUnknownStudentStillGetsCapacityFirst() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true, 1), aDriver(schoolA));
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+
+		assignAs(schoolA, id, UUID.randomUUID())
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value("The route has 1 students but the vehicle seats 1."));
+	}
+
+	@Test
+	void addingAnInactiveStudentIsRejected() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		UUID studentId = aStudent(schoolA, StudentStatus.INACTIVE);
+
+		assignAs(schoolA, id, studentId)
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.errors.studentId").value("Only active students can be added to a route."));
+	}
+
+	@Test
+	void addingAnUnknownOrOtherSchoolStudentIsNotFound() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+
+		assignAs(schoolA, id, UUID.randomUUID()).andExpect(status().isNotFound());
+		assignAs(schoolA, id, aStudent(schoolB)).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void addingAStudentAlreadyOnAnotherRouteMovesThemAndTheOldRouteCountDrops() throws Exception {
+		String routeA = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		String routeB = createAs(schoolA, "Hamra morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		UUID studentId = aStudent(schoolA);
+		assignAs(schoolA, routeA, studentId).andExpect(status().isOk());
+
+		assignAs(schoolA, routeB, studentId)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.studentCount").value(1));
+
+		mockMvc.perform(get(URL + "/" + routeA).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.studentCount").value(0))
+				.andExpect(jsonPath("$.stops.length()").value(0));
+	}
+
+	@Test
+	void headOfTransportCanRemoveAStudentAndTheCountDrops() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		UUID studentId = aStudent(schoolA);
+		assignAs(schoolA, id, studentId).andExpect(status().isOk());
+
+		removeAs(schoolA, id, studentId)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.studentCount").value(0))
+				.andExpect(jsonPath("$.stops.length()").value(0));
+	}
+
+	@Test
+	void removingAStudentNotOnThatRouteIsNotFound() throws Exception {
+		String routeA = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		String routeB = createAs(schoolA, "Hamra morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		UUID studentId = aStudent(schoolA);
+		assignAs(schoolA, routeA, studentId).andExpect(status().isOk());
+
+		removeAs(schoolA, routeB, studentId).andExpect(status().isNotFound());
+		removeAs(schoolA, routeA, aStudent(schoolA)).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void removingFromAnUnknownOrOtherSchoolRouteIsNotFound() throws Exception {
+		UUID studentId = aStudent(schoolA);
+
+		removeAs(schoolA, UUID.randomUUID().toString(), studentId).andExpect(status().isNotFound());
 	}
 
 	@Test
