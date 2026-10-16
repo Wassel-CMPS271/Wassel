@@ -15,6 +15,7 @@ import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
+import com.wassel.backend.students.exception.InvalidStopOrderException;
 import com.wassel.backend.students.exception.StudentAlreadyExistsException;
 import com.wassel.backend.students.exception.StudentNotActiveException;
 import com.wassel.backend.students.exception.StudentNotFoundException;
@@ -167,6 +168,17 @@ public class GlobalExceptionHandler {
 		logRejected(ex);
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Student not active");
 		problem.setProperty("errors", Map.of("studentId", ex.getMessage()));
+		return problem;
+	}
+
+	// Same "errors" shape again, keyed by "studentIds": the new order repeats a student, or
+	// doesn't contain exactly the route's current stops. 400, not 409: this is about the shape
+	// of the request body, not a conflict with something another request is doing.
+	@ExceptionHandler(InvalidStopOrderException.class)
+	public ProblemDetail handleInvalidStopOrder(InvalidStopOrderException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid stop order");
+		problem.setProperty("errors", Map.of("studentIds", ex.getMessage()));
 		return problem;
 	}
 

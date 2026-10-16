@@ -76,7 +76,7 @@ What the optimizer suggests. Making one never changes the route.
 
 ## Endpoints
 
-SCRUM-208 and SCRUM-209's rows are confirmed: the request bodies below are what's actually built. Moustafa's remaining row (SCRUM-210) is still **draft** until it lands.
+All of Moustafa's rows are confirmed: the request bodies below are what's actually built.
 
 | Method | Path | Body | Success | Owner |
 |---|---|---|---|---|
@@ -87,7 +87,7 @@ SCRUM-208 and SCRUM-209's rows are confirmed: the request bodies below are what'
 | DELETE | `/api/head-of-transport/routes/{routeId}` | | 204 | Moustafa, SCRUM-208 |
 | POST | `/api/head-of-transport/routes/{routeId}/students` | `{ studentId }` | 200 `Route` | Moustafa, SCRUM-209 |
 | DELETE | `/api/head-of-transport/routes/{routeId}/students/{studentId}` | | 200 `Route` | Moustafa, SCRUM-209 |
-| PUT | `/api/head-of-transport/routes/{routeId}/stops` | `{ studentIds }`, the full new order | 200 `Route` | Moustafa, SCRUM-210 (draft) |
+| PUT | `/api/head-of-transport/routes/{routeId}/stops` | `{ studentIds }`, the full new order | 200 `Route` | Moustafa, SCRUM-210 |
 | POST | `/api/head-of-transport/routes/{routeId}/optimization` | none | 201 `Proposal` | Hashem, SCRUM-203 |
 | POST | `/api/head-of-transport/routes/{routeId}/optimization/{proposalId}/apply` | none | 200 `Route` | Hashem, SCRUM-203 |
 | DELETE | `/api/head-of-transport/routes/{routeId}/optimization/{proposalId}` | | 204 | Hashem, SCRUM-203 |
@@ -141,6 +141,15 @@ All routes are the same morning run, so a vehicle and a driver can each be on **
 - The old text `students.route` column is untouched by any of this (still SCRUM-209's call per the earlier draft note, now settled: it keeps working for filtering, nothing here writes it).
 - A stop's position comes from insertion order (each new stop goes to the end); there's no gap-filling when a stop is removed. Manual reordering (SCRUM-210) is the only way to change it.
 
+### Manual reorder (confirmed, SCRUM-210)
+
+- The request is the **full** new order, every student id that's currently a stop on the route — not a delta (a `{ from, to }` move, or a single swap). The screen sends the whole list it already has after a drag-and-drop, reordered.
+- **Rejected (400) if the list repeats a student id, or doesn't contain exactly the route's current stops** — missing one, or naming a student who isn't a stop on this route at all. Both are reported under `errors.studentIds`; the two cases have distinct messages.
+- Reordering moves nobody on or off the route. Assigning and removing (SCRUM-209) are the only ways to change *which* students are stops; this only changes their order.
+- Positions become a clean `1..n` after a reorder, not a watermark like a single assign — the whole order was just given explicitly, so there's nothing to leave gaps in.
+- Reordering a route with no stops, with an empty list, succeeds (a no-op).
+- This is the fallback that keeps a route demoable before the optimizer (SCRUM-202/203) exists; apply/discard later replaces the saved order the same way.
+
 ## Errors
 
 The same `ProblemDetail` the other modules return, so the existing `request()` helper in `frontend/src/lib/api/client.ts` reads them the same way: a body with an `errors` map throws `ApiValidationError`, anything else throws `ApiError(status, detail)`. One frontend change comes first: `request()` types `method` as `"GET" | "POST"` today, so it must be widened for the PUT and DELETE calls (the backend's CORS already allows them).
@@ -153,6 +162,7 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 | Inactive vehicle or driver | 409 | `errors: { vehicleId: message }` or `{ driverId: message }` |
 | Adding beyond capacity | 409 | `detail`, including the current count and the capacity |
 | Adding an inactive student | 409 | `errors: { studentId: message }` |
+| Reorder repeats a student, or doesn't match the route's current stops | 400 | `errors: { studentIds: message }` |
 | Removing a student who isn't a stop on that route | 404 | `detail` |
 | Optimize with no stops | 409 | `detail` |
 | Optimize before the school's arrival time is set | 409 | `detail` |

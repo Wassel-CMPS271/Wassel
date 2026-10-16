@@ -3,6 +3,7 @@ package com.wassel.backend.routes.service;
 import com.wassel.backend.drivers.dto.DriverResponse;
 import com.wassel.backend.drivers.service.DriverService;
 import com.wassel.backend.routes.dto.AssignStudentRequest;
+import com.wassel.backend.routes.dto.ReorderStopsRequest;
 import com.wassel.backend.routes.dto.RouteDriverSummary;
 import com.wassel.backend.routes.dto.RouteRequest;
 import com.wassel.backend.routes.dto.RouteResponse;
@@ -159,6 +160,18 @@ public class RouteService {
 	public RouteResponse removeStudent(UUID schoolId, UUID routeId, UUID studentId) {
 		Route route = findOwned(schoolId, routeId);
 		studentService.removeFromRoute(schoolId, studentId, routeId);
+		return toResponse(schoolId, route);
+	}
+
+	/**
+	 * Sets the route's whole stop order by hand (SCRUM-210): the fallback that keeps the route
+	 * usable before the optimizer (SCRUM-202/203) proposes one. {@link StudentService#reorderRoute}
+	 * rejects a list that repeats a student or doesn't contain exactly the route's current stops.
+	 */
+	@Transactional
+	public RouteResponse reorderStops(UUID schoolId, UUID routeId, ReorderStopsRequest request) {
+		Route route = findOwned(schoolId, routeId);
+		studentService.reorderRoute(schoolId, routeId, request.studentIds());
 		return toResponse(schoolId, route);
 	}
 

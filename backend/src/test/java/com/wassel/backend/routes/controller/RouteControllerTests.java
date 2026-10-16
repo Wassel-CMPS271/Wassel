@@ -144,6 +144,14 @@ class RouteControllerTests {
 				.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolId)));
 	}
 
+	private org.springframework.test.web.servlet.ResultActions reorderAs(UUID schoolId, String routeId,
+			UUID... studentIds) throws Exception {
+		String ids = java.util.Arrays.stream(studentIds).map(id -> "\"" + id + "\"")
+				.collect(java.util.stream.Collectors.joining(","));
+		return mockMvc.perform(put(URL + "/" + routeId + "/stops").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolId))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"studentIds\":[%s]}".formatted(ids)));
+	}
+
 	@Test
 	void listIsEmptyBeforeAnyRouteIsAdded() throws Exception {
 		mockMvc.perform(get(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
@@ -517,6 +525,85 @@ class RouteControllerTests {
 		UUID studentId = aStudent(schoolA);
 
 		removeAs(schoolA, UUID.randomUUID().toString(), studentId).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void headOfTransportCanReorderStops() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		UUID first = aStudent(schoolA);
+		UUID second = aStudent(schoolA);
+		UUID third = aStudent(schoolA);
+		assignAs(schoolA, id, first).andExpect(status().isOk());
+		assignAs(schoolA, id, second).andExpect(status().isOk());
+		assignAs(schoolA, id, third).andExpect(status().isOk());
+
+		reorderAs(schoolA, id, third, first, second)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.stops[0].studentId").value(third.toString()))
+				.andExpect(jsonPath("$.stops[0].position").value(1))
+				.andExpect(jsonPath("$.stops[1].studentId").value(first.toString()))
+				.andExpect(jsonPath("$.stops[1].position").value(2))
+				.andExpect(jsonPath("$.stops[2].studentId").value(second.toString()))
+				.andExpect(jsonPath("$.stops[2].position").value(3));
+
+		mockMvc.perform(get(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.stops[0].studentId").value(third.toString()));
+	}
+
+	@Test
+	void reorderingAnEmptyRouteWithAnEmptyListSucceeds() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+
+		reorderAs(schoolA, id).andExpect(status().isOk()).andExpect(jsonPath("$.stops.length()").value(0));
+	}
+
+	@Test
+	void reorderingWithARepeatedStudentIsRejected() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		UUID first = aStudent(schoolA);
+		UUID second = aStudent(schoolA);
+		assignAs(schoolA, id, first).andExpect(status().isOk());
+		assignAs(schoolA, id, second).andExpect(status().isOk());
+
+		reorderAs(schoolA, id, first, first)
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.studentIds")
+						.value("A student appears more than once in the new order."));
+	}
+
+	@Test
+	void reorderingWithAMissingStopIsRejected() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		UUID first = aStudent(schoolA);
+		UUID second = aStudent(schoolA);
+		assignAs(schoolA, id, first).andExpect(status().isOk());
+		assignAs(schoolA, id, second).andExpect(status().isOk());
+
+		reorderAs(schoolA, id, first)
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.studentIds")
+						.value("The new order must contain exactly the route's current stops."));
+	}
+
+	@Test
+	void reorderingWithAStudentNotOnThisRouteIsRejected() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		UUID onRoute = aStudent(schoolA);
+		assignAs(schoolA, id, onRoute).andExpect(status().isOk());
+		UUID notOnRoute = aStudent(schoolA);
+
+		reorderAs(schoolA, id, onRoute, notOnRoute)
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.studentIds")
+						.value("The new order must contain exactly the route's current stops."));
+	}
+
+	@Test
+	void reorderingAnUnknownOrOtherSchoolRouteIsNotFound() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
+
+		reorderAs(schoolA, UUID.randomUUID().toString()).andExpect(status().isNotFound());
+		reorderAs(schoolB, id).andExpect(status().isNotFound());
 	}
 
 	@Test
