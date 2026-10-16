@@ -8,13 +8,14 @@ import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
 interface StudentListItemProps {
   student: Student;
   onUpdateAddress: (id: string, address: string) => Promise<void>;
+  onUpdateLocation: (id: string, latitude: number, longitude: number) => Promise<void>;
 }
 
 const GLOW_REST = "0 0 0px 0px rgba(18, 183, 106, 0)";
 const GLOW_PEAK = "0 0 12px 4px rgba(18, 183, 106, 0.55)";
 const GLOW_STATIC = "0 0 8px 2px rgba(18, 183, 106, 0.45)";
 
-export function StudentListItem({ student, onUpdateAddress }: StudentListItemProps) {
+export function StudentListItem({ student, onUpdateAddress, onUpdateLocation }: StudentListItemProps) {
   const prefersReducedMotion = useReducedMotion();
   const isActive = student.status === "active";
 
@@ -49,13 +50,12 @@ export function StudentListItem({ student, onUpdateAddress }: StudentListItemPro
           Pickup address: {student.address || "Not set"}
         </span>
         {(student.latitude == null || student.longitude == null) && (
-        <span
-          className="text-xs font-medium"
-          style={{ color: darkTheme.text.secondary }}
-        >
-        Needs a pin
-        </span>
-)}
+          // Not role="alert": every unpinned row would be announced on load.
+          // warning[500] on surface.card is ~7.7:1.
+          <span className="text-xs font-medium" style={{ color: colors.warning[500] }}>
+            Needs pin
+          </span>
+        )}
       </div>
 
       <div className="flex items-center flex-wrap" style={{ gap: spacing.sm }}>
@@ -91,7 +91,7 @@ export function StudentListItem({ student, onUpdateAddress }: StudentListItemPro
           </span>
         </div>
 
-        <EditStudentAddressForm student={student} onSave={onUpdateAddress} />
+        <EditStudentAddressForm student={student} onSave={onUpdateAddress} onSaveLocation={onUpdateLocation} />
         <span aria-disabled="true" className="text-xs" style={{ color: darkTheme.text.muted }}>Other edits and status changes coming soon</span>
       </div>
     </motion.li>
