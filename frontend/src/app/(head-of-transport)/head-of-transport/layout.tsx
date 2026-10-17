@@ -7,7 +7,13 @@ import { MotionConfig, motion } from "framer-motion";
 import { RoleGuard } from "@/components/auth/RoleGuard";
 import { UserBlock } from "@/components/auth/UserBlock";
 import { BrandMark } from "@/components/ui/BrandMark";
-import { DriverIcon, SettingsIcon, StudentIcon, VehicleIcon } from "@/components/ui/icons";
+import {
+  DriverIcon,
+  RouteIcon,
+  SettingsIcon,
+  StudentIcon,
+  VehicleIcon,
+} from "@/components/ui/icons";
 import { colors, darkPageBackground, darkTheme, radius, sizing, spacing } from "@/styles/tokens";
 
 interface NavItem {
@@ -22,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Vehicles", href: "/head-of-transport/vehicles", enabled: true, Icon: VehicleIcon },
   { label: "Drivers", href: "/head-of-transport/drivers", enabled: true, Icon: DriverIcon },
   { label: "Students", href: "/head-of-transport/students", enabled: true, Icon: StudentIcon },
+  { label: "Routes", href: "/head-of-transport/routes", enabled: true, Icon: RouteIcon },
   { label: "Settings", href: "/head-of-transport/settings", enabled: false, Icon: SettingsIcon },
 ];
 

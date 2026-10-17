@@ -11,6 +11,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -41,6 +42,12 @@ public class UserService {
 	@Transactional(readOnly = true)
 	public Optional<User> findByEmail(String email) {
 		return userRepository.findByEmailIgnoreCase(email.trim());
+	}
+
+	/** Whether any account has an email outside the given ones, on any school (for the demo seeder's guard). */
+	@Transactional(readOnly = true)
+	public boolean existsOtherThan(Collection<String> emails) {
+		return userRepository.existsByEmailNotIn(emails.stream().map(e -> e.trim().toLowerCase(Locale.ROOT)).toList());
 	}
 
 	@Transactional(readOnly = true)

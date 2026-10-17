@@ -122,6 +122,66 @@ printed in the logs.
   users; moving to another provider only changes these settings. Each login takes a second or so
   longer than before because the email is sent during the request.
 
+## One site for the app and its API
+
+The sign-in cookies are `HttpOnly` and `SameSite=Strict`, so the browser only sends them when the app and
+the API are on the same site. A frontend on one domain and a backend on another would silently fail to sign
+anyone in. So a deployment serves one origin: the frontend proxies every `/api/*` request to the backend
+(a Next.js rewrite in `frontend/next.config.ts`), and the browser never talks to the backend directly.
+
+Settings, all on the frontend build unless noted (they are read when it is built, not when it runs):
+
+| Setting | Value | Why |
+| ------- | ----- | --- |
+| `NEXT_PUBLIC_API_BASE_URL` | empty | Switches the app to relative `/api/...` URLs. Not set means `http://localhost:8080`, which is what local development uses. |
+| `BACKEND_URL` | the backend's address, for example `https://wassel-api.example.com` | Where the app forwards `/api/*`. The build fails if the line above is empty and this is not set. |
+| `CORS_ALLOWED_ORIGINS` (backend) | the address people open the app at, for example `https://wassel.example.com` | The proxy passes the browser's `Origin` header on, so the backend still checks it: anything not listed gets a 403 on every POST, PUT and DELETE (sign-in included). |
+| `FRONTEND_BASE_URL` (backend) | the same address | Invite and reset links point at it. |
+| `JWT_COOKIE_SECURE` (backend) | `true` | The deployed site is HTTPS. |
+
+On Vercel, set `NEXT_PUBLIC_API_BASE_URL` (empty) and `BACKEND_URL` as environment variables for the build. The staging
+stack does the same through `docker-compose.staging.yml`: its default is empty with `BACKEND_URL=http://backend:8080`,
+so staging behaves like a deployment. To call the backend directly instead, put its URL in
+`NEXT_PUBLIC_API_BASE_URL` and rebuild the frontend.
+
+Local development is unchanged: leave `NEXT_PUBLIC_API_BASE_URL` unset (or `http://localhost:8080`), and the backend's
+default `CORS_ALLOWED_ORIGINS=http://localhost:3000` keeps working.
+
+## Demo data
+
+A new database only has the seeded admin. To show the app with believable data, turn the demo seeder
+on: it fills the school with a head of transportation, a parent, 3 vehicles, 3 drivers (each on a
+vehicle), 10 students with addresses and map pins around Beirut (two of them are the parent's
+children), and school times of 08:00 arrival and 14:30 dismissal.
+
+- **Turn it on** with `DEMO_DATA_ENABLED=true` (off by default) and start the backend. Locally:
+
+  ```bash
+  cd backend
+  DEMO_DATA_ENABLED=true ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+  ```
+
+  On staging, put `DEMO_DATA_ENABLED=true`, a `DEMO_PASSWORD` (10+ characters) and a `DEMO_EMAIL_BASE`
+  in `.env.staging`, then restart the backend.
+- **Safe to repeat.** Running it again adds nothing twice; anything missing is filled in, and school
+  times you already set are kept.
+- **Never on real data.** If the database has any account other than the demo ones and the seeded
+  admin, it does nothing and logs a warning. Set `DEMO_DATA_FORCE=true` to seed anyway.
+- **The accounts.** Every account signs in with the demo password: `DEMO_PASSWORD`, which is
+  `local-demo-password` when you run the `local` profile. The emails are the base address with a tag
+  before the `@`. With the default base `demo@wassel.local`:
+
+  | Account | Email |
+  | ------- | ----- |
+  | Head of transportation | `demo+head@wassel.local` |
+  | Parent (two children) | `demo+parent@wassel.local` |
+  | Drivers | `demo+driver-karim@wassel.local`, `demo+driver-nadia@wassel.local`, `demo+driver-rami@wassel.local` |
+
+  Sign-in emails a code. Locally it is printed in the backend console (look for `Email to`). On
+  staging it is really emailed, so set `DEMO_EMAIL_BASE` to a mailbox you can open that supports `+tags`
+  (Gmail does, for example `you@gmail.com` makes `you+head@gmail.com`), and every demo account's code
+  arrives there. The admin account is the one from `ADMIN_EMAIL` as before.
+
 ## Logs
 
 The staging stack collects every container's logs into one place (Loki), searchable in Grafana.

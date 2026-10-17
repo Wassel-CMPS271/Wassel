@@ -20,6 +20,47 @@ function mockFetchOnce(response: {
   return fetchMock;
 }
 
+describe("request base URL", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  // BASE_URL is read when the module loads, so each case sets the variable and imports it afresh.
+  async function requestWithBaseUrl(value: string | undefined) {
+    if (value === undefined) {
+      vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", undefined as unknown as string);
+      delete process.env.NEXT_PUBLIC_API_BASE_URL;
+    } else {
+      vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", value);
+    }
+    vi.resetModules();
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    const { request: freshRequest } = await import("./client");
+    await freshRequest("/api/auth/me");
+    return fetchMock;
+  }
+
+  it("calls the local backend when the variable is not set", async () => {
+    const fetchMock = await requestWithBaseUrl(undefined);
+
+    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/auth/me");
+  });
+
+  it("uses a relative URL when the variable is empty, so the app's own origin is called", async () => {
+    const fetchMock = await requestWithBaseUrl("");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/auth/me");
+  });
+
+  it("calls the given backend directly, ignoring a trailing slash", async () => {
+    const fetchMock = await requestWithBaseUrl("https://api.example.com/");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.example.com/api/auth/me");
+  });
+});
+
 describe("request", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -57,6 +98,32 @@ describe("request", () => {
       expect.objectContaining({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: "a@b.com" }),
+      }),
+    );
+  });
+
+  it.each(["PUT", "DELETE"] as const)("sends %s as the method", async (method) => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 204 });
+
+    await request("/api/head-of-transport/routes/r-1", { method });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ method }),
+    );
+  });
+
+  it("sends the JSON body with a PUT", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, json: () => Promise.resolve({}) });
+
+    await request("/api/head-of-transport/routes/r-1", { method: "PUT", body: { name: "Hamra" } });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Hamra" }),
       }),
     );
   });

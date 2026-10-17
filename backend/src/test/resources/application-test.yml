@@ -7,6 +7,9 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
+  # Tests build the schema from the entities on H2; the migrations are PostgreSQL SQL.
+  flyway:
+    enabled: false
 
 jwt:
   secret: test-secret-test-secret-test-secret-test-secret

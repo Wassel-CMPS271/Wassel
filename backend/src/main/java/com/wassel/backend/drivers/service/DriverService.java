@@ -63,12 +63,7 @@ public class DriverService {
 
 	@Transactional
 	public DriverResponse addDriver(UUID schoolId, CreateDriverRequest request) {
-		if (driverRepository.existsBySchoolIdAndEmailIgnoreCase(schoolId, request.email())) {
-			throw new DriverAlreadyExistsException("email", EMAIL_TAKEN_MESSAGE);
-		}
-		if (driverRepository.existsBySchoolIdAndPhone(schoolId, request.phone())) {
-			throw new DriverAlreadyExistsException("phone", PHONE_TAKEN_MESSAGE);
-		}
+		requireNotTaken(schoolId, request);
 
 		User user = userService.createInvitedUser(request.email(), Role.DRIVER, schoolId);
 		Driver driver = Driver.builder()
@@ -90,6 +85,36 @@ public class DriverService {
 		}
 		passwordService.sendInvite(user);
 		return toResponse(driver);
+	}
+
+	/**
+	 * Adds a driver who is already active with a password set and no invite email, for demo data
+	 * (SCRUM-200): nothing is sent, so it works against fake addresses.
+	 */
+	@Transactional
+	public DriverResponse addActiveDriver(UUID schoolId, CreateDriverRequest request, String rawPassword) {
+		requireNotTaken(schoolId, request);
+		User user = userService.createUser(request.email(), rawPassword, Role.DRIVER, schoolId);
+		Driver driver = Driver.builder()
+				.schoolId(schoolId)
+				.firstName(request.firstName())
+				.lastName(request.lastName())
+				.phone(request.phone())
+				.email(request.email())
+				.status(DriverStatus.ACTIVE)
+				.invitedAt(Instant.now())
+				.userId(user.getId())
+				.build();
+		return toResponse(driverRepository.saveAndFlush(driver));
+	}
+
+	private void requireNotTaken(UUID schoolId, CreateDriverRequest request) {
+		if (driverRepository.existsBySchoolIdAndEmailIgnoreCase(schoolId, request.email())) {
+			throw new DriverAlreadyExistsException("email", EMAIL_TAKEN_MESSAGE);
+		}
+		if (driverRepository.existsBySchoolIdAndPhone(schoolId, request.phone())) {
+			throw new DriverAlreadyExistsException("phone", PHONE_TAKEN_MESSAGE);
+		}
 	}
 
 	/** Runs in the transaction that sets the password, so the driver and the password change together. */

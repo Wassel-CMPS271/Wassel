@@ -108,6 +108,14 @@ export function updateStudentAddress(id: string, address: string): Promise<Stude
   });
 }
 
+// Corrects the student's pickup pin on the map (SCRUM-222).
+export function setStudentLocation(id: string, latitude: number, longitude: number): Promise<Student> {
+  return request<Student>(`${STUDENTS_PATH}/${encodeURIComponent(id)}/location`, {
+    method: "PATCH",
+    body: { latitude, longitude },
+  });
+}
+
 // POST includes address for SCRUM-213. If the old backend ignores that field,
 // PATCH persists it. A partially created student is returned as such, so the
 // UI never says the address was saved when it wasn't.
