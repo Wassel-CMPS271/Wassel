@@ -1,11 +1,19 @@
 // The one place the frontend calls the backend. Every call carries the session
 // cookies (credentials: "include"), so the frontend and the API must be served
 // from the same site: the cookies are SameSite=Strict.
+//
+// NEXT_PUBLIC_API_BASE_URL decides where calls go:
+//   - not set: http://localhost:8080, the backend of local development (next dev).
+//   - a URL: that backend directly (the backend's CORS must allow this site's origin).
+//   - empty: relative URLs (/api/...), which the app proxies to the backend (see
+//     next.config.ts), so the browser only talks to its own origin. This is how a deployment runs.
 
 import { ApiError, ApiValidationError } from "./errors";
 
-// `||` and not `??`: the staging build passes an empty value when it isn't set.
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080";
+// `=== undefined` and not `||`: an empty value is meaningful (relative URLs), not "unset".
+const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+const BASE_URL =
+  configuredBaseUrl === undefined ? "http://localhost:8080" : configuredBaseUrl.replace(/\/+$/, "");
 
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
