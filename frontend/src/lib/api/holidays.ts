@@ -3,7 +3,7 @@
 // The backend endpoints exist (HolidayController) but can't be called from
 // the browser yet: they need a logged-in admin, and login lands with
 // SCRUM-168/176. Until then these functions run against an in-memory mock,
-// the same approach as schoolTimes.ts. Each one is already async and returns
+// the same approach as vehicles.ts. Each one is already async and returns
 // the same shape as the real API, so swapping the body for a fetch() needs
 // no change to the signatures or the components calling them:
 //

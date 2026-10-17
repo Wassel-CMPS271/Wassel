@@ -42,7 +42,8 @@ it("shows identical neutral confirmation for existing and unknown emails through
     const view = render(<ForgotPasswordForm />);
     submit(`  ${email}  `);
     confirmations.push((await screen.findByRole("status")).textContent!);
-    expect(screen.getByRole("status")).toHaveFocus();
+    // Focus moves in an effect after the status paragraph renders, so wait for it.
+    await waitFor(() => expect(screen.getByRole("status")).toHaveFocus());
     expect(fetchMock).toHaveBeenLastCalledWith(
       expect.stringMatching(/\/api\/auth\/forgot-password$/),
       expect.objectContaining({ method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) }),
