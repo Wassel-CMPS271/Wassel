@@ -90,13 +90,13 @@ it("saves the changes for this route, closes and returns focus to Edit", async (
 it("shows a backend field error under the right input and focuses it", async () => {
   const onEdit = vi
     .fn()
-    .mockRejectedValue(new ApiValidationError({ driverId: "This driver is already on Verdun morning run." }));
+    .mockRejectedValue(new ApiValidationError({ driverId: 'Driver is already on route "Verdun morning run".' }));
   const { dialog } = await open(onEdit);
   save(dialog);
 
   const driver = within(dialog).getByLabelText("Driver");
   await waitFor(() =>
-    expect(driver).toHaveAccessibleDescription("This driver is already on Verdun morning run."),
+    expect(driver).toHaveAccessibleDescription('Driver is already on route "Verdun morning run".'),
   );
   expect(driver).toHaveAttribute("aria-invalid", "true");
   expect(driver).toHaveFocus();

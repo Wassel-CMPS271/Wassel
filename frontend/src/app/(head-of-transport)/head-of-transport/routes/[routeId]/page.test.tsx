@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DndContextProps, DragEndEvent } from "@dnd-kit/core";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import {
   addStudentToRoute,
   getRoute,
@@ -42,7 +42,7 @@ vi.mock("@/lib/api/routes", () => ({
 }));
 
 // The page only takes the Student type from here; mocked so nothing reaches
-// the students sample data.
+// the backend.
 vi.mock("@/lib/api/students", () => ({
   getStudents: vi.fn(),
 }));
@@ -387,7 +387,7 @@ it("marks an over-capacity route and keeps Add disabled", async () => {
 });
 
 it("shows the backend's over-capacity 409 as a focused alert and resyncs the counter", async () => {
-  const message = "This route has 3 students and the vehicle has 3 seats.";
+  const message = "The route has 3 students but the vehicle seats 3.";
   vi.mocked(addStudentToRoute).mockRejectedValue(new ApiError(409, message));
   await renderPage();
   // Someone else filled the vehicle meanwhile; the resync shows it.
@@ -405,18 +405,33 @@ it("shows the backend's over-capacity 409 as a focused alert and resyncs the cou
   expect(alert).toHaveFocus();
 });
 
-it("drops a student someone else already placed when the add is refused", async () => {
+// The backend answers an inactive student with a 409 that has `errors.studentId`.
+it("shows the field message when the student was made inactive elsewhere, and drops them", async () => {
   vi.mocked(addStudentToRoute).mockRejectedValue(
-    new ApiError(409, "This student is already on Verdun morning run."),
+    new ApiValidationError({ studentId: "Only an active student can be put on a route." }),
   );
   await renderPage();
   vi.mocked(listUnassignedStudents).mockResolvedValue([RAMI]);
 
   fireEvent.click(within(row("Not on a route", "Omar Nasser")).getByRole("button", { name: "Add" }));
 
-  expect(await screen.findByRole("alert")).toHaveTextContent("already on Verdun morning run");
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Only an active student can be put on a route.");
+  expect(alert).toHaveFocus();
   await waitFor(() => expect(screen.queryByText("Omar Nasser")).not.toBeInTheDocument());
   expect(screen.getByText("1 of 3 seats")).toBeInTheDocument();
+});
+
+it("shows the not-found state when the route was deleted elsewhere", async () => {
+  vi.mocked(addStudentToRoute).mockRejectedValue(new ApiError(404, "Route not found."));
+  await renderPage();
+  vi.mocked(getRoute).mockRejectedValue(new ApiError(404, "Route not found."));
+
+  fireEvent.click(within(row("Not on a route", "Omar Nasser")).getByRole("button", { name: "Add" }));
+
+  const heading = await screen.findByRole("heading", { name: "Route not found" });
+  await waitFor(() => expect(heading).toHaveFocus());
+  expect(screen.queryByRole("region", { name: "On this route" })).not.toBeInTheDocument();
 });
 
 it("says something went wrong for a failure without a message, and re-enables the buttons", async () => {

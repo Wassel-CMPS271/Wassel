@@ -8,7 +8,7 @@ import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent } from 
 import { Button } from "@/components/ui/Button";
 import { LicensePlate } from "@/components/ui/LicensePlate";
 import { ArrowLeftIcon, DriverIcon } from "@/components/ui/icons";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import {
   addStudentToRoute,
   getRoute,
@@ -77,7 +77,12 @@ function reconcile(prev: UnassignedEntry[], updated: Route, returned?: Unassigne
   return sortByName(returned && !onRoute.has(returned.id) ? [...kept, returned] : kept);
 }
 
+// A 409 for an inactive student comes as `errors.studentId`; the capacity
+// 409 and the 404s come as the backend's `detail`.
 function errorMessage(error: unknown): string {
+  if (error instanceof ApiValidationError) {
+    return Object.values(error.errors)[0] || GENERIC_ERROR;
+  }
   return error instanceof ApiError && error.message ? error.message : GENERIC_ERROR;
 }
 
@@ -141,14 +146,15 @@ export default function RouteDetailPage() {
     };
   }, [load]);
 
-  // "Try again" unmounts itself, so focus goes to the heading of whatever
-  // replaced it instead of falling to <body>.
+  // "Try again" unmounts itself, and so does the route when it turns out to be
+  // deleted, so focus goes to the heading of whatever replaced it instead of
+  // falling to <body>.
   useEffect(() => {
     if (!isLoading && focusHeadingAfterLoadRef.current) {
       focusHeadingAfterLoadRef.current = false;
       pageHeadingRef.current?.focus();
     }
-  }, [isLoading]);
+  }, [isLoading, loadError]);
 
   // The alert only exists once it has a message, so it's focused after that render.
   useEffect(() => {
@@ -200,16 +206,23 @@ export default function RouteDetailPage() {
     } catch (error) {
       if (loadId !== loadIdRef.current) return;
       setActionError(errorMessage(error));
-      // A refusal can mean the page is out of date (the vehicle filled up or
-      // the student was put on another route elsewhere), so redraw both lists
-      // and the counter from the backend before allowing the next change.
+      // A refusal can mean the page is out of date (the vehicle filled up, the
+      // student was made inactive, or the route was deleted elsewhere), so
+      // redraw both lists and the counter from the backend before allowing the
+      // next change. A student on another route is not a refusal: the backend
+      // moves them, and this page only offers students who are on no route.
       try {
         const [routeData, unassignedData] = await fetchPage();
         if (loadId !== loadIdRef.current) return;
         setRoute(routeData);
         setUnassigned(sortByName(unassignedData.map(toEntry)));
-      } catch {
-        // Keep what's shown; the alert already says the change didn't go through.
+      } catch (reloadError) {
+        if (loadId !== loadIdRef.current) return;
+        if (reloadError instanceof ApiError && reloadError.status === 404) {
+          focusHeadingAfterLoadRef.current = true;
+          setLoadError("not-found");
+        }
+        // Otherwise keep what's shown; the alert already says the change didn't go through.
       }
     } finally {
       isRequestInFlightRef.current = false;
