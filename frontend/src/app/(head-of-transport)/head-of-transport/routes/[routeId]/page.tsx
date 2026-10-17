@@ -19,6 +19,7 @@ import {
 } from "@/lib/api/routes";
 import type { Student } from "@/lib/api/students";
 import { RouteListSkeleton } from "../RouteListSkeleton";
+import { RouteMap } from "./RouteMap";
 import { RouteStudentRow } from "./RouteStudentRow";
 import { UnassignedStudentRow, type UnassignedEntry } from "./UnassignedStudentRow";
 import {
@@ -395,6 +396,10 @@ export default function RouteDetailPage() {
                 {actionError}
               </p>
             )}
+
+            {/* Above the lists, so on a phone the map comes first. Drawn from `route`, so it
+                follows every add, remove and drop without another request. */}
+            <RouteMap route={route} />
 
             <DndContext
               id="route-students"

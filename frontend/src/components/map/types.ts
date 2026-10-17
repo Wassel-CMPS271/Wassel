@@ -19,8 +19,9 @@ export interface MapMarker extends MaybeCoordinates {
   popup?: ReactNode; // opened on click or Enter
 }
 
-// `RouteSchool` from lib/api/routes.ts fits as is.
-export interface MapSchool extends Coordinates {
+// `RouteSchool` from lib/api/routes.ts fits as is. A school without
+// coordinates is skipped, like a stop without a pin.
+export interface MapSchool extends MaybeCoordinates {
   label?: string; // default "School"
   popup?: ReactNode;
 }

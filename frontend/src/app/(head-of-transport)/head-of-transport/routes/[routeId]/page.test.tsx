@@ -41,6 +41,20 @@ vi.mock("@/lib/api/routes", () => ({
   removeStudentFromRoute: vi.fn(),
 }));
 
+// Leaflet needs a real browser; the stand-in draws one button per pinned
+// stop, so a test can see what the map shows.
+vi.mock("@/components/map/MapView", () => ({
+  MapView: ({ label, markers = [] }: { label: string; markers?: { id: string; label: string; latitude: number | null }[] }) => (
+    <section aria-label={label}>
+      {markers
+        .filter((marker) => marker.latitude !== null)
+        .map((marker) => (
+          <span key={marker.id} role="img" aria-label={marker.label} />
+        ))}
+    </section>
+  ),
+}));
+
 // The page only takes the Student type from here; mocked so nothing reaches
 // the backend.
 vi.mock("@/lib/api/students", () => ({
@@ -640,4 +654,57 @@ it("ignores a load that finishes after a newer one", async () => {
 
   expect(screen.getByRole("heading", { name: "Verdun morning run" })).toBeInTheDocument();
   expect(screen.queryByText("Lina Saad")).not.toBeInTheDocument();
+});
+
+function mapMarkers() {
+  return within(screen.getByRole("region", { name: "Map of Hamra morning run" }))
+    .queryAllByRole("img")
+    .map((marker) => marker.getAttribute("aria-label"));
+}
+
+it("shows the route's pinned stops on the map", async () => {
+  await renderPage();
+
+  expect(mapMarkers()).toEqual(["Stop 1: Lina Saad"]);
+});
+
+it("redraws the map from the route an add answers with, without fetching it again", async () => {
+  vi.mocked(addStudentToRoute).mockResolvedValue(route([LINA, stop("s-2", "Omar", "Nasser", 2)]));
+  await renderPage();
+
+  fireEvent.click(within(row("Not on a route", "Omar Nasser")).getByRole("button", { name: "Add" }));
+
+  await waitFor(() => expect(mapMarkers()).toEqual(["Stop 1: Lina Saad", "Stop 2: Omar Nasser"]));
+  expect(getRoute).toHaveBeenCalledTimes(1);
+});
+
+it("redraws the map from the route a drop answers with", async () => {
+  vi.mocked(addStudentToRoute).mockResolvedValue(route([LINA, stop("s-3", "Rami", "Khoury", 2)]));
+  await renderPage();
+
+  drop(RAMI_DRAG, "on-route");
+
+  await waitFor(() => expect(mapMarkers()).toEqual(["Stop 1: Lina Saad", "Stop 2: Rami Khoury"]));
+  expect(getRoute).toHaveBeenCalledTimes(1);
+});
+
+it("takes a removed student off the map", async () => {
+  vi.mocked(removeStudentFromRoute).mockResolvedValue(route([]));
+  await renderPage();
+
+  fireEvent.click(within(row("On this route", "Lina Saad")).getByRole("button", { name: "Remove" }));
+
+  await screen.findByText("0 of 3 seats");
+  expect(mapMarkers()).toEqual([]);
+  expect(getRoute).toHaveBeenCalledTimes(1);
+});
+
+it("puts the map before the student lists, so a phone shows it first", async () => {
+  await renderPage();
+
+  const map = screen.getByRole("region", { name: "Map of Hamra morning run" });
+  for (const name of ["On this route", "Not on a route"]) {
+    const heading = screen.getByRole("heading", { name });
+    expect(map.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
 });

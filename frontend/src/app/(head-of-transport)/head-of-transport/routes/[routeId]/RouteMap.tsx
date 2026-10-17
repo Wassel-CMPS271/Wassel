@@ -1,0 +1,193 @@
+"use client";
+
+// The route on a map (SCRUM-220): the pinned stops in position order, the line
+// to the school, and the school. Drawn only from `route`, so the page redraws
+// it from the Route every add, remove and drop answers with. The same
+// information is listed as text under the map, and the stops with no pin are
+// listed apart, because the map can't show them.
+
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { MapView, type MapMarker } from "@/components/map/MapView";
+import { isValidCoordinates } from "@/components/map/geo";
+import type { Route, Stop } from "@/lib/api/routes";
+import { colors, darkTheme, mapTheme, radius, sizing, spacing } from "@/styles/tokens";
+
+const STUDENTS_HREF = "/head-of-transport/students";
+const NOT_SET = "Arrival time not set yet";
+
+const linkClass =
+  "inline-flex items-center self-start text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded-md";
+// minHeight keeps the links a full tap target on a phone.
+const linkStyle = { color: colors.primary[300], outlineColor: colors.primary[400], minHeight: sizing.tapTarget };
+
+// The contract sends "HH:mm"; the slice also covers a time sent with seconds.
+export function formatArrival(time: string | null): string {
+  return time ? time.slice(0, 5) : NOT_SET;
+}
+
+function arrivalText(time: string | null): string {
+  return time ? `Arrives ${formatArrival(time)}` : NOT_SET;
+}
+
+function stopName(stop: Stop): string {
+  return `${stop.firstName} ${stop.lastName}`;
+}
+
+// The number is the stop's position, so it stays right when stops before it
+// have no pin.
+function stopLabel(stop: Stop): string {
+  return `Stop ${stop.position}: ${stopName(stop)}`;
+}
+
+function Popup({ title, detail }: { title: string; detail: string }) {
+  return (
+    <span className="flex flex-col" style={{ gap: spacing.xs }}>
+      <span className="text-sm font-medium">{title}</span>
+      <span className="text-sm" style={{ color: darkTheme.text.secondary }}>
+        {detail}
+      </span>
+    </span>
+  );
+}
+
+// The same look as the marker on the map: a numbered stop, or the school.
+function Badge({ children, school = false }: { children: ReactNode; school?: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex shrink-0 items-center justify-center text-xs font-semibold"
+      style={{
+        width: mapTheme.stopSize,
+        height: mapTheme.stopSize,
+        borderRadius: radius.full,
+        backgroundColor: school ? mapTheme.schoolFill : mapTheme.stopFill,
+        color: school ? mapTheme.schoolInk : mapTheme.markerText,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ListRow({ badge, title, detail }: { badge: ReactNode; title: string; detail: string }) {
+  return (
+    <li className="list-none flex items-center" style={{ gap: spacing.sm }}>
+      {badge}
+      <span className="flex flex-col min-w-0">
+        <span className="text-sm font-medium break-words" style={{ color: darkTheme.text.primary }}>
+          {title}
+        </span>
+        <span className="text-sm" style={{ color: darkTheme.text.secondary }}>
+          {detail}
+        </span>
+      </span>
+    </li>
+  );
+}
+
+export function RouteMap({ route }: { route: Route }) {
+  const pinned = route.stops.filter(isValidCoordinates);
+  const unpinned = route.stops.filter((stop) => !isValidCoordinates(stop));
+  const hasPinned = pinned.length > 0;
+  const schoolOnMap = isValidCoordinates(route.school);
+  const schoolArrival = route.school.arrivalTime
+    ? `Arrival ${formatArrival(route.school.arrivalTime)}`
+    : NOT_SET;
+
+  const markers: MapMarker[] = route.stops.map((stop) => ({
+    id: stop.studentId,
+    number: stop.position,
+    label: stopLabel(stop),
+    latitude: stop.latitude,
+    longitude: stop.longitude,
+    popup: <Popup title={stopName(stop)} detail={arrivalText(stop.arrivalTime)} />,
+  }));
+
+  const emptyMessage =
+    route.stops.length === 0
+      ? "No students on this route yet. Add a student to see the route on the map."
+      : "None of the students on this route has a pin yet, so there is nothing to draw. Add pins on the Students page.";
+
+  return (
+    <section aria-labelledby="route-map-heading" className="flex flex-col" style={{ gap: spacing.md }}>
+      <div className="flex flex-col" style={{ gap: spacing.xs }}>
+        <h2 id="route-map-heading" className="text-lg font-semibold" style={{ color: darkTheme.text.primary }}>
+          Route map
+        </h2>
+        {hasPinned && (
+          <a href="#route-stop-list" className={linkClass} style={linkStyle}>
+            Skip to the stops as a list
+          </a>
+        )}
+      </div>
+
+      <MapView
+        label={`Map of ${route.name}`}
+        markers={markers}
+        // With no pinned stop the map shows its empty state, not the school alone.
+        school={hasPinned ? { ...route.school, label: "School", popup: <Popup title="School" detail={schoolArrival} /> } : null}
+        // Points without coordinates are skipped, so a school with none just ends the line at the last stop.
+        path={hasPinned ? [...route.stops, route.school] : undefined}
+        emptyMessage={emptyMessage}
+      />
+
+      {hasPinned && !schoolOnMap && (
+        <p className="text-sm" style={{ color: darkTheme.text.secondary }}>
+          The school&apos;s location isn&apos;t set, so the line stops at the last pinned stop.
+        </p>
+      )}
+
+      {hasPinned && (
+        <div className="flex flex-col" style={{ gap: spacing.sm }}>
+          <h3
+            id="route-stop-list"
+            tabIndex={-1}
+            className="text-base font-semibold"
+            style={{ color: darkTheme.text.primary }}
+          >
+            Stops in order
+          </h3>
+          <ol className="flex flex-col" style={{ gap: spacing.sm, padding: 0, margin: 0 }}>
+            {pinned.map((stop) => (
+              <ListRow
+                key={stop.studentId}
+                badge={<Badge>{stop.position}</Badge>}
+                title={stopLabel(stop)}
+                detail={arrivalText(stop.arrivalTime)}
+              />
+            ))}
+            {schoolOnMap && <ListRow badge={<Badge school>S</Badge>} title="School" detail={schoolArrival} />}
+          </ol>
+        </div>
+      )}
+
+      {unpinned.length > 0 && (
+        <div
+          className="flex flex-col"
+          style={{
+            gap: spacing.sm,
+            padding: spacing.md,
+            border: `1px dashed ${darkTheme.surface.cardBorder}`,
+            borderRadius: radius.md,
+            backgroundColor: darkTheme.surface.recede,
+          }}
+        >
+          <h3 className="text-base font-semibold" style={{ color: colors.warning[500] }}>
+            Not on the map: no pin yet
+          </h3>
+          <ul className="flex flex-col" style={{ gap: spacing.xs, padding: 0, margin: 0 }}>
+            {unpinned.map((stop) => (
+              <li key={stop.studentId} className="list-none text-sm" style={{ color: darkTheme.text.secondary }}>
+                {stopLabel(stop)}
+              </li>
+            ))}
+          </ul>
+          <Link href={STUDENTS_HREF} className={linkClass} style={linkStyle}>
+            Add pins on the Students page
+          </Link>
+        </div>
+      )}
+    </section>
+  );
+}
