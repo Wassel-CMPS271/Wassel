@@ -89,7 +89,7 @@ that's the structure this codebase moved away from.
   it like an unknown email. `UserService.createInvitedUser` creates one. Emails are unique across
   the whole platform, not per school (a taken email is a 409 with `errors.email`).
 - `schools` — school-level settings. Real module: arrival/dismissal times
-  (SCRUM-178), the holiday calendar (SCRUM-101) and half-day marking
+  (SCRUM-178), the holiday calendar — add, list, delete (SCRUM-101/214) — and half-day marking
   (SCRUM-102) are done. A date can't be both a holiday and a half-day.
 - `demo` - an opt-in seeder for the demo school (SCRUM-200). `config/DemoDataSeeder` runs on startup only
   when `DEMO_DATA_ENABLED=true` (the bean doesn't exist otherwise) and `service/DemoDataService` creates a
