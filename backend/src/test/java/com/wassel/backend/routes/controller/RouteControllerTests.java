@@ -4,6 +4,8 @@ import com.wassel.backend.drivers.entity.Driver;
 import com.wassel.backend.drivers.entity.DriverStatus;
 import com.wassel.backend.drivers.repository.DriverRepository;
 import com.wassel.backend.routes.repository.RouteRepository;
+import com.wassel.backend.schools.entity.SchoolSettings;
+import com.wassel.backend.schools.repository.SchoolSettingsRepository;
 import com.wassel.backend.students.entity.Student;
 import com.wassel.backend.students.entity.StudentStatus;
 import com.wassel.backend.students.repository.StudentRepository;
@@ -25,6 +27,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -65,12 +68,16 @@ class RouteControllerTests {
 	@Autowired
 	private StudentRepository studentRepository;
 
+	@Autowired
+	private SchoolSettingsRepository schoolSettingsRepository;
+
 	@BeforeEach
 	void cleanDatabase() {
 		routeRepository.deleteAll();
 		driverRepository.deleteAll();
 		vehicleRepository.deleteAll();
 		studentRepository.deleteAll();
+		schoolSettingsRepository.deleteAll();
 	}
 
 	private RequestPostProcessor loggedInAs(Role role, UUID schoolId) {
@@ -124,12 +131,31 @@ class RouteControllerTests {
 	}
 
 	private UUID aStudent(UUID schoolId, StudentStatus status) {
+		return aStudentAt(schoolId, status, 33.886, 35.485);
+	}
+
+	private UUID aStudentAt(UUID schoolId, double latitude, double longitude) {
+		return aStudentAt(schoolId, StudentStatus.ACTIVE, latitude, longitude);
+	}
+
+	private UUID aStudentAt(UUID schoolId, StudentStatus status, double latitude, double longitude) {
 		Student student = studentRepository.save(Student.builder().schoolId(schoolId)
 				.firstName("Hadi").lastName("Rizk").grade("5").guardianName("Guardian Name")
 				.guardianPhone("0" + (int) (Math.random() * 100000000)).status(status)
-				.address("Verdun Street, Beirut").latitude(BigDecimal.valueOf(33.886))
-				.longitude(BigDecimal.valueOf(35.485)).build());
+				.address("Verdun Street, Beirut").latitude(BigDecimal.valueOf(latitude))
+				.longitude(BigDecimal.valueOf(longitude)).build());
 		return student.getId();
+	}
+
+	private UUID aStudentWithNoPin(UUID schoolId) {
+		Student student = studentRepository.save(Student.builder().schoolId(schoolId)
+				.firstName("Hadi").lastName("Rizk").grade("5").guardianName("Guardian Name")
+				.guardianPhone("0" + (int) (Math.random() * 100000000)).status(StudentStatus.ACTIVE).build());
+		return student.getId();
+	}
+
+	private void setSchoolArrivalTime(UUID schoolId, LocalTime arrivalTime) {
+		schoolSettingsRepository.save(SchoolSettings.builder().schoolId(schoolId).arrivalTime(arrivalTime).build());
 	}
 
 	private org.springframework.test.web.servlet.ResultActions assignAs(UUID schoolId, String routeId, UUID studentId)
@@ -604,6 +630,89 @@ class RouteControllerTests {
 
 		reorderAs(schoolA, UUID.randomUUID().toString()).andExpect(status().isNotFound());
 		reorderAs(schoolB, id).andExpect(status().isNotFound());
+	}
+
+	// The Hamra morning run from docs/contracts/samples/routing (proposal.json), already
+	// validated against these exact minute figures in RouteTimingsTests/OrToolsRouteOptimizerTests.
+	// The school sits at (33.896, 35.484) in application-test.yml, matching the sample.
+	private static final double[] RAMI = { 33.8995, 35.521 };
+	private static final double[] SALMA = { 33.887, 35.488 };
+	private static final double[] TAREK = { 33.905, 35.51 };
+	private static final double[] DANA = { 33.891, 35.48 };
+
+	@Test
+	void stopsShowArrivalTimesComputedBackwardsFromSchoolArrival() throws Exception {
+		String id = createAs(schoolA, "Hamra morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		setSchoolArrivalTime(schoolA, LocalTime.of(7, 30));
+		assignAs(schoolA, id, aStudentAt(schoolA, RAMI[0], RAMI[1])).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudentAt(schoolA, SALMA[0], SALMA[1])).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudentAt(schoolA, TAREK[0], TAREK[1])).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudentAt(schoolA, DANA[0], DANA[1])).andExpect(status().isOk());
+
+		mockMvc.perform(get(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.stops[0].arrivalTime").value("07:08"))
+				.andExpect(jsonPath("$.stops[1].arrivalTime").value("07:15"))
+				.andExpect(jsonPath("$.stops[2].arrivalTime").value("07:21"))
+				.andExpect(jsonPath("$.stops[3].arrivalTime").value("07:28"));
+	}
+
+	@Test
+	void arrivalTimesUpdateAfterReorder() throws Exception {
+		String id = createAs(schoolA, "Hamra morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		setSchoolArrivalTime(schoolA, LocalTime.of(7, 30));
+		UUID rami = aStudentAt(schoolA, RAMI[0], RAMI[1]);
+		UUID salma = aStudentAt(schoolA, SALMA[0], SALMA[1]);
+		UUID tarek = aStudentAt(schoolA, TAREK[0], TAREK[1]);
+		UUID dana = aStudentAt(schoolA, DANA[0], DANA[1]);
+		assignAs(schoolA, id, rami).andExpect(status().isOk());
+		assignAs(schoolA, id, salma).andExpect(status().isOk());
+		assignAs(schoolA, id, tarek).andExpect(status().isOk());
+		assignAs(schoolA, id, dana).andExpect(status().isOk());
+
+		reorderAs(schoolA, id, rami, tarek, salma, dana)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.stops[0].arrivalTime").value("07:17"))
+				.andExpect(jsonPath("$.stops[1].arrivalTime").value("07:20"))
+				.andExpect(jsonPath("$.stops[2].arrivalTime").value("07:26"))
+				.andExpect(jsonPath("$.stops[3].arrivalTime").value("07:28"));
+	}
+
+	@Test
+	void unpinnedStopsHaveNoArrivalTimeAndAreSkippedForTheOthers() throws Exception {
+		String id = createAs(schoolA, "Hamra morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		setSchoolArrivalTime(schoolA, LocalTime.of(7, 30));
+		assignAs(schoolA, id, aStudentWithNoPin(schoolA)).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudentAt(schoolA, DANA[0], DANA[1])).andExpect(status().isOk());
+
+		mockMvc.perform(get(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.stops[0].arrivalTime").isEmpty())
+				.andExpect(jsonPath("$.stops[1].arrivalTime").value("07:28"));
+	}
+
+	@Test
+	void noArrivalTimesWhenTheSchoolsArrivalTimeIsNotSet() throws Exception {
+		String id = createAs(schoolA, "Hamra morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		assignAs(schoolA, id, aStudentAt(schoolA, DANA[0], DANA[1])).andExpect(status().isOk());
+
+		mockMvc.perform(get(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.school.arrivalTime").isEmpty())
+				.andExpect(jsonPath("$.stops[0].arrivalTime").isEmpty());
+	}
+
+	@Test
+	void arrivalTimesAreAllNullWhenTheScheduleIsNotDrivable() throws Exception {
+		String id = createAs(schoolA, "Hamra morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		// 22 minutes of driving (see stopsShowArrivalTimesComputedBackwardsFromSchoolArrival): a
+		// 06:05 arrival needs the first pickup at 05:43, before the 06:00 earliest pickup.
+		setSchoolArrivalTime(schoolA, LocalTime.of(6, 5));
+		assignAs(schoolA, id, aStudentAt(schoolA, RAMI[0], RAMI[1])).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudentAt(schoolA, SALMA[0], SALMA[1])).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudentAt(schoolA, TAREK[0], TAREK[1])).andExpect(status().isOk());
+
+		mockMvc.perform(get(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.stops[0].arrivalTime").isEmpty())
+				.andExpect(jsonPath("$.stops[1].arrivalTime").isEmpty())
+				.andExpect(jsonPath("$.stops[2].arrivalTime").isEmpty());
 	}
 
 	@Test
