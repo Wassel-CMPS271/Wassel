@@ -245,12 +245,38 @@ export const brand = {
   sun: colors.accent[100],
 } as const;
 
+/**
+ * Map (SCRUM-222, components/map/). Markers sit on light OpenStreetMap
+ * tiles, so each one has a text.primary ring and a dark shadow to stay
+ * visible on any tile. No new colors: every fill reuses the palette.
+ *   markerText (text.primary) on stopFill (primary[600]) ~6.9:1
+ *   schoolInk (brand.ink) on schoolFill (brand.badge)     10.2:1
+ */
+export const mapTheme = {
+  height: "clamp(260px, 55vh, 480px)", // map viewport: shorter on phones so the page still scrolls past it
+  stopFill: colors.primary[600], // numbered stop badge
+  markerText: darkTheme.text.primary, // the number on a stop badge
+  markerRing: darkTheme.text.primary, // ring around every marker, for contrast on light tiles
+  markerShadow: "0 2px 6px rgba(5, 6, 10, 0.5)", // marker drop shadow, a tint of background.base
+  schoolFill: brand.badge, // the school marker reuses the brand badge so it stands apart from stops
+  schoolInk: brand.ink, // school glyph on the badge
+  pinFill: colors.secondary[600], // the draggable pin, distinct from stops and the school
+  line: colors.primary[500], // the line joining the ordered stops
+  lineWeight: 4, // px
+  lineOpacity: 0.85,
+  // Marker sizes in px (Leaflet's iconSize takes numbers).
+  stopSize: 28,
+  schoolSize: 36,
+  pinSize: 32,
+} as const;
+
 /** Minimum hit area for any link or button (WCAG 2.5.5 target size). */
 export const sizing = {
   tapTarget: "44px",
   brandSidebar: "40px", // BrandMark beside the wordmark in the role sidebars (was the old "W" badge size)
   pageMaxWidth: "768px", // content column of a role-area list page
   dialogMaxWidth: "420px", // modal form panel
+  dialogWideMaxWidth: "560px", // modal form panel that holds a map, so the map and its pin controls fit
   sectionBadge: "24px", // live-dot circle beside a section heading
   emptyStateBadge: "48px", // icon circle in an empty state
   emptyStateText: "320px", // max line length of the empty-state helper text

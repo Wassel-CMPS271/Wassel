@@ -72,6 +72,14 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
 - A failed call throws `ApiValidationError` (a 400 with an `errors` map: show each message next to its field) or `ApiError` (any other non-2xx: `status` says what to do, `message` is the backend's `detail`). A network failure rejects as it is. Forms say "Something went wrong. Please try again." for anything they don't handle by status.
 - The auth cookies are `HttpOnly` and `SameSite=Strict`. The frontend never reads them, and it must be served from the same site as the API.
 
+## Map
+
+- Every map is `MapView` (`components/map/MapView.tsx`): Leaflet with OpenStreetMap tiles (the attribution is required by the tile policy; keep it). Import `MapView`, never `LeafletMap.tsx`: Leaflet needs `window`, so `MapView` loads it client-only with `next/dynamic` and shows a skeleton of the same height meanwhile.
+- Props: `label` names the map region. `markers` are numbered stops (`number`, an accessible `label` like "Stop 1: Hadi Rizk", an optional `popup`). `school` gets its own marker. `path` is the ordered line, e.g. `[...route.stops, route.school]`. Stops and points with `null` coordinates are skipped, so `Stop` and `RouteSchool` from `lib/api/routes.ts` fit as they are. With nothing to show it renders an empty state (`emptyMessage`).
+- The map fits itself to all points unless you pass `center` (and `zoom`). It refits when the points change, never when the pin moves.
+- Pin mode: pass `onPinChange` with a controlled `pin` (echo the new value back). The pin is placed by clicking the map or the "Place pin at map centre" button, moved by dragging or by the arrow keys while it has focus, and its coordinates are read out in an `aria-live` line under the map.
+- Colors and sizes come from `mapTheme` in `tokens.ts`; popup and focus colors reach Leaflet's own elements through CSS variables and the `.wassel-map` rules in `globals.css`. Markers are `divIcon`s built from tokens and integers only, never from caller strings. Scroll-wheel zoom is off so the page still scrolls, and zoom/fade animations follow reduced motion.
+
 ## Tests
 
 - Vitest + Testing Library. Config is `vitest.config.mts` (an `.mts` file so it can use ESM
