@@ -91,6 +91,17 @@ that's the structure this codebase moved away from.
 - `schools` — school-level settings. Real module: arrival/dismissal times
   (SCRUM-178), the holiday calendar (SCRUM-101) and half-day marking
   (SCRUM-102) are done. A date can't be both a holiday and a half-day.
+- `demo` - an opt-in seeder for the demo school (SCRUM-200). `config/DemoDataSeeder` runs on startup only
+  when `DEMO_DATA_ENABLED=true` (the bean doesn't exist otherwise) and `service/DemoDataService` creates a
+  head of transportation, a parent, vehicles, drivers (active, with the demo password, no invite email),
+  students (with address and pin, two linked to the parent) and school times, always through the other
+  modules' services. Idempotent: every step looks for what it would create first, and school times that
+  are already set are kept. The guard: if any account exists beyond the demo ones and the seeded admin, it
+  logs a warning and does nothing unless `DEMO_DATA_FORCE=true`. Demo emails are `DEMO_EMAIL_BASE` with a
+  `+tag` (`demo+head@...`), so on a deployed environment, where sign-in emails a code, pointing the base
+  at a real Gmail-style mailbox lets every demo account receive its code. Accounts are unique across the
+  platform, so the seeder serves one school (the seeded admin's). Needs `DEMO_PASSWORD` (10+ characters).
+  Setup is in the README ("Demo data"). Depends on `users`, `schools`, `vehicles`, `drivers`, `students`.
 - `common` — cross-cutting code that belongs to no single feature:
   `config/SecurityConfig`, `exception/GlobalExceptionHandler`.
 - `vehicles` — fleet vehicles: create, set capacity, deactivate/reactivate, with

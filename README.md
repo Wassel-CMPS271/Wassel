@@ -122,6 +122,41 @@ printed in the logs.
   users; moving to another provider only changes these settings. Each login takes a second or so
   longer than before because the email is sent during the request.
 
+## Demo data
+
+A new database only has the seeded admin. To show the app with believable data, turn the demo seeder
+on: it fills the school with a head of transportation, a parent, 3 vehicles, 3 drivers (each on a
+vehicle), 10 students with addresses and map pins around Beirut (two of them are the parent's
+children), and school times of 08:00 arrival and 14:30 dismissal.
+
+- **Turn it on** with `DEMO_DATA_ENABLED=true` (off by default) and start the backend. Locally:
+
+  ```bash
+  cd backend
+  DEMO_DATA_ENABLED=true ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+  ```
+
+  On staging, put `DEMO_DATA_ENABLED=true`, a `DEMO_PASSWORD` (10+ characters) and a `DEMO_EMAIL_BASE`
+  in `.env.staging`, then restart the backend.
+- **Safe to repeat.** Running it again adds nothing twice; anything missing is filled in, and school
+  times you already set are kept.
+- **Never on real data.** If the database has any account other than the demo ones and the seeded
+  admin, it does nothing and logs a warning. Set `DEMO_DATA_FORCE=true` to seed anyway.
+- **The accounts.** Every account signs in with the demo password: `DEMO_PASSWORD`, which is
+  `local-demo-password` when you run the `local` profile. The emails are the base address with a tag
+  before the `@`. With the default base `demo@wassel.local`:
+
+  | Account | Email |
+  | ------- | ----- |
+  | Head of transportation | `demo+head@wassel.local` |
+  | Parent (two children) | `demo+parent@wassel.local` |
+  | Drivers | `demo+driver-karim@wassel.local`, `demo+driver-nadia@wassel.local`, `demo+driver-rami@wassel.local` |
+
+  Sign-in emails a code. Locally it is printed in the backend console (look for `Email to`). On
+  staging it is really emailed, so set `DEMO_EMAIL_BASE` to a mailbox you can open that supports `+tags`
+  (Gmail does, for example `you@gmail.com` makes `you+head@gmail.com`), and every demo account's code
+  arrives there. The admin account is the one from `ADMIN_EMAIL` as before.
+
 ## Logs
 
 The staging stack collects every container's logs into one place (Loki), searchable in Grafana.
