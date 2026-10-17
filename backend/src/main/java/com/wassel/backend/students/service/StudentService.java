@@ -7,6 +7,7 @@ import com.wassel.backend.students.dto.UpdateStudentAddressRequest;
 import com.wassel.backend.students.dto.UpdateStudentLocationRequest;
 import com.wassel.backend.students.entity.Student;
 import com.wassel.backend.students.entity.StudentStatus;
+import com.wassel.backend.students.exception.InvalidStopOrderException;
 import com.wassel.backend.students.exception.StudentAlreadyExistsException;
 import com.wassel.backend.students.exception.StudentNotActiveException;
 import com.wassel.backend.students.exception.StudentNotFoundException;
@@ -17,8 +18,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Manages a school's student roster. Every method takes the school id explicitly and only ever
@@ -39,6 +44,11 @@ public class StudentService {
 	private static final String NOT_ACTIVE_MESSAGE = "Only active students can be added to a route.";
 
 	private static final String NOT_ON_ROUTE_MESSAGE = "Student is not on this route.";
+
+	private static final String DUPLICATE_STOP_MESSAGE = "A student appears more than once in the new order.";
+
+	private static final String STOPS_DONT_MATCH_MESSAGE =
+			"The new order must contain exactly the route's current stops.";
 
 	private final StudentRepository studentRepository;
 
@@ -160,6 +170,31 @@ public class StudentService {
 					student.setRouteId(null);
 					student.setStopPosition(null);
 				});
+	}
+
+	/**
+	 * Replaces the route's whole stop order. {@code studentIds} must contain exactly the route's
+	 * current stops, no more, no fewer, none repeated — this moves nobody on or off the route,
+	 * it only reorders. Positions are rewritten as a clean 1..n (unlike {@link #assignToRoute}'s
+	 * watermark), since the whole order is being replaced at once.
+	 */
+	@Transactional
+	public void reorderRoute(UUID schoolId, UUID routeId, List<UUID> studentIds) {
+		List<Student> currentStops = studentRepository.findBySchoolIdAndRouteIdOrderByStopPositionAsc(schoolId, routeId);
+		Set<UUID> currentIds = currentStops.stream().map(Student::getId).collect(Collectors.toSet());
+		Set<UUID> givenIds = new HashSet<>(studentIds);
+
+		if (givenIds.size() != studentIds.size()) {
+			throw new InvalidStopOrderException(DUPLICATE_STOP_MESSAGE);
+		}
+		if (!givenIds.equals(currentIds)) {
+			throw new InvalidStopOrderException(STOPS_DONT_MATCH_MESSAGE);
+		}
+
+		Map<UUID, Student> byId = currentStops.stream().collect(Collectors.toMap(Student::getId, student -> student));
+		for (int i = 0; i < studentIds.size(); i++) {
+			byId.get(studentIds.get(i)).setStopPosition(i + 1);
+		}
 	}
 
 	/** The route's stops, in position order, for the routes module to build its {@code Stop} shape. */

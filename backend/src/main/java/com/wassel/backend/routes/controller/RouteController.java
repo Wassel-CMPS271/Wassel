@@ -1,6 +1,7 @@
 package com.wassel.backend.routes.controller;
 
 import com.wassel.backend.routes.dto.AssignStudentRequest;
+import com.wassel.backend.routes.dto.ReorderStopsRequest;
 import com.wassel.backend.routes.dto.RouteRequest;
 import com.wassel.backend.routes.dto.RouteResponse;
 import com.wassel.backend.routes.dto.RouteSummaryResponse;
@@ -77,6 +78,12 @@ public class RouteController {
 	public RouteResponse removeStudent(@AuthenticationPrincipal User headOfTransport, @PathVariable UUID id,
 			@PathVariable UUID studentId) {
 		return routeService.removeStudent(schoolIdOf(headOfTransport), id, studentId);
+	}
+
+	@PutMapping("/{id}/stops")
+	public RouteResponse reorderStops(@AuthenticationPrincipal User headOfTransport, @PathVariable UUID id,
+			@Valid @RequestBody ReorderStopsRequest request) {
+		return routeService.reorderStops(schoolIdOf(headOfTransport), id, request);
 	}
 
 	private UUID schoolIdOf(User headOfTransport) {

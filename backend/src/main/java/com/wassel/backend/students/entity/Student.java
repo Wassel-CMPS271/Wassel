@@ -14,6 +14,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -38,8 +39,13 @@ import java.util.UUID;
  * a watermark (next = current max + 1), not a compacted 1..n sequence, so removing a stop never
  * reassigns another student's position; display order always comes from sorting by it, never
  * from its raw value.
+ *
+ * <p>Updates write only the changed columns ({@code @DynamicUpdate}): a request that loads many
+ * students (a reorder) would otherwise save every column from its stale copy and overwrite a pin or
+ * a removal another request committed in the meantime.
  */
 @Entity
+@DynamicUpdate
 @Table(name = "students")
 @Getter
 @Setter
