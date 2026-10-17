@@ -119,12 +119,20 @@ Until the road provider client exists (SCRUM-204) the legs are **straight-line d
 - **Apply** makes the proposal the route's order and keeps the previous order as a version. It answers 404 if the proposal was discarded, replaced or never existed, and **409 if the route's stops or their order have changed since the proposal was made** (compare with `current`). The screen should say so and offer to optimize again.
 - **Discard** drops the proposal. The route is untouched.
 
+### Earliest first pickup
+
+Arrival times are worked backwards, so no stop can arrive after the school's arrival time. What can fail is the start: the best order found takes `drivingMinutes`, so its first pickup is `school.arrivalTime - drivingMinutes`. If that is **before 06:00**, or before midnight, the route cannot be driven and the plan is not feasible with `ARRIVAL_TIME_UNREACHABLE`. The order with the least driving time starts latest, so one the solver cannot place after 06:00 has no better alternative. 06:00 is a constant while the MVP serves one school (SCRUM-202, `RouteTimings.EARLIEST_FIRST_PICKUP`); a first pickup at exactly 06:00 is allowed.
+
+### Capacity
+
+Capacity is checked first. A route with more stops than the vehicle has seats answers `CAPACITY_EXCEEDED` only, without searching, so it never also reports `ARRIVAL_TIME_UNREACHABLE`. No student is ever dropped to make a route fit.
+
 ### Reason codes
 
 | `code` | Meaning |
 |---|---|
 | `CAPACITY_EXCEEDED` | more students on the route than the vehicle has seats |
-| `ARRIVAL_TIME_UNREACHABLE` | no order reaches the school by its arrival time |
+| `ARRIVAL_TIME_UNREACHABLE` | the best order found would have to start before the earliest first pickup (06:00), or before midnight, to reach the school on time. See [Earliest first pickup](#earliest-first-pickup) |
 
 More codes may be added later. A client must show `message` for a code it does not know.
 
@@ -177,14 +185,15 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 - **No boarding time.** A stop takes zero minutes, so real pickup windows are a little longer than shown.
 - **The school's location is a configuration value**, not an admin setting, because the MVP serves one school. The `school` object has the final shape, so moving it to a school setting later changes nothing for consumers. The first story that reads it adds the property, and the app should refuse to start without it.
 - **Straight-line times** until SCRUM-204 (see [Arrival times](#arrival-times)).
-- `ARRIVAL_TIME_UNREACHABLE` is defined, but a solver that can always leave earlier will not produce it until a latest-departure rule exists. SCRUM-202 decides.
+- **The solver is a heuristic.** It starts from the order it was given and is never worse than it, and it matched the brute-force best on every small test route, but for large routes it does not prove optimality. `ARRIVAL_TIME_UNREACHABLE` therefore says the best order *found* starts too early.
 
 ## Interfaces (backend)
 
 In `com.wassel.backend.routing.service`:
 
 - `TravelTimes.matrix(List<Coordinate>)`: square matrix of `Duration`, `[i][j]` is point i to point j in input order, never null, zero on the diagonal, not assumed symmetric. Every entry is a whole number of minutes, rounded up. One call per route, because the road provider is rate limited. `StraightLineTravelTimes` is the stand-in; the road client (SCRUM-204) wraps it as its fallback and is `@Primary`, because two `TravelTimes` beans stop startup.
-- `RouteOptimizer.optimize(stops, school, capacity, schoolArrivalTime)`: returns a `Plan` with the order, arrival times, total driving time and reasons, which become `proposed` and `reasons`. A plan that is not feasible has reasons, no stops and zero time, and the `Plan` constructor enforces it. `Reason.code` is the `RouteOptimizer.Code` enum, so the codes above cannot be misspelled. The caller checks that stops are non-empty and pinned first. The arrival-time rule is written once and reused for the route's own arrival times (SCRUM-212); it comes with the solver (SCRUM-202), which implements `RouteOptimizer`.
+- `RouteOptimizer.optimize(stops, school, capacity, schoolArrivalTime)`: returns a `Plan` with the order, arrival times, total driving time and reasons, which become `proposed` and `reasons`. A plan that is not feasible has reasons, no stops and zero time, and the `Plan` constructor enforces it. `Reason.code` is the `RouteOptimizer.Code` enum, so the codes above cannot be misspelled. The caller checks that stops are non-empty and pinned first. `OrToolsRouteOptimizer` (SCRUM-202) implements it.
+- `RouteTimings.schedule(...)`: the arrival-time rule, written once. Pass `TravelTimes`, the pinned stops already in order, the school and its arrival time, or a matrix you already hold with a visiting order. It returns `Timing(arrivals, drivingTime, crossesMidnight)` and `startsTooEarly()`. The propose endpoint's `current` (SCRUM-203) and the route's own arrival times (SCRUM-212) must call it instead of redoing the arithmetic. When the first pickup falls before midnight `arrivals` is empty, because a time of day cannot say it: treat `startsTooEarly()` as "no times".
 
 ## Changing this contract
 

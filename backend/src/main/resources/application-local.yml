@@ -7,8 +7,11 @@ spring:
 
   jpa:
     show-sql: true
-    hibernate:
-      ddl-auto: update
+
+  flyway:
+    # A local database made before Flyway existed (by ddl-auto=update) already has the V1 schema:
+    # adopt it as V1 instead of failing on a non-empty schema with no history table.
+    baseline-on-migrate: true
 
 jwt:
   secret: ${JWT_SECRET:local-dev-secret-change-me-local-dev-secret-change-me}
@@ -19,6 +22,8 @@ wassel:
   seed-admin:
     email: ${ADMIN_EMAIL:admin@wassel.local}
     password: ${ADMIN_PASSWORD:local-admin-password}
+  demo:
+    password: ${DEMO_PASSWORD:local-demo-password}
   # Verdun, Beirut — same coordinates as docs/contracts/samples/routing/route.json.
   school:
     latitude: ${SCHOOL_LATITUDE:33.896}
