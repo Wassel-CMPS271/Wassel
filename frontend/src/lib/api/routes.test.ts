@@ -1,4 +1,4 @@
-// Tests for SCRUM-218's routes module, modeled on client.test.ts. The real
+// Tests for the routes module (SCRUM-218, students SCRUM-219), modeled on client.test.ts. The real
 // calls (httpRoutes) are checked against the contract's paths with fetch
 // mocked; the temporary sample client is checked through the exported
 // functions the screen uses. Drop the "sample client" and "sample copies"
@@ -44,7 +44,37 @@ vi.mock("./drivers", () => ({
   ]),
 }));
 
+// The first Verdun stop in route.json, so this student is already on a route.
+const VERDUN_STUDENT_ID = "40000000-0000-4000-8000-000000000009";
+
+function student(id: string, firstName: string, pin: boolean, status: "active" | "inactive" = "active") {
+  return {
+    id,
+    firstName,
+    lastName: "Test",
+    grade: "5",
+    guardianName: "",
+    guardianPhone: "",
+    status,
+    address: pin ? "Bliss Street, Hamra" : null,
+    latitude: pin ? 33.8997 : null,
+    longitude: pin ? 35.4823 : null,
+    route: null,
+    parentUserId: null,
+    createdAt: "",
+  };
+}
+
+vi.mock("./students", () => ({
+  getStudents: vi.fn().mockResolvedValue([
+    student("s-free", "Lara", true),
+    student("s-nopin", "Sami", false),
+    student(VERDUN_STUDENT_ID, "Maya", true),
+  ]),
+}));
+
 const HAMRA_ID = "10000000-0000-4000-8000-000000000001";
+const ACHRAFIEH_ID = "10000000-0000-4000-8000-000000000002";
 const VERDUN_ID = "10000000-0000-4000-8000-000000000003";
 const VERDUN_VEHICLE_ID = "20000000-0000-4000-8000-000000000003";
 const VERDUN_DRIVER_ID = "30000000-0000-4000-8000-000000000003";
@@ -143,6 +173,63 @@ describe("httpRoutes", () => {
       expect.objectContaining({ method: "DELETE", body: undefined }),
     );
   });
+
+  it("adds a student with a POST of { studentId } to the route's students", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(200, sampleRoute);
+
+    await expect(httpRoutes.addStudent(VERDUN_ID, "s-free")).resolves.toEqual(sampleRoute);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${ROUTES_URL}/${VERDUN_ID}/students`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ studentId: "s-free" }) }),
+    );
+  });
+
+  it("removes a student with a DELETE to its path, encoding the id", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(200, sampleRoute);
+
+    await expect(httpRoutes.removeStudent(VERDUN_ID, "a/b")).resolves.toEqual(sampleRoute);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${ROUTES_URL}/${VERDUN_ID}/students/a%2Fb`,
+      expect.objectContaining({ method: "DELETE", body: undefined }),
+    );
+  });
+
+  it("works out the unassigned students by getting every route", async () => {
+    const { httpRoutes } = await loadRoutes();
+    const summaries = sampleRouteList.slice(0, 2);
+    const stopsById: Record<string, unknown[]> = {
+      [summaries[0].id]: [{ ...sampleRoute.stops[0], studentId: "s-free" }],
+      [summaries[1].id]: [],
+    };
+    fetchMock = vi.fn((url: string) => {
+      const id = url.slice(ROUTES_URL.length + 1);
+      const body = id ? { ...sampleRoute, id, stops: stopsById[id] } : summaries;
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const unassigned = await httpRoutes.unassignedStudents();
+
+    expect(unassigned.map((s) => s.id)).toEqual(["s-nopin", VERDUN_STUDENT_ID]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const url of [ROUTES_URL, ...summaries.map((summary) => `${ROUTES_URL}/${summary.id}`)]) {
+      expect(fetchMock).toHaveBeenCalledWith(url, expect.objectContaining({ method: "GET" }));
+    }
+  });
+
+  it("excludes inactive students, even when they're on no route", async () => {
+    const { httpRoutes } = await loadRoutes();
+    const { getStudents } = await import("./students");
+    vi.mocked(getStudents).mockResolvedValueOnce([
+      student("s-free", "Lara", true),
+      student("s-inactive", "Nora", true, "inactive"),
+    ]);
+    mockFetchOnce(200, []); // no routes, so neither student is a stop anywhere
+
+    await expect(httpRoutes.unassignedStudents()).resolves.toEqual([student("s-free", "Lara", true)]);
+  });
 });
 
 describe("sample client (temporary, delete with SCRUM-208)", () => {
@@ -174,6 +261,8 @@ describe("sample client (temporary, delete with SCRUM-208)", () => {
       () => routes.updateRoute("missing", { name: "x", vehicleId: "v-free", driverId: "d-free" }),
     ],
     ["deleteRoute", () => routes.deleteRoute("missing")],
+    ["addStudentToRoute", () => routes.addStudentToRoute("missing", "s-free")],
+    ["removeStudentFromRoute", () => routes.removeStudentFromRoute("missing", VERDUN_STUDENT_ID)],
   ])("%s answers 404 for an unknown route", async (_name, call) => {
     try {
       await call();
@@ -303,6 +392,103 @@ describe("sample client (temporary, delete with SCRUM-208)", () => {
     route.stops.pop();
 
     await expect(routes.getRoute(VERDUN_ID)).resolves.toEqual(sampleRoute);
+  });
+
+  it("adds a student as the last stop, built from the student record", async () => {
+    const updated = await routes.addStudentToRoute(VERDUN_ID, "s-free");
+
+    expect(updated.stops).toHaveLength(4);
+    expect(updated.stops.slice(0, 3)).toEqual(sampleRoute.stops);
+    expect(updated.stops[3]).toEqual({
+      studentId: "s-free",
+      position: 4,
+      firstName: "Lara",
+      lastName: "Test",
+      address: "Bliss Street, Hamra",
+      latitude: 33.8997,
+      longitude: 35.4823,
+      arrivalTime: null,
+    });
+    expect(updated).toMatchObject({ studentCount: 4, seatsLeft: 10 });
+    await expect(routes.getRoute(VERDUN_ID)).resolves.toEqual(updated);
+    const list = await routes.listRoutes();
+    expect(list.find((route) => route.id === VERDUN_ID)).toMatchObject({ studentCount: 4 });
+
+    updated.stops.pop();
+    await expect(routes.getRoute(VERDUN_ID)).resolves.toMatchObject({ studentCount: 4 });
+  });
+
+  it("refuses to add beyond the vehicle's capacity, with the count and the capacity", async () => {
+    try {
+      // Achrafieh has 4 students on 3 seats.
+      await routes.addStudentToRoute(ACHRAFIEH_ID, "s-free");
+      expect.unreachable("expected a 409");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as Errors.ApiError).status).toBe(409);
+      expect((error as Errors.ApiError).message).toContain("4 students");
+      expect((error as Errors.ApiError).message).toContain("3 seats");
+    }
+    await expect(routes.getRoute(ACHRAFIEH_ID)).resolves.toMatchObject({ studentCount: 4 });
+  });
+
+  it("answers 404 for an unknown student", async () => {
+    await expect(routes.addStudentToRoute(VERDUN_ID, "nobody")).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  it("refuses a student who is already on a route, naming it", async () => {
+    try {
+      await routes.addStudentToRoute(HAMRA_ID, VERDUN_STUDENT_ID);
+      expect.unreachable("expected a 409");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as Errors.ApiError).status).toBe(409);
+      expect((error as Errors.ApiError).message).toContain("Verdun morning run");
+    }
+
+    await routes.addStudentToRoute(VERDUN_ID, "s-free");
+    await expect(routes.addStudentToRoute(VERDUN_ID, "s-free")).rejects.toMatchObject({
+      status: 409,
+    });
+  });
+
+  it("removes a student, renumbering the stops and recomputing the seats", async () => {
+    const updated = await routes.removeStudentFromRoute(VERDUN_ID, VERDUN_STUDENT_ID);
+
+    expect(updated.stops.map((stop) => stop.studentId)).toEqual(
+      sampleRoute.stops.slice(1).map((stop) => stop.studentId),
+    );
+    expect(updated.stops.map((stop) => stop.position)).toEqual([1, 2]);
+    expect(updated).toMatchObject({ studentCount: 2, seatsLeft: 12 });
+    await expect(routes.getRoute(VERDUN_ID)).resolves.toEqual(updated);
+  });
+
+  it("answers 404 when removing a student who is not on the route", async () => {
+    await expect(routes.removeStudentFromRoute(HAMRA_ID, VERDUN_STUDENT_ID)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  it("lists the students who are on no route", async () => {
+    const ids = async () => (await routes.listUnassignedStudents()).map((s) => s.id);
+
+    await expect(ids()).resolves.toEqual(["s-free", "s-nopin"]);
+    await routes.addStudentToRoute(VERDUN_ID, "s-free");
+    await expect(ids()).resolves.toEqual(["s-nopin"]);
+    await routes.removeStudentFromRoute(VERDUN_ID, VERDUN_STUDENT_ID);
+    await expect(ids()).resolves.toEqual(["s-nopin", VERDUN_STUDENT_ID]);
+  });
+
+  it("excludes inactive students, even when they're on no route", async () => {
+    const { getStudents } = await import("./students");
+    vi.mocked(getStudents).mockResolvedValueOnce([
+      student("s-free", "Lara", true),
+      student("s-inactive", "Nora", true, "inactive"),
+    ]);
+
+    await expect(routes.listUnassignedStudents()).resolves.toEqual([student("s-free", "Lara", true)]);
   });
 });
 

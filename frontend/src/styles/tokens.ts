@@ -197,6 +197,14 @@ export const darkTheme = {
     // dark halo (same as background.base) so it clears 3:1 on any frame (~5.6:1).
     focusRing: colors.primary[400],
     focusHalo: "#05060a",
+    // Drag and drop between two lists (route students, SCRUM-219). A list that
+    // accepts the card gets a dashed primary[400] border (5.0:1 on surface.card,
+    // clears 3:1 for UI boundaries); the list under the pointer also gets the tint.
+    dropTargetBorder: colors.primary[400],
+    dropTargetBg: "rgba(77, 127, 255, 0.08)", // tint of primary[400]
+    // A list that refuses the drop (vehicle full): warning[500] border (7.7:1 on surface.card).
+    dropRefusedBorder: colors.warning[500],
+    dropRefusedBg: "rgba(247, 144, 9, 0.08)", // tint of warning[500]
   },
   text: {
     primary: "#f5f5f7", // headings, primary content
