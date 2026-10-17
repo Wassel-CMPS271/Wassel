@@ -50,6 +50,18 @@ wassel:
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
     school-id: ${SCHOOL_ID:00000000-0000-0000-0000-000000000001}
+  # Demo data (SCRUM-200): off unless DEMO_DATA_ENABLED=true. It fills the seeded admin's school with a
+  # head of transportation, a parent, vehicles, drivers and students, all signing in with DEMO_PASSWORD.
+  # It skips itself when the database has accounts beyond the demo ones and the admin, unless
+  # DEMO_DATA_FORCE=true.
+  demo:
+    enabled: ${DEMO_DATA_ENABLED:false}
+    password: ${DEMO_PASSWORD:}
+    force: ${DEMO_DATA_FORCE:false}
+    # Accounts are demo+head@..., demo+parent@..., demo+driver-karim@... (a tag after the "+"). Sign-in
+    # emails a code, so on a deployed environment set this to a real mailbox that supports "+" tags
+    # (Gmail does) to receive the codes. The default only works where the code is logged (local).
+    email-base: ${DEMO_EMAIL_BASE:demo@wassel.local}
   # Must be overridden in every deployed environment: the MVP serves one school, and every
   # route response includes its location.
   school:
