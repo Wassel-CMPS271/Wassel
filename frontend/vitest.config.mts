@@ -12,6 +12,12 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
+  // postcss.config.mjs is in Next's format (plugin names as strings), which
+  // Vite can't load. Tests don't need Tailwind, so CSS imports (e.g.
+  // leaflet.css in components/map) get an empty PostCSS config instead.
+  css: {
+    postcss: {},
+  },
   test: {
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],

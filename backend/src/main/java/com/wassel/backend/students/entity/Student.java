@@ -14,6 +14,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -42,8 +43,13 @@ import java.util.UUID;
  * <p>{@code manualPin} (SCRUM-211) is true once {@code latitude}/{@code longitude} were set by a
  * human correcting the map pin, not the geocoder. Saving a new address never overwrites a pin
  * once this is true.
+ *
+ * <p>Updates write only the changed columns ({@code @DynamicUpdate}): a request that loads many
+ * students (a reorder) would otherwise save every column from its stale copy and overwrite a pin or
+ * a removal another request committed in the meantime.
  */
 @Entity
+@DynamicUpdate
 @Table(name = "students")
 @Getter
 @Setter

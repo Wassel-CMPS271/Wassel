@@ -91,6 +91,17 @@ that's the structure this codebase moved away from.
 - `schools` — school-level settings. Real module: arrival/dismissal times
   (SCRUM-178), the holiday calendar (SCRUM-101) and half-day marking
   (SCRUM-102) are done. A date can't be both a holiday and a half-day.
+- `demo` - an opt-in seeder for the demo school (SCRUM-200). `config/DemoDataSeeder` runs on startup only
+  when `DEMO_DATA_ENABLED=true` (the bean doesn't exist otherwise) and `service/DemoDataService` creates a
+  head of transportation, a parent, vehicles, drivers (active, with the demo password, no invite email),
+  students (with address and pin, two linked to the parent) and school times, always through the other
+  modules' services. Idempotent: every step looks for what it would create first, and school times that
+  are already set are kept. The guard: if any account exists beyond the demo ones and the seeded admin, it
+  logs a warning and does nothing unless `DEMO_DATA_FORCE=true`. Demo emails are `DEMO_EMAIL_BASE` with a
+  `+tag` (`demo+head@...`), so on a deployed environment, where sign-in emails a code, pointing the base
+  at a real Gmail-style mailbox lets every demo account receive its code. Accounts are unique across the
+  platform, so the seeder serves one school (the seeded admin's). Needs `DEMO_PASSWORD` (10+ characters).
+  Setup is in the README ("Demo data"). Depends on `users`, `schools`, `vehicles`, `drivers`, `students`.
 - `common` — cross-cutting code that belongs to no single feature:
   `config/SecurityConfig`, `exception/GlobalExceptionHandler`.
 - `vehicles` — fleet vehicles: create, set capacity, deactivate/reactivate, with
@@ -152,11 +163,20 @@ that's the structure this codebase moved away from.
   `schools` (`SchoolSettingsService.getTimes`) plus the `schools.config.SchoolLocationProperties`
   (`wassel.school.latitude`/`longitude`, required — the app refuses to start without it) for the
   `Route.school` block. Response shapes follow `docs/contracts/routing.md`.
-- `routing` — the contracts the route features code against (SCRUM-201). `service/RouteOptimizer`
-  orders one route's stops and `service/TravelTimes` gives a driving-time matrix between points, so
-  the solver (SCRUM-202) and the road provider client (SCRUM-204) swap in without their callers
-  changing. `StraightLineTravelTimes` (30 km/h, rounded up to whole minutes) is the stand-in and the
-  fallback. Other modules use `routing.service` only, never anything deeper, and `routing` imports
+- `routing` — the contracts the route features code against (SCRUM-201) and the solver behind them
+  (SCRUM-202). `service/RouteOptimizer` orders one route's stops and `service/TravelTimes` gives a
+  driving-time matrix between points, so the road provider client (SCRUM-204) swaps in without its
+  callers changing. `StraightLineTravelTimes` (30 km/h, rounded up to whole minutes) is the stand-in
+  and the fallback. `OrToolsRouteOptimizer` is the only `RouteOptimizer`: Google OR-Tools
+  (`ortools-java`, native libraries loaded on the first solve), guided local search seeded with the
+  given order (50 ms per stop, capped at 2 s) and never worse than that order. It asks for one
+  matrix per route and checks capacity first. `RouteTimings` is the one place the arrival-time rule
+  is written (backwards from the school's arrival time); the propose endpoint's `current` and the
+  route's own arrival times must use it rather than redo the arithmetic. A first pickup before
+  `RouteTimings.EARLIEST_FIRST_PICKUP` (06:00, a constant while there is one school) or before
+  midnight makes a plan `ARRIVAL_TIME_UNREACHABLE`. Run the packaged jar once after upgrading
+  `ortools-java`: the natives are extracted at runtime, and a container that mounts `/tmp` as
+  `noexec` fails to load them. Other modules use `routing.service` only, never anything deeper, and `routing` imports
   no other module: it takes plain `Coordinate`s and ids so it does not depend on the routes
   entities. The JSON shapes, endpoint table and rules are in `docs/contracts/routing.md`, with
   samples in `docs/contracts/samples/routing/`; change them by pull request that tags the owners.
@@ -168,6 +188,19 @@ that's the structure this codebase moved away from.
   `config/`, not in `common/`.
 - A genuinely new feature gets a new top-level module, not a subpackage of an
   existing one.
+
+## Database schema (SCRUM-199)
+
+- **Schema changes go in a migration, never in `ddl-auto`.** Flyway runs `src/main/resources/db/migration/V<n>__short_description.sql`
+  on startup. `V1__baseline_schema.sql` is the schema as it was when Flyway was added.
+- Changing an entity's columns, constraints or indexes means adding the next `V<n>` file in the same PR. Never edit a
+  migration that has been merged: Flyway checksums them, so an edit stops every database that already ran it.
+- `ddl-auto` is `validate` in every profile that runs on PostgreSQL (local, staging, production): Hibernate only checks
+  that the entities match the schema, so a forgotten migration stops startup with a clear error instead of reaching users.
+- Tests are the exception: the `test` profile runs on H2, turns Flyway off and lets Hibernate build the schema from the
+  entities. So a green test run does not prove the migrations are right; start the app against an empty PostgreSQL
+  (`docker compose up postgres`, then `spring-boot:run` with the `local` profile) after adding one.
+- A local database made before Flyway existed is adopted as V1 automatically (`baseline-on-migrate` in `application-local.yml`).
 
 ## Exceptions
 
