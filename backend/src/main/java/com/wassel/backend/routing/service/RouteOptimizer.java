@@ -20,7 +20,8 @@ public interface RouteOptimizer {
 	 * is not feasible and says why in {@link Plan#reasons()}; it is not an exception.
 	 *
 	 * <p>{@code stops} must not be empty and every stop has a pin: the caller rejects a route
-	 * with no stops, or with students who have no pin, before calling.
+	 * with no stops, or with students who have no pin, before calling. An empty list is still
+	 * answered, with a feasible plan that has no stops and zero driving time.
 	 */
 	Plan optimize(List<Stop> stops, Coordinate school, int capacity, LocalTime schoolArrivalTime);
 
