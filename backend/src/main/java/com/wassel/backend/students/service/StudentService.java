@@ -75,6 +75,11 @@ public class StudentService {
 				.toList();
 	}
 
+	/**
+	 * An address is optional (SCRUM-213); when given, it's geocoded the same as a later address
+	 * change (SCRUM-211) — a brand-new student has no pin yet, so there's nothing manually placed
+	 * to protect, unlike {@link #updateAddress}.
+	 */
 	@Transactional
 	public StudentResponse addStudent(UUID schoolId, CreateStudentRequest request) {
 		if (studentRepository.existsBySchoolIdAndFirstNameIgnoreCaseAndLastNameIgnoreCaseAndGuardianPhone(
@@ -83,7 +88,7 @@ public class StudentService {
 					.formatted(request.firstName(), request.lastName(), request.guardianPhone()));
 		}
 
-		Student student = Student.builder()
+		Student.StudentBuilder student = Student.builder()
 				.schoolId(schoolId)
 				.firstName(request.firstName())
 				.lastName(request.lastName())
@@ -91,8 +96,13 @@ public class StudentService {
 				.guardianName(request.guardianName())
 				.guardianPhone(request.guardianPhone())
 				.status(StudentStatus.ACTIVE)
-				.build();
-		return toResponse(studentRepository.saveAndFlush(student));
+				.address(request.address());
+		if (request.address() != null) {
+			Optional<GeocodeResult> result = geocoder.geocode(request.address());
+			student.latitude(result.map(GeocodeResult::latitude).orElse(null));
+			student.longitude(result.map(GeocodeResult::longitude).orElse(null));
+		}
+		return toResponse(studentRepository.saveAndFlush(student.build()));
 	}
 
 	/**

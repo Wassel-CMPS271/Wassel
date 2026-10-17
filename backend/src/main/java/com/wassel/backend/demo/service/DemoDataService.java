@@ -200,8 +200,11 @@ public class DemoDataService {
 							&& s.lastName().equalsIgnoreCase(demo.lastName())
 							&& s.guardianPhone().equals(demo.guardianPhone()))
 					.findFirst()
+					// No address here: the exact pin is set by hand just below, same as a real admin
+					// correcting one. Geocoding a real address here would mean seeding depends on a
+					// live Nominatim call for every demo student, every time the app starts.
 					.orElseGet(() -> studentService.addStudent(schoolId, new CreateStudentRequest(demo.firstName(),
-							demo.lastName(), demo.grade(), demo.guardianName(), demo.guardianPhone())));
+							demo.lastName(), demo.grade(), demo.guardianName(), demo.guardianPhone(), null)));
 			if (student.address() == null) {
 				studentService.updateAddress(schoolId, student.id(), new UpdateStudentAddressRequest(demo.address()));
 			}
