@@ -40,6 +40,10 @@ import java.util.UUID;
  * reassigns another student's position; display order always comes from sorting by it, never
  * from its raw value.
  *
+ * <p>{@code manualPin} (SCRUM-211) is true once {@code latitude}/{@code longitude} were set by a
+ * human correcting the map pin, not the geocoder. Saving a new address never overwrites a pin
+ * once this is true.
+ *
  * <p>Updates write only the changed columns ({@code @DynamicUpdate}): a request that loads many
  * students (a reorder) would otherwise save every column from its stale copy and overwrite a pin or
  * a removal another request committed in the meantime.
@@ -100,6 +104,10 @@ public class Student {
 
 	@Column(name = "stop_position")
 	private Integer stopPosition;
+
+	@Builder.Default
+	@Column(name = "manual_pin", nullable = false)
+	private boolean manualPin = false;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)

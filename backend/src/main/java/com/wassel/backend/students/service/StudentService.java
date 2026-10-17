@@ -1,5 +1,7 @@
 package com.wassel.backend.students.service;
 
+import com.wassel.backend.geocoding.service.GeocodeResult;
+import com.wassel.backend.geocoding.service.Geocoder;
 import com.wassel.backend.students.dto.CreateStudentRequest;
 import com.wassel.backend.students.dto.LinkParentRequest;
 import com.wassel.backend.students.dto.StudentResponse;
@@ -21,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -53,6 +56,8 @@ public class StudentService {
 	private final StudentRepository studentRepository;
 
 	private final UserService userService;
+
+	private final Geocoder geocoder;
 
 	/**
 	 * The school's students, oldest first, optionally narrowed by a free-text query (matched
@@ -90,10 +95,22 @@ public class StudentService {
 		return toResponse(studentRepository.saveAndFlush(student));
 	}
 
+	/**
+	 * Saving a new address re-geocodes it (SCRUM-211), unless {@code manualPin} is set: a pin
+	 * placed by hand is never overwritten by a lookup, no matter how the address changes. A
+	 * failed or empty lookup clears any previous (non-manual) pin — it belonged to the old
+	 * address, not this one — leaving the student needing a manual pin, the same meaning
+	 * {@code latitude: null} already has everywhere else.
+	 */
 	@Transactional
 	public StudentResponse updateAddress(UUID schoolId, UUID studentId, UpdateStudentAddressRequest request) {
 		Student student = findOwned(schoolId, studentId);
 		student.setAddress(request.address());
+		if (!student.isManualPin()) {
+			Optional<GeocodeResult> result = geocoder.geocode(request.address());
+			student.setLatitude(result.map(GeocodeResult::latitude).orElse(null));
+			student.setLongitude(result.map(GeocodeResult::longitude).orElse(null));
+		}
 		return toResponse(student);
 	}
 
@@ -102,6 +119,7 @@ public class StudentService {
 		Student student = findOwned(schoolId, studentId);
 		student.setLatitude(request.latitude());
 		student.setLongitude(request.longitude());
+		student.setManualPin(true);
 		return toResponse(student);
 	}
 
