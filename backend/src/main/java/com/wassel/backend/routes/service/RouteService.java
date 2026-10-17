@@ -2,18 +2,23 @@ package com.wassel.backend.routes.service;
 
 import com.wassel.backend.drivers.dto.DriverResponse;
 import com.wassel.backend.drivers.service.DriverService;
+import com.wassel.backend.routes.dto.AssignStudentRequest;
 import com.wassel.backend.routes.dto.RouteDriverSummary;
 import com.wassel.backend.routes.dto.RouteRequest;
 import com.wassel.backend.routes.dto.RouteResponse;
 import com.wassel.backend.routes.dto.RouteSchoolResponse;
 import com.wassel.backend.routes.dto.RouteSummaryResponse;
 import com.wassel.backend.routes.dto.RouteVehicleSummary;
+import com.wassel.backend.routes.dto.StopResponse;
 import com.wassel.backend.routes.entity.Route;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
+import com.wassel.backend.routes.exception.RouteCapacityExceededException;
 import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.routes.repository.RouteRepository;
 import com.wassel.backend.schools.config.SchoolLocationProperties;
 import com.wassel.backend.schools.service.SchoolSettingsService;
+import com.wassel.backend.students.dto.StudentResponse;
+import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.vehicles.dto.VehicleResponse;
 import com.wassel.backend.vehicles.service.VehicleService;
 import lombok.RequiredArgsConstructor;
@@ -21,20 +26,21 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Manages a school's routes: create, list, edit and delete, with a vehicle and a driver each
- * on at most one route. Every method takes the school id explicitly and only ever touches that
- * school's routes, so callers can't cross the tenant boundary. Vehicle and driver eligibility
- * are checked through {@link VehicleService}/{@link DriverService}, never by touching those
- * modules' repositories or entities directly.
+ * Manages a school's routes: create, list, edit, delete, and which students ride each one
+ * (SCRUM-209). Every method takes the school id explicitly and only ever touches that school's
+ * routes, so callers can't cross the tenant boundary. Vehicle, driver and student eligibility
+ * are checked through {@link VehicleService}/{@link DriverService}/{@link StudentService},
+ * never by touching those modules' repositories or entities directly.
  *
- * <p>No route has stops yet (assigning students is SCRUM-209), so {@code studentCount} is
- * always 0, {@code seatsLeft} always equals the vehicle's capacity, and {@code stops} is
- * always empty.
+ * <p>{@code studentCount}, {@code seatsLeft} and {@code stops} are always computed fresh from
+ * {@code StudentService}, never cached on {@code Route} itself. Every stop's {@code arrivalTime}
+ * is still always null: estimating it is SCRUM-212.
  */
 @Service
 @RequiredArgsConstructor
@@ -51,6 +57,8 @@ public class RouteService {
 	private final VehicleService vehicleService;
 
 	private final DriverService driverService;
+
+	private final StudentService studentService;
 
 	private final SchoolSettingsService schoolSettingsService;
 
@@ -115,7 +123,43 @@ public class RouteService {
 
 	@Transactional
 	public void deleteRoute(UUID schoolId, UUID routeId) {
-		routeRepository.delete(findOwned(schoolId, routeId));
+		Route route = findOwned(schoolId, routeId);
+		studentService.clearRoute(schoolId, routeId);
+		routeRepository.delete(route);
+	}
+
+	/**
+	 * Adds a student as the route's new last stop. Capacity is checked against the route's
+	 * current occupants before the student is resolved, so a full route answers
+	 * {@link RouteCapacityExceededException} even for an unknown student id, the same
+	 * "cheapest check first" order {@code OrToolsRouteOptimizer} uses for capacity vs. time.
+	 * Re-adding a student already on this exact route skips the capacity check: they're already
+	 * counted in {@code currentCount}, so adding them again takes no new seat.
+	 * {@link StudentService#assignToRoute} throws 404/409 if the student doesn't exist, belongs
+	 * to another school, or isn't active; it also moves a student off any other route they were
+	 * already on, so no seat is held on two routes at once.
+	 */
+	@Transactional
+	public RouteResponse addStudent(UUID schoolId, UUID routeId, AssignStudentRequest request) {
+		Route route = findOwned(schoolId, routeId);
+		if (!studentService.isOnRoute(schoolId, request.studentId(), routeId)) {
+			VehicleResponse vehicle = vehicleService.getOwnedVehicle(schoolId, route.getVehicleId());
+			long currentCount = studentService.countOnRoute(schoolId, routeId);
+			if (currentCount >= vehicle.capacity()) {
+				throw new RouteCapacityExceededException("The route has %d students but the vehicle seats %d."
+						.formatted(currentCount, vehicle.capacity()));
+			}
+		}
+		studentService.assignToRoute(schoolId, request.studentId(), routeId);
+		return toResponse(schoolId, route);
+	}
+
+	/** 404s if the student exists but isn't currently a stop on this particular route. */
+	@Transactional
+	public RouteResponse removeStudent(UUID schoolId, UUID routeId, UUID studentId) {
+		Route route = findOwned(schoolId, routeId);
+		studentService.removeFromRoute(schoolId, studentId, routeId);
+		return toResponse(schoolId, route);
 	}
 
 	private VehicleResponse requireActiveVehicle(UUID schoolId, UUID vehicleId) {
@@ -162,7 +206,7 @@ public class RouteService {
 	}
 
 	private RouteSummaryResponse summaryOf(Route route, VehicleResponse vehicle, DriverResponse driver) {
-		int studentCount = 0;
+		int studentCount = (int) studentService.countOnRoute(route.getSchoolId(), route.getId());
 		return new RouteSummaryResponse(route.getId(), route.getName(),
 				new RouteVehicleSummary(vehicle.id(), vehicle.plateNumber(), vehicle.capacity()),
 				new RouteDriverSummary(driver.id(), driver.firstName(), driver.lastName()),
@@ -179,6 +223,18 @@ public class RouteService {
 		RouteSchoolResponse school = new RouteSchoolResponse(schoolLocation.latitude(), schoolLocation.longitude(),
 				schoolSettingsService.getTimes(schoolId).arrivalTime());
 		return new RouteResponse(summary.id(), summary.name(), summary.vehicle(), summary.driver(),
-				summary.studentCount(), summary.seatsLeft(), school, List.of());
+				summary.studentCount(), summary.seatsLeft(), school, stopsOf(schoolId, route.getId()));
+	}
+
+	/** In position order. {@code arrivalTime} is always null for now: estimating it is SCRUM-212. */
+	private List<StopResponse> stopsOf(UUID schoolId, UUID routeId) {
+		List<StudentResponse> onRoute = studentService.listOnRoute(schoolId, routeId);
+		List<StopResponse> stops = new ArrayList<>(onRoute.size());
+		for (int i = 0; i < onRoute.size(); i++) {
+			StudentResponse student = onRoute.get(i);
+			stops.add(new StopResponse(student.id(), i + 1, student.firstName(), student.lastName(),
+					student.address(), student.latitude(), student.longitude(), null));
+		}
+		return stops;
 	}
 }

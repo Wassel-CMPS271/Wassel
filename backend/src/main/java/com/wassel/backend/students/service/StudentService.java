@@ -8,6 +8,7 @@ import com.wassel.backend.students.dto.UpdateStudentLocationRequest;
 import com.wassel.backend.students.entity.Student;
 import com.wassel.backend.students.entity.StudentStatus;
 import com.wassel.backend.students.exception.StudentAlreadyExistsException;
+import com.wassel.backend.students.exception.StudentNotActiveException;
 import com.wassel.backend.students.exception.StudentNotFoundException;
 import com.wassel.backend.students.repository.StudentRepository;
 import com.wassel.backend.users.entity.Role;
@@ -34,6 +35,10 @@ public class StudentService {
 			"A student named %s %s with guardian phone %s already exists.";
 
 	private static final String NOT_FOUND_MESSAGE = "Student not found.";
+
+	private static final String NOT_ACTIVE_MESSAGE = "Only active students can be added to a route.";
+
+	private static final String NOT_ON_ROUTE_MESSAGE = "Student is not on this route.";
 
 	private final StudentRepository studentRepository;
 
@@ -97,6 +102,72 @@ public class StudentService {
 		userService.getOwnedUser(schoolId, request.parentUserId(), Role.PARENT);
 		student.setParentUserId(request.parentUserId());
 		return toResponse(student);
+	}
+
+	/**
+	 * Puts an active student on a route, as its new last stop. A student already on a different
+	 * route is moved: this just overwrites {@code routeId}/{@code stopPosition} on the student's
+	 * own row, so the old route's count drops without anything else to clean up. Takes a plain
+	 * route id, the same way {@code route} on this entity is a plain string: this module never
+	 * imports the routes module.
+	 */
+	@Transactional
+	public void assignToRoute(UUID schoolId, UUID studentId, UUID routeId) {
+		Student student = findOwned(schoolId, studentId);
+		if (student.getStatus() != StudentStatus.ACTIVE) {
+			throw new StudentNotActiveException(NOT_ACTIVE_MESSAGE);
+		}
+		Integer maxPosition = studentRepository.findMaxStopPosition(schoolId, routeId);
+		student.setRouteId(routeId);
+		student.setStopPosition((maxPosition == null ? 0 : maxPosition) + 1);
+	}
+
+	/** Throws if the student isn't currently a stop on this particular route. */
+	@Transactional
+	public void removeFromRoute(UUID schoolId, UUID studentId, UUID routeId) {
+		Student student = findOwned(schoolId, studentId);
+		if (!routeId.equals(student.getRouteId())) {
+			throw new StudentNotFoundException(NOT_ON_ROUTE_MESSAGE);
+		}
+		student.setRouteId(null);
+		student.setStopPosition(null);
+	}
+
+	/** For the routes module to compute {@code studentCount}/{@code seatsLeft}. */
+	@Transactional(readOnly = true)
+	public long countOnRoute(UUID schoolId, UUID routeId) {
+		return studentRepository.countBySchoolIdAndRouteId(schoolId, routeId);
+	}
+
+	/**
+	 * Whether this student is already a stop on this exact route, so the routes module can skip
+	 * the capacity check for them: re-adding them takes no new seat, since they're already
+	 * counted in {@link #countOnRoute}.
+	 */
+	@Transactional(readOnly = true)
+	public boolean isOnRoute(UUID schoolId, UUID studentId, UUID routeId) {
+		return studentRepository.existsBySchoolIdAndIdAndRouteId(schoolId, studentId, routeId);
+	}
+
+	/**
+	 * Releases every student on this route: for when the route itself is deleted, so nobody is
+	 * left pointing at a route id that no longer exists.
+	 */
+	@Transactional
+	public void clearRoute(UUID schoolId, UUID routeId) {
+		studentRepository.findBySchoolIdAndRouteIdOrderByStopPositionAsc(schoolId, routeId)
+				.forEach(student -> {
+					student.setRouteId(null);
+					student.setStopPosition(null);
+				});
+	}
+
+	/** The route's stops, in position order, for the routes module to build its {@code Stop} shape. */
+	@Transactional(readOnly = true)
+	public List<StudentResponse> listOnRoute(UUID schoolId, UUID routeId) {
+		return studentRepository.findBySchoolIdAndRouteIdOrderByStopPositionAsc(schoolId, routeId).stream()
+				.map(this::toResponse)
+				.toList();
 	}
 
 	private StudentStatus parseStatus(String status) {

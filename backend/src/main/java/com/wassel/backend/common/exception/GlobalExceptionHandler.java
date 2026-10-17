@@ -10,11 +10,13 @@ import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
+import com.wassel.backend.routes.exception.RouteCapacityExceededException;
 import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
 import com.wassel.backend.students.exception.StudentAlreadyExistsException;
+import com.wassel.backend.students.exception.StudentNotActiveException;
 import com.wassel.backend.students.exception.StudentNotFoundException;
 import com.wassel.backend.users.exception.EmailAlreadyInUseException;
 import com.wassel.backend.users.exception.UserNotFoundException;
@@ -158,6 +160,16 @@ public class GlobalExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
 
+	// Same "errors" shape again, keyed by "studentId", for a student who isn't active enough to
+	// be put on a route.
+	@ExceptionHandler(StudentNotActiveException.class)
+	public ProblemDetail handleStudentNotActive(StudentNotActiveException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Student not active");
+		problem.setProperty("errors", Map.of("studentId", ex.getMessage()));
+		return problem;
+	}
+
 	@ExceptionHandler(RouteNotFoundException.class)
 	public ProblemDetail handleRouteNotFound(RouteNotFoundException ex) {
 		logRejected(ex);
@@ -172,6 +184,14 @@ public class GlobalExceptionHandler {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Route assignment conflict");
 		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
 		return problem;
+	}
+
+	// No "errors" map: the contract has this as a plain detail naming the current count and the
+	// capacity, not a field error.
+	@ExceptionHandler(RouteCapacityExceededException.class)
+	public ProblemDetail handleRouteCapacityExceeded(RouteCapacityExceededException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
 	}
 
 	@ExceptionHandler(UserNotFoundException.class)
