@@ -7,8 +7,11 @@ spring:
 
   jpa:
     show-sql: true
-    hibernate:
-      ddl-auto: update
+
+  flyway:
+    # A local database made before Flyway existed (by ddl-auto=update) already has the V1 schema:
+    # adopt it as V1 instead of failing on a non-empty schema with no history table.
+    baseline-on-migrate: true
 
 jwt:
   secret: ${JWT_SECRET:local-dev-secret-change-me-local-dev-secret-change-me}

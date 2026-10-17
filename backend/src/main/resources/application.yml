@@ -31,7 +31,8 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      # Schema is never auto-modified outside local dev; add a migration tool (Flyway/Liquibase) for real schemas.
+      # Hibernate never changes the schema: Flyway does (db/migration), and Hibernate only checks
+      # that the entities still match it, so a missing migration stops startup.
       ddl-auto: validate
 
 jwt:

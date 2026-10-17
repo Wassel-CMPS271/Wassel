@@ -122,3 +122,17 @@ export function ArrowLeftIcon(props: IconProps) {
     </Icon>
   );
 }
+
+// Drag handle: two columns of three dots.
+export function GripIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="9" cy="6" r="1" />
+      <circle cx="15" cy="6" r="1" />
+      <circle cx="9" cy="12" r="1" />
+      <circle cx="15" cy="12" r="1" />
+      <circle cx="9" cy="18" r="1" />
+      <circle cx="15" cy="18" r="1" />
+    </Icon>
+  );
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { LicensePlate } from "@/components/ui/LicensePlate";
 import { DriverIcon } from "@/components/ui/icons";
@@ -35,8 +36,14 @@ export function RouteListItem({ route, onEdit }: RouteListItemProps) {
         style={{ gap: spacing.md }}
       >
         <div className="flex flex-col min-w-0" style={{ gap: spacing.xs }}>
-          <h3 className="text-base font-semibold" style={{ color: darkTheme.text.primary }}>
-            {route.name}
+          <h3 className="text-base font-semibold">
+            <Link
+              href={`/head-of-transport/routes/${route.id}`}
+              className="rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 hover:underline"
+              style={{ color: darkTheme.text.primary, outlineColor: colors.primary[400] }}
+            >
+              {route.name}
+            </Link>
           </h3>
           <div className="flex items-center flex-wrap" style={{ gap: spacing.sm }}>
             <LicensePlate plateNumber={route.vehicle.plateNumber} />

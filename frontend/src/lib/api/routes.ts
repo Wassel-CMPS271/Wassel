@@ -6,8 +6,13 @@
 //   GET    /api/head-of-transport/routes/{routeId}  -> Route
 //   PUT    /api/head-of-transport/routes/{routeId}  { name, vehicleId, driverId } -> Route
 //   DELETE /api/head-of-transport/routes/{routeId}  -> 204
+//   POST   /api/head-of-transport/routes/{routeId}/students  { studentId } -> Route (SCRUM-219)
+//   DELETE /api/head-of-transport/routes/{routeId}/students/{studentId} -> Route (SCRUM-219)
 //
-// The endpoints are SCRUM-208's and don't exist yet, so the functions run
+// WORKAROUND: the contract has no endpoint for the students who are on no
+// route, so listUnassignedStudents() works it out on the client (SCRUM-209).
+//
+// The endpoints are SCRUM-208's and 209's and don't exist yet, so the functions run
 // against an in-memory sample client seeded from the contract samples
 // (copied into ./samples/routing because the Docker build only sees frontend/).
 //
@@ -17,6 +22,7 @@
 import { request } from "./client";
 import { getDrivers } from "./drivers";
 import { ApiError, ApiValidationError } from "./errors";
+import { getStudents, type Student } from "./students";
 import { getVehicles } from "./vehicles";
 import sampleProposalInfeasible from "./samples/routing/proposal-infeasible.json";
 import sampleProposal from "./samples/routing/proposal.json";
@@ -103,6 +109,9 @@ interface RoutesApi {
   create(input: RouteInput): Promise<Route>;
   update(routeId: string, input: RouteInput): Promise<Route>;
   remove(routeId: string): Promise<void>;
+  addStudent(routeId: string, studentId: string): Promise<Route>;
+  removeStudent(routeId: string, studentId: string): Promise<Route>;
+  unassignedStudents(): Promise<Student[]>;
 }
 
 const ROUTES_PATH = "/api/head-of-transport/routes";
@@ -111,13 +120,38 @@ function routePath(routeId: string): string {
   return `${ROUTES_PATH}/${encodeURIComponent(routeId)}`;
 }
 
-// The real calls, written against the contract and ready for SCRUM-208.
+function studentPath(routeId: string, studentId?: string): string {
+  const base = `${routePath(routeId)}/students`;
+  return studentId === undefined ? base : `${base}/${encodeURIComponent(studentId)}`;
+}
+
+// The active students who are not a stop on any of `routes`. An inactive
+// student can't ride, so they're never offered for a route.
+function subtractAssigned(students: Student[], routes: Route[]): Student[] {
+  const assigned = new Set(routes.flatMap((route) => route.stops.map((stop) => stop.studentId)));
+  return students.filter((student) => student.status === "active" && !assigned.has(student.id));
+}
+
+// The real calls, written against the contract and ready for SCRUM-208/209.
 export const httpRoutes: RoutesApi = {
   list: () => request<RouteSummary[]>(ROUTES_PATH),
   get: (routeId) => request<Route>(routePath(routeId)),
   create: (input) => request<Route>(ROUTES_PATH, { method: "POST", body: input }),
   update: (routeId, input) => request<Route>(routePath(routeId), { method: "PUT", body: input }),
   remove: (routeId) => request(routePath(routeId), { method: "DELETE" }),
+  addStudent: (routeId, studentId) =>
+    request<Route>(studentPath(routeId), { method: "POST", body: { studentId } }),
+  removeStudent: (routeId, studentId) =>
+    request<Route>(studentPath(routeId, studentId), { method: "DELETE" }),
+
+  // WORKAROUND: the contract has no endpoint for this (raise with SCRUM-209).
+  // The list has no stops, so this fetches every route: one request per route,
+  // fine at MVP size. Replace it with the endpoint if one is added.
+  async unassignedStudents() {
+    const [students, summaries] = await Promise.all([getStudents(), httpRoutes.list()]);
+    const routes = await Promise.all(summaries.map((summary) => httpRoutes.get(summary.id)));
+    return subtractAssigned(students, routes);
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -156,6 +190,18 @@ function findSampleRoute(routeId: string): Route {
     throw new ApiError(404, "Route not found.");
   }
   return route;
+}
+
+// Stores `route` with these stops, renumbered from 1, and the counts redone.
+function withStops(route: Route, stops: Stop[]): Route {
+  const updated: Route = {
+    ...route,
+    stops: stops.map((stop, index) => ({ ...stop, position: index + 1 })),
+    studentCount: stops.length,
+    seatsLeft: route.vehicle.capacity - stops.length,
+  };
+  sampleState = sampleState.map((candidate) => (candidate.id === route.id ? updated : candidate));
+  return updated;
 }
 
 // Applies the contract's create/edit rules: 400 for a blank name, 409 for an
@@ -250,9 +296,63 @@ const sampleRoutes: RoutesApi = {
     findSampleRoute(routeId);
     sampleState = sampleState.filter((route) => route.id !== routeId);
   },
+
+  async addStudent(routeId, studentId) {
+    const route = findSampleRoute(routeId);
+    // ASSUMPTION: the contract doesn't say what an unknown student answers;
+    // 404 matches how it treats an unknown route.
+    const student = (await getStudents()).find((candidate) => candidate.id === studentId);
+    if (!student) {
+      throw new ApiError(404, "Student not found.");
+    }
+    // ASSUMPTION: the contract is silent on a student who is already on a route
+    // (this one or another). 409 until Moustafa confirms (SCRUM-209).
+    const current = sampleState.find((candidate) =>
+      candidate.stops.some((stop) => stop.studentId === studentId),
+    );
+    if (current) {
+      throw new ApiError(409, `This student is already on ${current.name}.`);
+    }
+    // Also refuses a route that is already over capacity (seatsLeft < 0).
+    if (route.stops.length >= route.vehicle.capacity) {
+      throw new ApiError(
+        409,
+        `This route has ${route.stops.length} students and the vehicle has ${route.vehicle.capacity} seats.`,
+      );
+    }
+    const stop: Stop = {
+      studentId: student.id,
+      position: 0, // set by withStops
+      firstName: student.firstName,
+      lastName: student.lastName,
+      address: student.address,
+      latitude: student.latitude,
+      longitude: student.longitude,
+      // The sample client doesn't work out arrival times (the backend's
+      // arrival-time rule does), so a new stop has none.
+      arrivalTime: null,
+    };
+    return structuredClone(withStops(route, [...route.stops, stop]));
+  },
+
+  async removeStudent(routeId, studentId) {
+    const route = findSampleRoute(routeId);
+    if (!route.stops.some((stop) => stop.studentId === studentId)) {
+      throw new ApiError(404, "Student is not on this route.");
+    }
+    const stops = route.stops.filter((stop) => stop.studentId !== studentId);
+    return structuredClone(withStops(route, stops));
+  },
+
+  // WORKAROUND: no endpoint in the contract (SCRUM-209). The real students
+  // minus the stops on the in-memory routes.
+  async unassignedStudents() {
+    return subtractAssigned(await getStudents(), sampleState);
+  },
 };
 
-// SCRUM-208: change to `httpRoutes`, then delete the sample client above.
+// SCRUM-208 (and 209 for the student calls): change to `httpRoutes`, then
+// delete the sample client above.
 const api: RoutesApi = sampleRoutes;
 
 export function listRoutes(): Promise<RouteSummary[]> {
@@ -273,4 +373,17 @@ export function updateRoute(routeId: string, input: RouteInput): Promise<Route> 
 
 export function deleteRoute(routeId: string): Promise<void> {
   return api.remove(routeId);
+}
+
+export function addStudentToRoute(routeId: string, studentId: string): Promise<Route> {
+  return api.addStudent(routeId, studentId);
+}
+
+export function removeStudentFromRoute(routeId: string, studentId: string): Promise<Route> {
+  return api.removeStudent(routeId, studentId);
+}
+
+// WORKAROUND: see unassignedStudents above; the contract has no endpoint.
+export function listUnassignedStudents(): Promise<Student[]> {
+  return api.unassignedStudents();
 }

@@ -122,6 +122,31 @@ printed in the logs.
   users; moving to another provider only changes these settings. Each login takes a second or so
   longer than before because the email is sent during the request.
 
+## One site for the app and its API
+
+The sign-in cookies are `HttpOnly` and `SameSite=Strict`, so the browser only sends them when the app and
+the API are on the same site. A frontend on one domain and a backend on another would silently fail to sign
+anyone in. So a deployment serves one origin: the frontend proxies every `/api/*` request to the backend
+(a Next.js rewrite in `frontend/next.config.ts`), and the browser never talks to the backend directly.
+
+Settings, all on the frontend build unless noted (they are read when it is built, not when it runs):
+
+| Setting | Value | Why |
+| ------- | ----- | --- |
+| `NEXT_PUBLIC_API_BASE_URL` | empty | Switches the app to relative `/api/...` URLs. Not set means `http://localhost:8080`, which is what local development uses. |
+| `BACKEND_URL` | the backend's address, for example `https://wassel-api.example.com` | Where the app forwards `/api/*`. The build fails if the line above is empty and this is not set. |
+| `CORS_ALLOWED_ORIGINS` (backend) | the address people open the app at, for example `https://wassel.example.com` | The proxy passes the browser's `Origin` header on, so the backend still checks it: anything not listed gets a 403 on every POST, PUT and DELETE (sign-in included). |
+| `FRONTEND_BASE_URL` (backend) | the same address | Invite and reset links point at it. |
+| `JWT_COOKIE_SECURE` (backend) | `true` | The deployed site is HTTPS. |
+
+On Vercel, set `NEXT_PUBLIC_API_BASE_URL` (empty) and `BACKEND_URL` as environment variables for the build. The staging
+stack does the same through `docker-compose.staging.yml`: its default is empty with `BACKEND_URL=http://backend:8080`,
+so staging behaves like a deployment. To call the backend directly instead, put its URL in
+`NEXT_PUBLIC_API_BASE_URL` and rebuild the frontend.
+
+Local development is unchanged: leave `NEXT_PUBLIC_API_BASE_URL` unset (or `http://localhost:8080`), and the backend's
+default `CORS_ALLOWED_ORIGINS=http://localhost:3000` keeps working.
+
 ## Demo data
 
 A new database only has the seeded admin. To show the app with believable data, turn the demo seeder
