@@ -67,10 +67,18 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
 
 ## API calls
 
-- Every call to the backend goes through `request()` in `src/lib/api/client.ts`. Don't call `fetch` directly. It sends the session cookies (`credentials: "include"`), prefixes `NEXT_PUBLIC_API_BASE_URL`, and sends `Content-Type` only when there is a body, because the backend's CORS allows only that header. The variable is baked in at build time (staging passes it as a Docker build arg) and has three cases: **not set** means `http://localhost:8080` (local development); **a URL** means that backend directly; **empty** means relative `/api/...` URLs, which the app proxies to `BACKEND_URL` through the rewrite in `next.config.ts`, so the browser only talks to its own origin. Empty is how a deployment runs (SCRUM-198), and the build fails if it is empty and `BACKEND_URL` is not set. Don't treat an empty value as unset in new code.
+- Every call to the backend goes through `request()` in `src/lib/api/client.ts`. Don't call `fetch` directly. It sends the session cookies (`credentials: "include"`), prefixes `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8080`; an empty value counts as unset; it is baked in at build time, so staging passes it as a Docker build arg), and sends `Content-Type` only when there is a body, because the backend's CORS allows only that header.
 - One module per backend area in `src/lib/api/`; `auth.ts` is the model. The vehicles, drivers, students, holidays, school times and half-days modules are still mocks that keep the real signatures.
 - A failed call throws `ApiValidationError` (a 400 with an `errors` map: show each message next to its field) or `ApiError` (any other non-2xx: `status` says what to do, `message` is the backend's `detail`). A network failure rejects as it is. Forms say "Something went wrong. Please try again." for anything they don't handle by status.
 - The auth cookies are `HttpOnly` and `SameSite=Strict`. The frontend never reads them, and it must be served from the same site as the API: locally that is `localhost` on two ports, and in a deployment it is the `/api/*` proxy above. The proxy forwards the browser's `Origin` header, so the backend's `CORS_ALLOWED_ORIGINS` must still list the public address of the app, or every POST, PUT and DELETE is refused with a 403.
+
+## Map
+
+- Every map is `MapView` (`components/map/MapView.tsx`): Leaflet with OpenStreetMap tiles (the attribution is required by the tile policy; keep it). Import `MapView`, never `LeafletMap.tsx`: Leaflet needs `window`, so `MapView` loads it client-only with `next/dynamic` and shows a skeleton of the same height meanwhile.
+- Props: `label` names the map region. `markers` are numbered stops (`number`, an accessible `label` like "Stop 1: Hadi Rizk", an optional `popup`). `school` gets its own marker. `path` is the ordered line, e.g. `[...route.stops, route.school]`. Stops and points with `null` coordinates are skipped, so `Stop` and `RouteSchool` from `lib/api/routes.ts` fit as they are. With nothing to show it renders an empty state (`emptyMessage`).
+- The map fits itself to all points unless you pass `center` (and `zoom`). It refits when the points change, never when the pin moves.
+- Pin mode: pass `onPinChange` with a controlled `pin` (echo the new value back). The pin is placed by clicking the map or the "Place pin at map centre" button, moved by dragging or by the arrow keys while it has focus, and its coordinates are read out in an `aria-live` line under the map.
+- Colors and sizes come from `mapTheme` in `tokens.ts`; popup and focus colors reach Leaflet's own elements through CSS variables and the `.wassel-map` rules in `globals.css`. Markers are `divIcon`s built from tokens and integers only, never from caller strings. Scroll-wheel zoom is off so the page still scrolls, and zoom/fade animations follow reduced motion.
 
 ## Tests
 

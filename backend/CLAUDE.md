@@ -146,6 +146,19 @@ that's the structure this codebase moved away from.
 - A genuinely new feature gets a new top-level module, not a subpackage of an
   existing one.
 
+## Database schema (SCRUM-199)
+
+- **Schema changes go in a migration, never in `ddl-auto`.** Flyway runs `src/main/resources/db/migration/V<n>__short_description.sql`
+  on startup. `V1__baseline_schema.sql` is the schema as it was when Flyway was added.
+- Changing an entity's columns, constraints or indexes means adding the next `V<n>` file in the same PR. Never edit a
+  migration that has been merged: Flyway checksums them, so an edit stops every database that already ran it.
+- `ddl-auto` is `validate` in every profile that runs on PostgreSQL (local, staging, production): Hibernate only checks
+  that the entities match the schema, so a forgotten migration stops startup with a clear error instead of reaching users.
+- Tests are the exception: the `test` profile runs on H2, turns Flyway off and lets Hibernate build the schema from the
+  entities. So a green test run does not prove the migrations are right; start the app against an empty PostgreSQL
+  (`docker compose up postgres`, then `spring-boot:run` with the `local` profile) after adding one.
+- A local database made before Flyway existed is adopted as V1 automatically (`baseline-on-migrate` in `application-local.yml`).
+
 ## Exceptions
 
 - Module-specific exceptions live in that module's own `exception/` package

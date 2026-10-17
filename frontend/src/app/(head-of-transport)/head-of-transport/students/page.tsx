@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, MotionConfig } from "framer-motion";
-import { addStudentWithAddress, getStudents, importStudents, matchesFilters, updateStudentAddress, type ImportRowResult, type NewStudent, type NewStudentWithAddress, type Student } from "@/lib/api/students";
+import { addStudentWithAddress, getStudents, importStudents, matchesFilters, setStudentLocation, updateStudentAddress, type ImportRowResult, type NewStudent, type NewStudentWithAddress, type Student } from "@/lib/api/students";
 import { AddStudentForm } from "./AddStudentForm";
 import { ImportStudentsForm } from "./ImportStudentsForm";
 import { StudentFilters, type StatusFilterValue } from "./StudentFilters";
@@ -75,7 +75,7 @@ export default function StudentsPage() {
       pushToast(`${student.firstName} ${student.lastName} added with pickup address.`);
     } else {
       // POST succeeded, but PATCH did not: don't pretend the address was saved.
-      pushToast(`${student.firstName} ${student.lastName} was created, but the address was not saved. Use Edit address to retry.`);
+      pushToast(`${student.firstName} ${student.lastName} was created, but the address was not saved. Use Edit pickup details to retry.`);
     }
   }
 
@@ -83,6 +83,12 @@ export default function StudentsPage() {
     const updated = await updateStudentAddress(id, address);
     setStudents((prev) => prev.map((student) => student.id === id ? updated : student));
     pushToast(`Pickup address updated for ${updated.firstName} ${updated.lastName}.`);
+  }
+
+  async function handleUpdateLocation(id: string, latitude: number, longitude: number) {
+    const updated = await setStudentLocation(id, latitude, longitude);
+    setStudents((prev) => prev.map((student) => student.id === id ? updated : student));
+    pushToast(`Pickup location updated for ${updated.firstName} ${updated.lastName}.`);
   }
 
   async function handleImport(rows: NewStudent[]): Promise<ImportRowResult[]> {
@@ -255,6 +261,7 @@ export default function StudentsPage() {
                     key={student.id}
                     student={student}
                     onUpdateAddress={handleUpdateAddress}
+                    onUpdateLocation={handleUpdateLocation}
                   />
                 ))}
               </AnimatePresence>
