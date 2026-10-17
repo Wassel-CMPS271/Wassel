@@ -55,6 +55,12 @@ wassel:
     latitude: ${SCHOOL_LATITUDE}
     longitude: ${SCHOOL_LONGITUDE}
 
+geocoding:
+  nominatim:
+    base-url: ${NOMINATIM_BASE_URL:https://nominatim.openstreetmap.org}
+    # Nominatim's usage policy requires a descriptive User-Agent identifying the application.
+    user-agent: ${NOMINATIM_USER_AGENT:Wassel-school-transport/1.0 (+https://github.com/Wassel-CMPS271/Wassel)}
+
 # One JSON object per log line, with the severity in "log.level" (ECS). Loki (see
 # docker-compose.staging.yml) parses these, so the level can be filtered on.
 logging:

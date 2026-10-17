@@ -38,6 +38,10 @@ import java.util.UUID;
  * a watermark (next = current max + 1), not a compacted 1..n sequence, so removing a stop never
  * reassigns another student's position; display order always comes from sorting by it, never
  * from its raw value.
+ *
+ * <p>{@code manualPin} (SCRUM-211) is true once {@code latitude}/{@code longitude} were set by a
+ * human correcting the map pin, not the geocoder. Saving a new address never overwrites a pin
+ * once this is true.
  */
 @Entity
 @Table(name = "students")
@@ -94,6 +98,10 @@ public class Student {
 
 	@Column(name = "stop_position")
 	private Integer stopPosition;
+
+	@Builder.Default
+	@Column(name = "manual_pin", nullable = false)
+	private boolean manualPin = false;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)

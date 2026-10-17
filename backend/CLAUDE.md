@@ -105,6 +105,18 @@ that's the structure this codebase moved away from.
   school's parents (`/api/head-of-transport/parents`), and the admin invites head of
   transportation accounts into the admin's school (`/api/admin/head-of-transport`). No names yet,
   the `User` only has an email. Depends on `auth` and `users`.
+- `geocoding` — turns a free-text address into coordinates via the public Nominatim instance
+  (SCRUM-211). `service/Geocoder` is the interface other modules use (`students` is the only
+  caller so far); `NominatimGeocoder` is the only implementation, throttled to at most one
+  request per second (`synchronized` on a tracked last-request time) and caching every result,
+  including "not found", by the exact address text, so the same address is never requested
+  twice. A failed or empty lookup returns `Optional.empty()`, never an exception — that's an
+  expected outcome, not a server error. `RestClient.Builder` isn't auto-configured by
+  `spring-boot-starter-webmvc` alone, so `config/GeocodingConfig` provides it as a bean itself.
+  Manual check against 20 real Lebanese addresses (2026-10-16): 18/20 hit, both misses were
+  deliberately informal/landmark-style addresses ("near the old bakery, Furn El Chebbak") rather
+  than a street or town name — matches the ticket's expectation that informal addresses are the
+  case the manual-pin fallback exists for.
 - `students` — student roster. Real module: add, list, search/filter by query/status/grade/route
   (SCRUM-167), and editing address, map-pin location, and parent-linking (SCRUM-166) are done.
   CSV import and the active/inactive toggle are not built yet. The old `route` string column
@@ -118,7 +130,11 @@ that's the structure this codebase moved away from.
   string). `reorderRoute` (SCRUM-210) replaces a route's whole order at once: unlike
   `assignToRoute`'s watermark, it rewrites positions as a clean `1..n`, and rejects (via
   `InvalidStopOrderException`) a list that repeats a student or doesn't contain exactly the
-  route's current stops.
+  route's current stops. Saving or changing an address re-geocodes it (SCRUM-211, via
+  `geocoding.service.Geocoder`) unless `manualPin` is set, in which case the pin is never
+  touched regardless of what the address becomes; a failed or empty lookup clears any previous
+  (non-manual) pin rather than leaving it pointing at the old address. `updateLocation` (the
+  hand-correction endpoint) sets `manualPin = true`.
 - `routes` — a school's routes (SCRUM-208), which students ride each one (SCRUM-209), and their
   hand-set order (SCRUM-210), under `/api/head-of-transport/routes`. A vehicle or driver can be
   on at most one route (checked in `RouteService`, backed by a unique constraint on `Route` as
