@@ -3,6 +3,7 @@ package com.wassel.backend.demo.service;
 import com.wassel.backend.demo.config.DemoDataSeeder;
 import com.wassel.backend.drivers.dto.DriverResponse;
 import com.wassel.backend.drivers.service.DriverService;
+import com.wassel.backend.geocoding.service.Geocoder;
 import com.wassel.backend.schools.dto.SchoolTimesResponse;
 import com.wassel.backend.schools.service.SchoolSettingsService;
 import com.wassel.backend.students.dto.StudentResponse;
@@ -15,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.LocalTime;
 import java.util.List;
@@ -26,6 +28,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest
 @ActiveProfiles("test")
 class DemoDataServiceTests {
+
+	// Saving a student's address geocodes it; without this every demo address would be a real, throttled
+	// request to Nominatim. The demo pins are placed by hand afterwards, so no lookup result matters here.
+	@MockitoBean
+	private Geocoder geocoder;
 
 	private static final String PASSWORD = "a-long-enough-demo-password";
 

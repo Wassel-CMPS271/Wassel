@@ -119,10 +119,19 @@ that's the structure this codebase moved away from.
 - `geocoding` — turns a free-text address into coordinates via the public Nominatim instance
   (SCRUM-211). `service/Geocoder` is the interface other modules use (`students` is the only
   caller so far); `NominatimGeocoder` is the only implementation, throttled to at most one
-  request per second (`synchronized` on a tracked last-request time) and caching every result,
-  including "not found", by the exact address text, so the same address is never requested
+  request per second (`synchronized` on a tracked last-request time) and caching every answer,
+  including "not found", by the trimmed address text, so the same address is never requested
   twice. A failed or empty lookup returns `Optional.empty()`, never an exception — that's an
-  expected outcome, not a server error. `RestClient.Builder` isn't auto-configured by
+  expected outcome, not a server error — but only a real answer is cached: a lookup that fails
+  (an error, or no answer in time) is retried next time, so a short outage doesn't leave an
+  address "not found" until a restart. Requests time out after 5 s (`NOMINATIM_TIMEOUT`, connect
+  and read) because the call runs inside `StudentService.updateAddress`'s transaction and would
+  otherwise hold a database connection while Nominatim hangs. Results are restricted to Lebanon
+  (`NOMINATIM_COUNTRY_CODES`, default `lb`, blank turns it off): without a country a street name
+  alone resolves to its best match worldwide ("Verdun Street" is in Sydney). The address goes
+  into the query as a URI variable, so characters like `{ } % & # +` and Arabic text arrive
+  intact. Tests that save an address mock `Geocoder` (`@MockitoBean`) so no test makes a real
+  request. `RestClient.Builder` isn't auto-configured by
   `spring-boot-starter-webmvc` alone, so `config/GeocodingConfig` provides it as a bean itself.
   Manual check against 20 real Lebanese addresses (2026-10-16): 18/20 hit, both misses were
   deliberately informal/landmark-style addresses ("near the old bakery, Furn El Chebbak") rather

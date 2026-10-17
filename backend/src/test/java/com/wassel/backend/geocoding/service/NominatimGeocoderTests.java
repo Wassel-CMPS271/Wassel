@@ -24,7 +24,7 @@ import static org.springframework.http.HttpMethod.GET;
 class NominatimGeocoderTests {
 
 	private static final NominatimProperties PROPERTIES =
-			new NominatimProperties("https://nominatim.test", "wassel-test-agent/1.0");
+			new NominatimProperties("https://nominatim.test", "wassel-test-agent/1.0", null, null);
 
 	private RestClient.Builder builder = RestClient.builder();
 
