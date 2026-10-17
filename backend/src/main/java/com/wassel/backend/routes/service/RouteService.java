@@ -16,6 +16,9 @@ import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteCapacityExceededException;
 import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.routes.repository.RouteRepository;
+import com.wassel.backend.routing.service.Coordinate;
+import com.wassel.backend.routing.service.RouteTimings;
+import com.wassel.backend.routing.service.TravelTimes;
 import com.wassel.backend.schools.config.SchoolLocationProperties;
 import com.wassel.backend.schools.service.SchoolSettingsService;
 import com.wassel.backend.students.dto.StudentResponse;
@@ -27,21 +30,26 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Manages a school's routes: create, list, edit, delete, and which students ride each one
- * (SCRUM-209). Every method takes the school id explicitly and only ever touches that school's
- * routes, so callers can't cross the tenant boundary. Vehicle, driver and student eligibility
- * are checked through {@link VehicleService}/{@link DriverService}/{@link StudentService},
- * never by touching those modules' repositories or entities directly.
+ * Manages a school's routes: create, list, edit, delete, which students ride each one
+ * (SCRUM-209), and their arrival times (SCRUM-212). Every method takes the school id explicitly
+ * and only ever touches that school's routes, so callers can't cross the tenant boundary.
+ * Vehicle, driver and student eligibility are checked through
+ * {@link VehicleService}/{@link DriverService}/{@link StudentService}, never by touching those
+ * modules' repositories or entities directly.
  *
- * <p>{@code studentCount}, {@code seatsLeft} and {@code stops} are always computed fresh from
- * {@code StudentService}, never cached on {@code Route} itself. Every stop's {@code arrivalTime}
- * is still always null: estimating it is SCRUM-212.
+ * <p>{@code studentCount}, {@code seatsLeft}, {@code stops} and every stop's {@code arrivalTime}
+ * are always computed fresh from {@code StudentService}/{@link RouteTimings}, never cached on
+ * {@code Route} itself — a reorder or a new pin changes them on the next read with nothing to
+ * invalidate.
  */
 @Service
 @RequiredArgsConstructor
@@ -64,6 +72,8 @@ public class RouteService {
 	private final SchoolSettingsService schoolSettingsService;
 
 	private final SchoolLocationProperties schoolLocation;
+
+	private final TravelTimes travelTimes;
 
 	/** The school's routes, oldest first. */
 	@Transactional(readOnly = true)
@@ -233,21 +243,56 @@ public class RouteService {
 
 	private RouteResponse toResponse(UUID schoolId, Route route, VehicleResponse vehicle, DriverResponse driver) {
 		RouteSummaryResponse summary = summaryOf(route, vehicle, driver);
+		LocalTime schoolArrival = schoolSettingsService.getTimes(schoolId).arrivalTime();
 		RouteSchoolResponse school = new RouteSchoolResponse(schoolLocation.latitude(), schoolLocation.longitude(),
-				schoolSettingsService.getTimes(schoolId).arrivalTime());
+				schoolArrival);
 		return new RouteResponse(summary.id(), summary.name(), summary.vehicle(), summary.driver(),
-				summary.studentCount(), summary.seatsLeft(), school, stopsOf(schoolId, route.getId()));
+				summary.studentCount(), summary.seatsLeft(), school, stopsOf(schoolId, route.getId(), schoolArrival));
 	}
 
-	/** In position order. {@code arrivalTime} is always null for now: estimating it is SCRUM-212. */
-	private List<StopResponse> stopsOf(UUID schoolId, UUID routeId) {
+	/** In position order, with each pinned stop's arrival time (SCRUM-212), or null per {@link #arrivalTimesByStudent}. */
+	private List<StopResponse> stopsOf(UUID schoolId, UUID routeId, LocalTime schoolArrival) {
 		List<StudentResponse> onRoute = studentService.listOnRoute(schoolId, routeId);
+		Map<UUID, LocalTime> arrivalTimes = arrivalTimesByStudent(onRoute, schoolArrival);
 		List<StopResponse> stops = new ArrayList<>(onRoute.size());
 		for (int i = 0; i < onRoute.size(); i++) {
 			StudentResponse student = onRoute.get(i);
 			stops.add(new StopResponse(student.id(), i + 1, student.firstName(), student.lastName(),
-					student.address(), student.latitude(), student.longitude(), null));
+					student.address(), student.latitude(), student.longitude(), arrivalTimes.get(student.id())));
 		}
 		return stops;
+	}
+
+	/**
+	 * The arrival-time rule from the routing contract: backwards from the school's arrival time,
+	 * over only the stops that have a pin, in position order ({@link RouteTimings}). Empty (every
+	 * stop null) when the school's arrival time isn't set yet, no stop has a pin, or the
+	 * computed schedule isn't drivable ({@link RouteTimings.Timing#startsTooEarly()}) — the
+	 * contract treats that as "no times" rather than publishing a schedule that starts before a
+	 * bus realistically could.
+	 */
+	private Map<UUID, LocalTime> arrivalTimesByStudent(List<StudentResponse> onRoute, LocalTime schoolArrival) {
+		if (schoolArrival == null) {
+			return Map.of();
+		}
+		List<StudentResponse> pinned = onRoute.stream()
+				.filter(student -> student.latitude() != null && student.longitude() != null)
+				.toList();
+		if (pinned.isEmpty()) {
+			return Map.of();
+		}
+		List<Coordinate> pins = pinned.stream()
+				.map(student -> new Coordinate(student.latitude().doubleValue(), student.longitude().doubleValue()))
+				.toList();
+		Coordinate school = new Coordinate(schoolLocation.latitude().doubleValue(), schoolLocation.longitude().doubleValue());
+		RouteTimings.Timing timing = RouteTimings.schedule(travelTimes, pins, school, schoolArrival);
+		if (timing.startsTooEarly()) {
+			return Map.of();
+		}
+		Map<UUID, LocalTime> arrivalTimes = new HashMap<>();
+		for (int i = 0; i < pinned.size(); i++) {
+			arrivalTimes.put(pinned.get(i).id(), timing.arrivals().get(i));
+		}
+		return arrivalTimes;
 	}
 }

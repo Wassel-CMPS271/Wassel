@@ -14,6 +14,7 @@ import com.wassel.backend.routes.exception.RouteCapacityExceededException;
 import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
+import com.wassel.backend.schools.exception.HolidayNotFoundException;
 import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
 import com.wassel.backend.students.exception.InvalidStopOrderException;
 import com.wassel.backend.students.exception.StudentAlreadyExistsException;
@@ -83,6 +84,12 @@ public class GlobalExceptionHandler {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Holiday already exists");
 		problem.setProperty("errors", Map.of("date", ex.getMessage()));
 		return problem;
+	}
+
+	@ExceptionHandler(HolidayNotFoundException.class)
+	public ProblemDetail handleHolidayNotFound(HolidayNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
 
 	// Same shape again for a date that clashes with another calendar entry (half-day vs holiday).

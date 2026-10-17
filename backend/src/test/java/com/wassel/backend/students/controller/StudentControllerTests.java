@@ -137,6 +137,71 @@ class StudentControllerTests {
 	}
 
 	@Test
+	void creatingAStudentWithoutAnAddressStillWorks() throws Exception {
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(student("Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222")))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.address").doesNotExist())
+				.andExpect(jsonPath("$.latitude").doesNotExist());
+		verifyNoInteractions(geocoder);
+	}
+
+	@Test
+	void creatingAStudentWithAnAddressGeocodesAndStoresIt() throws Exception {
+		when(geocoder.geocode(eq("Hamra Street, Beirut")))
+				.thenReturn(Optional.of(new GeocodeResult(BigDecimal.valueOf(33.8938), BigDecimal.valueOf(35.5018))));
+
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"firstName\":\"Layla\",\"lastName\":\"Chamoun\",\"grade\":\"Grade 2\","
+								+ "\"guardianName\":\"Rania Chamoun\",\"guardianPhone\":\"+961 3 111 222\","
+								+ "\"address\":\"Hamra Street, Beirut\"}"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.address").value("Hamra Street, Beirut"))
+				.andExpect(jsonPath("$.latitude").value(33.8938))
+				.andExpect(jsonPath("$.longitude").value(35.5018));
+	}
+
+	@Test
+	void creatingAStudentWithAnAddressThatDoesNotGeocodeStillSavesTheAddress() throws Exception {
+		when(geocoder.geocode(eq("Gibberish that doesn't geocode"))).thenReturn(Optional.empty());
+
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"firstName\":\"Layla\",\"lastName\":\"Chamoun\",\"grade\":\"Grade 2\","
+								+ "\"guardianName\":\"Rania Chamoun\",\"guardianPhone\":\"+961 3 111 222\","
+								+ "\"address\":\"Gibberish that doesn't geocode\"}"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.address").value("Gibberish that doesn't geocode"))
+				.andExpect(jsonPath("$.latitude").doesNotExist());
+	}
+
+	@Test
+	void creatingAStudentWithABlankAddressIsTreatedAsNoAddress() throws Exception {
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"firstName\":\"Layla\",\"lastName\":\"Chamoun\",\"grade\":\"Grade 2\","
+								+ "\"guardianName\":\"Rania Chamoun\",\"guardianPhone\":\"+961 3 111 222\","
+								+ "\"address\":\"   \"}"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.address").doesNotExist());
+		verifyNoInteractions(geocoder);
+	}
+
+	@Test
+	void creatingAStudentWithAnAddressOver255CharactersIsRejected() throws Exception {
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"firstName\":\"Layla\",\"lastName\":\"Chamoun\",\"grade\":\"Grade 2\","
+								+ "\"guardianName\":\"Rania Chamoun\",\"guardianPhone\":\"+961 3 111 222\","
+								+ "\"address\":\"%s\"}".formatted("x".repeat(256))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.address").value("Address must be 255 characters or fewer"));
+		assertEquals(0, studentRepository.count());
+	}
+
+	@Test
 	void fieldsAreTrimmed() throws Exception {
 		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
 						.contentType(MediaType.APPLICATION_JSON)
