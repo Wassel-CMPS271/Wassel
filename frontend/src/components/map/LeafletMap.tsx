@@ -202,7 +202,7 @@ export default function LeafletMap({
               key={marker.id}
               position={toTuple(marker)}
               label={marker.label}
-              icon={stopIcon(marker.number)}
+              icon={stopIcon(marker.number, marker.count)}
               popup={marker.popup}
             />
           ))}

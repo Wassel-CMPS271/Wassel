@@ -25,6 +25,18 @@ it("only ever puts a whole number into the html", () => {
   expect(htmlOf(stopIcon(2.7))).toContain(">2</div>");
 });
 
+it("draws a count badge for a marker standing in for several stops", () => {
+  const icon = stopIcon(1, 1);
+  expect(htmlOf(icon)).toContain(">1</div>"); // the stop's own number
+  expect(htmlOf(icon)).toContain(">+1</div>"); // one more stop at the same spot
+  expect(icon.options.iconSize).toEqual([mapTheme.stopSize, mapTheme.stopSize]);
+});
+
+it("draws no badge for a single stop", () => {
+  expect(htmlOf(stopIcon(1))).not.toContain("+");
+  expect(htmlOf(stopIcon(1, 0))).not.toContain("+");
+});
+
 it("draws the school apart from the stops", () => {
   const icon = schoolIcon();
   expect(icon.options.className).toContain("wassel-map-school");

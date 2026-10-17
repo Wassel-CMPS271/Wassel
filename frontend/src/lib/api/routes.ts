@@ -56,8 +56,10 @@ export interface RouteSummary {
 }
 
 export interface RouteSchool {
-  latitude: number;
-  longitude: number;
+  // The contract says these are always set (the backend refuses to start
+  // without them), but a screen must not break if they ever come back null.
+  latitude: number | null;
+  longitude: number | null;
   // Null until an admin sets it; every stop's arrivalTime is null meanwhile.
   arrivalTime: string | null;
 }
