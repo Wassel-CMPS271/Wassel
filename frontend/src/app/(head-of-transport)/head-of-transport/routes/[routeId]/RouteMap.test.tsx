@@ -253,3 +253,63 @@ it("formats arrival times as HH:mm", () => {
   expect(formatArrival("07:05:00")).toBe("07:05");
   expect(formatArrival(null)).toBe("Arrival time not set yet");
 });
+
+// Siblings at one address: same pin, so they'd otherwise draw two markers
+// exactly on top of each other.
+const JAD_MANSOUR = stop("s-5", "Jad Mansour", 1, [33.9, 35.49], "07:05");
+const LEA_MANSOUR = stop("s-6", "Lea Mansour", 2, [33.9, 35.49], "07:08");
+
+it("merges stops that share one spot into a single marker naming them all", () => {
+  render(<RouteMap route={route([JAD_MANSOUR, LEA_MANSOUR])} />);
+
+  const markers = within(map()).getAllByTestId("marker");
+  expect(markers).toHaveLength(1);
+  expect(markers[0]).toHaveAttribute("aria-label", "Stops 1 and 2: Jad Mansour, Lea Mansour");
+  expect(markers[0]).toHaveTextContent("Stop 1: Jad Mansour");
+  expect(markers[0]).toHaveTextContent("Arrives 07:05");
+  expect(markers[0]).toHaveTextContent("Stop 2: Lea Mansour");
+  expect(markers[0]).toHaveTextContent("Arrives 07:08");
+  expect(mapView.props?.markers?.[0]).toMatchObject({ number: 1, count: 1 });
+});
+
+it("keeps separate markers for stops at different spots", () => {
+  render(<RouteMap route={route([HADI, JAD])} />);
+
+  const markers = within(map()).getAllByTestId("marker");
+  expect(markers).toHaveLength(2);
+  expect(markers.map((marker) => marker.getAttribute("aria-label"))).toEqual([
+    "Stop 1: Hadi Rizk",
+    "Stop 3: Jad Salameh",
+  ]);
+  expect(mapView.props?.markers?.every((marker) => marker.count === undefined)).toBe(true);
+});
+
+it("falls back to a normal single marker once one of a pair is removed", () => {
+  const { rerender } = render(<RouteMap route={route([JAD_MANSOUR, LEA_MANSOUR])} />);
+  expect(within(map()).getAllByTestId("marker")).toHaveLength(1);
+
+  rerender(<RouteMap route={route([JAD_MANSOUR])} />);
+
+  const markers = within(map()).getAllByTestId("marker");
+  expect(markers).toHaveLength(1);
+  expect(markers[0]).toHaveAttribute("aria-label", "Stop 1: Jad Mansour");
+  expect(mapView.props?.markers?.[0].count).toBeUndefined();
+});
+
+it("keeps the line's stop order unchanged when markers are grouped", () => {
+  render(<RouteMap route={route([JAD_MANSOUR, LEA_MANSOUR, JAD])} />);
+
+  const path = mapView.props?.path ?? [];
+  expect(path.slice(0, 3)).toEqual([JAD_MANSOUR, LEA_MANSOUR, JAD]);
+  expect(path[3]).toMatchObject({ latitude: 33.9, longitude: 35.48 });
+  expect(path).toHaveLength(4);
+  expect(screen.getByTestId("path")).toHaveAttribute(
+    "data-path",
+    JSON.stringify([
+      [33.9, 35.49],
+      [33.9, 35.49],
+      [33.892, 35.49],
+      [33.9, 35.48],
+    ]),
+  );
+});

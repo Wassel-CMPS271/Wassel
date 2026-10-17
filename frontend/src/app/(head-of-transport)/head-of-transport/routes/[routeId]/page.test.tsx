@@ -61,6 +61,12 @@ vi.mock("@/lib/api/students", () => ({
   getStudents: vi.fn(),
 }));
 
+// A pin per student, not one shared spot, so tests with several stops on
+// the map don't coincidentally exercise the same-spot grouping (SCRUM-220).
+function pinFor(studentId: string): number {
+  return Number(studentId.replace(/\D/g, "")) || 0;
+}
+
 function stop(studentId: string, firstName: string, lastName: string, position: number): Stop {
   return {
     studentId,
@@ -68,8 +74,8 @@ function stop(studentId: string, firstName: string, lastName: string, position: 
     firstName,
     lastName,
     address: null,
-    latitude: 33.89,
-    longitude: 35.5,
+    latitude: 33.89 + pinFor(studentId) * 0.001,
+    longitude: 35.5 + pinFor(studentId) * 0.001,
     arrivalTime: null,
   };
 }

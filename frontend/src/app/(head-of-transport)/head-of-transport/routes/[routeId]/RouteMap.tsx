@@ -51,6 +51,37 @@ function Popup({ title, detail }: { title: string; detail: string }) {
   );
 }
 
+// "1 and 2", "1, 2 and 3"
+function joinWithAnd(numbers: number[]): string {
+  const items = numbers.map(String);
+  if (items.length < 2) return items.join("");
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+// "Stops 1 and 2: Jad Mansour, Lea Mansour", for the marker shared by
+// several stops at one spot.
+function groupLabel(stops: Stop[]): string {
+  return `Stops ${joinWithAnd(stops.map((stop) => stop.position))}: ${stops.map(stopName).join(", ")}`;
+}
+
+// Lists every student sharing the marker, each with their own stop number
+// and arrival time.
+function GroupPopup({ stops }: { stops: Stop[] }) {
+  return (
+    <span className="flex flex-col" style={{ gap: spacing.sm }}>
+      {stops.map((stop) => (
+        <span key={stop.studentId} className="flex flex-col" style={{ gap: spacing.xs }}>
+          <span className="text-sm font-medium">{stopLabel(stop)}</span>
+          <span className="text-sm" style={{ color: darkTheme.text.secondary }}>
+            {arrivalText(stop.arrivalTime)}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 // The same look as the marker on the map: a numbered stop, or the school.
 function Badge({ children, school = false }: { children: ReactNode; school?: boolean }) {
   return (
@@ -86,6 +117,62 @@ function ListRow({ badge, title, detail }: { badge: ReactNode; title: string; de
   );
 }
 
+function singleMarker(stop: Stop): MapMarker {
+  return {
+    id: stop.studentId,
+    number: stop.position,
+    label: stopLabel(stop),
+    latitude: stop.latitude,
+    longitude: stop.longitude,
+    popup: <Popup title={stopName(stop)} detail={arrivalText(stop.arrivalTime)} />,
+  };
+}
+
+// Several stops at one spot (siblings at one address) would otherwise draw
+// separate markers exactly on top of each other, hiding all but the last.
+// They become one marker, numbered with the group's lowest position and
+// badged with how many more it stands for.
+function groupMarker(stops: Stop[]): MapMarker {
+  const lead = stops[0]; // `stops` arrives in position order, so this is the lowest
+  return {
+    id: stops.map((stop) => stop.studentId).join(","),
+    number: lead.position,
+    count: stops.length - 1,
+    label: groupLabel(stops),
+    latitude: lead.latitude,
+    longitude: lead.longitude,
+    popup: <GroupPopup stops={stops} />,
+  };
+}
+
+// One marker per distinct pinned spot, in `stops`' order, each standing in
+// for every stop at that spot.
+function buildMarkers(stops: Stop[]): MapMarker[] {
+  const groups = new Map<string, Stop[]>();
+  for (const stop of stops) {
+    if (!isValidCoordinates(stop)) continue;
+    const key = `${stop.latitude},${stop.longitude}`;
+    const group = groups.get(key);
+    if (group) group.push(stop);
+    else groups.set(key, [stop]);
+  }
+
+  const emitted = new Set<string>();
+  const markers: MapMarker[] = [];
+  for (const stop of stops) {
+    if (!isValidCoordinates(stop)) {
+      markers.push(singleMarker(stop));
+      continue;
+    }
+    const key = `${stop.latitude},${stop.longitude}`;
+    if (emitted.has(key)) continue;
+    emitted.add(key);
+    const group = groups.get(key)!;
+    markers.push(group.length > 1 ? groupMarker(group) : singleMarker(group[0]));
+  }
+  return markers;
+}
+
 export function RouteMap({ route }: { route: Route }) {
   const pinned = route.stops.filter(isValidCoordinates);
   const unpinned = route.stops.filter((stop) => !isValidCoordinates(stop));
@@ -95,14 +182,7 @@ export function RouteMap({ route }: { route: Route }) {
     ? `Arrival ${formatArrival(route.school.arrivalTime)}`
     : NOT_SET;
 
-  const markers: MapMarker[] = route.stops.map((stop) => ({
-    id: stop.studentId,
-    number: stop.position,
-    label: stopLabel(stop),
-    latitude: stop.latitude,
-    longitude: stop.longitude,
-    popup: <Popup title={stopName(stop)} detail={arrivalText(stop.arrivalTime)} />,
-  }));
+  const markers: MapMarker[] = buildMarkers(route.stops);
 
   const emptyMessage =
     route.stops.length === 0
