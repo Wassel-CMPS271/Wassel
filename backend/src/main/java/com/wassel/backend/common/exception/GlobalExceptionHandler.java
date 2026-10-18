@@ -9,9 +9,11 @@ import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
+import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteCapacityExceededException;
 import com.wassel.backend.routes.exception.RouteNotFoundException;
+import com.wassel.backend.routes.exception.RouteOptimizationConflictException;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.HolidayNotFoundException;
@@ -211,6 +213,24 @@ public class GlobalExceptionHandler {
 	public ProblemDetail handleRouteCapacityExceeded(RouteCapacityExceededException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	@ExceptionHandler(ProposalNotFoundException.class)
+	public ProblemDetail handleProposalNotFound(ProposalNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// A plain detail, as the contract has it. Stops without a pin also get "studentIds" as an extra
+	// property, not under "errors", because "errors" is for field messages.
+	@ExceptionHandler(RouteOptimizationConflictException.class)
+	public ProblemDetail handleRouteOptimizationConflict(RouteOptimizationConflictException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+		if (!ex.getStudentIds().isEmpty()) {
+			problem.setProperty("studentIds", ex.getStudentIds());
+		}
+		return problem;
 	}
 
 	@ExceptionHandler(UserNotFoundException.class)
