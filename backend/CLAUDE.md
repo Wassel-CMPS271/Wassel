@@ -89,7 +89,7 @@ that's the structure this codebase moved away from.
   it like an unknown email. `UserService.createInvitedUser` creates one. Emails are unique across
   the whole platform, not per school (a taken email is a 409 with `errors.email`).
 - `schools` — school-level settings. Real module: arrival/dismissal times
-  (SCRUM-178), the holiday calendar (SCRUM-101) and half-day marking
+  (SCRUM-178), the holiday calendar — add, list, delete (SCRUM-101/214) — and half-day marking
   (SCRUM-102) are done. A date can't be both a holiday and a half-day.
 - `demo` - an opt-in seeder for the demo school (SCRUM-200). `config/DemoDataSeeder` runs on startup only
   when `DEMO_DATA_ENABLED=true` (the bean doesn't exist otherwise) and `service/DemoDataService` creates a
@@ -137,9 +137,10 @@ that's the structure this codebase moved away from.
   deliberately informal/landmark-style addresses ("near the old bakery, Furn El Chebbak") rather
   than a street or town name — matches the ticket's expectation that informal addresses are the
   case the manual-pin fallback exists for.
-- `students` — student roster. Real module: add, list, search/filter by query/status/grade/route
-  (SCRUM-167), and editing address, map-pin location, and parent-linking (SCRUM-166) are done.
-  CSV import and the active/inactive toggle are not built yet. The old `route` string column
+- `students` — student roster. Real module: add (with an optional address, SCRUM-213), list,
+  search/filter by query/status/grade/route (SCRUM-167), and editing address, map-pin location,
+  and parent-linking (SCRUM-166) are done. CSV import and the active/inactive toggle are not
+  built yet. The old `route` string column
   exists for filtering only and is never written; real route membership (SCRUM-209) is
   `routeId`/`stopPosition`, a student is a stop on at most one route, and `stopPosition` is a
   watermark (next = current max + 1 on that route), not a compacted sequence — removing a stop
@@ -150,28 +151,35 @@ that's the structure this codebase moved away from.
   string). `reorderRoute` (SCRUM-210) replaces a route's whole order at once: unlike
   `assignToRoute`'s watermark, it rewrites positions as a clean `1..n`, and rejects (via
   `InvalidStopOrderException`) a list that repeats a student or doesn't contain exactly the
-  route's current stops. Saving or changing an address re-geocodes it (SCRUM-211, via
-  `geocoding.service.Geocoder`) unless `manualPin` is set, in which case the pin is never
-  touched regardless of what the address becomes; a failed or empty lookup clears any previous
-  (non-manual) pin rather than leaving it pointing at the old address. `updateLocation` (the
-  hand-correction endpoint) sets `manualPin = true`.
-- `routes` — a school's routes (SCRUM-208), which students ride each one (SCRUM-209), and their
-  hand-set order (SCRUM-210), under `/api/head-of-transport/routes`. A vehicle or driver can be
-  on at most one route (checked in `RouteService`, backed by a unique constraint on `Route` as
-  the race-condition backstop); an inactive vehicle or deactivated driver can't be assigned
-  (there's no deactivate endpoint for drivers yet; the check exists for when one lands). Adding a
-  student checks capacity against the route's current occupants before resolving the student (so
-  a full route 409s even for an unknown student id, and re-adding a student already on this exact
-  route skips the check — no new seat taken), then only an active student can be added, and a
-  student already on another route is moved rather than rejected. Deleting a route releases its
-  students (`StudentService.clearRoute`) so none are left pointing at a dead route id.
+  route's current stops. Setting an address — at creation (SCRUM-213) or via the update endpoint
+  (SCRUM-211, via `geocoding.service.Geocoder`) — re-geocodes it, unless `manualPin` is set, in
+  which case the pin is never touched regardless of what the address becomes; a failed or empty
+  lookup clears any previous (non-manual) pin rather than leaving it pointing at the old address.
+  `updateLocation` (the hand-correction endpoint) sets `manualPin = true`. A brand-new student
+  never has a manual pin yet, so `addStudent` geocodes unconditionally when given an address.
+- `routes` — a school's routes (SCRUM-208), which students ride each one (SCRUM-209), their
+  hand-set order (SCRUM-210), and each stop's arrival time (SCRUM-212), under
+  `/api/head-of-transport/routes`. A vehicle or driver can be on at most one route (checked in
+  `RouteService`, backed by a unique constraint on `Route` as the race-condition backstop); an
+  inactive vehicle or deactivated driver can't be assigned (there's no deactivate endpoint for
+  drivers yet; the check exists for when one lands). Adding a student checks capacity against the
+  route's current occupants before resolving the student (so a full route 409s even for an
+  unknown student id, and re-adding a student already on this exact route skips the check — no
+  new seat taken), then only an active student can be added, and a student already on another
+  route is moved rather than rejected. Deleting a route releases its students
+  (`StudentService.clearRoute`) so none are left pointing at a dead route id.
   `studentCount`/`seatsLeft`/`stops` are computed fresh from `StudentService` on every response,
-  never cached on `Route`; every stop's `arrivalTime` is still always null until SCRUM-212.
-  Depends on `vehicles` (`VehicleService.getOwnedVehicle`), `drivers`
-  (`DriverService.getOwnedDriver`) and `students` (`StudentService`) for eligibility, and
-  `schools` (`SchoolSettingsService.getTimes`) plus the `schools.config.SchoolLocationProperties`
-  (`wassel.school.latitude`/`longitude`, required — the app refuses to start without it) for the
-  `Route.school` block. Response shapes follow `docs/contracts/routing.md`.
+  never cached on `Route`. Each stop's `arrivalTime` (`RouteService.arrivalTimesByStudent`) uses
+  `routing.service.RouteTimings` over only the pinned stops, in position order, and is null for
+  every stop when the school's arrival time isn't set, no stop has a pin, or the computed
+  schedule isn't drivable (`Timing.startsTooEarly()`) — the contract treats "would start before
+  06:00" the same as "no schedule" rather than publishing an unrealistic one. Depends on
+  `vehicles` (`VehicleService.getOwnedVehicle`), `drivers` (`DriverService.getOwnedDriver`),
+  `students` (`StudentService`) and `routing` (`TravelTimes`, `RouteTimings`) for eligibility and
+  timing, and `schools` (`SchoolSettingsService.getTimes`) plus the
+  `schools.config.SchoolLocationProperties` (`wassel.school.latitude`/`longitude`, required — the
+  app refuses to start without it) for the `Route.school` block. Response shapes follow
+  `docs/contracts/routing.md`.
 - `routing` — the contracts the route features code against (SCRUM-201) and the solver behind them
   (SCRUM-202). `service/RouteOptimizer` orders one route's stops and `service/TravelTimes` gives a
   driving-time matrix between points, so the road provider client (SCRUM-204) swaps in without its

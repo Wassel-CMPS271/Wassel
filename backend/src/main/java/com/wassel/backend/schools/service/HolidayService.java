@@ -5,6 +5,7 @@ import com.wassel.backend.schools.dto.HolidayResponse;
 import com.wassel.backend.schools.entity.Holiday;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
+import com.wassel.backend.schools.exception.HolidayNotFoundException;
 import com.wassel.backend.schools.repository.HalfDayRepository;
 import com.wassel.backend.schools.repository.HolidayRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,8 @@ public class HolidayService {
 	private static final String DUPLICATE_DATE_MESSAGE = "A holiday is already set for that date.";
 
 	private static final String IS_HALF_DAY_MESSAGE = "That date is marked as a half-day, so it can't also be a holiday.";
+
+	private static final String NOT_FOUND_MESSAGE = "Holiday not found.";
 
 	private final HolidayRepository holidayRepository;
 	private final HalfDayRepository halfDayRepository;
@@ -60,6 +63,13 @@ public class HolidayService {
 			// for the check above.
 			throw new HolidayAlreadyExistsException(DUPLICATE_DATE_MESSAGE);
 		}
+	}
+
+	@Transactional
+	public void deleteHoliday(UUID schoolId, UUID holidayId) {
+		Holiday holiday = holidayRepository.findBySchoolIdAndId(schoolId, holidayId)
+				.orElseThrow(() -> new HolidayNotFoundException(NOT_FOUND_MESSAGE));
+		holidayRepository.delete(holiday);
 	}
 
 	private HolidayResponse toResponse(Holiday holiday) {

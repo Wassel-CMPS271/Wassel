@@ -10,7 +10,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -42,6 +44,12 @@ public class HolidayController {
 	public HolidayResponse addHoliday(@AuthenticationPrincipal User admin,
 			@Valid @RequestBody CreateHolidayRequest request) {
 		return holidayService.addHoliday(schoolIdOf(admin), request);
+	}
+
+	@DeleteMapping("/{id}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void deleteHoliday(@AuthenticationPrincipal User admin, @PathVariable UUID id) {
+		holidayService.deleteHoliday(schoolIdOf(admin), id);
 	}
 
 	// Same principal assumption as SchoolSettingsController (see its SCRUM-168 TODO): change both
