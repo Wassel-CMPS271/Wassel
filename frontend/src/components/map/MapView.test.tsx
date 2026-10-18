@@ -77,3 +77,10 @@ it("ignores a pin when not in pin mode", () => {
 
   expect(screen.queryByTestId("leaflet-map")).not.toBeInTheDocument();
 });
+
+it("treats a school without coordinates as nothing to show", () => {
+  render(<MapView label="Route map" school={{ latitude: null, longitude: null }} />);
+
+  expect(screen.getByText("No locations to show yet.")).toBeInTheDocument();
+  expect(screen.queryByTestId("leaflet-map")).not.toBeInTheDocument();
+});

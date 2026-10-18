@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { useEffect, useRef, type ReactNode, type Ref } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DivIcon } from "leaflet";
+import { mapTheme } from "@/styles/tokens";
 import LeafletMap, { TILE_ATTRIBUTION, TILE_URL } from "./LeafletMap";
 
 // react-leaflet needs a real browser layout, so it is replaced with plain
@@ -24,10 +25,24 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T) {
 }
 
 vi.mock("react-leaflet", () => ({
-  MapContainer: ({ ref, children, center, zoom, bounds }: Record<string, unknown> & { ref?: Ref<unknown>; children?: ReactNode }) => {
+  MapContainer: ({
+    ref,
+    children,
+    center,
+    zoom,
+    bounds,
+    style,
+  }: Record<string, unknown> & { ref?: Ref<unknown>; children?: ReactNode; style?: { width?: string; height?: string } }) => {
     useEffect(() => assignRef(ref, leaflet.map), [ref]);
     return (
-      <div data-testid="map" data-center={JSON.stringify(center)} data-zoom={String(zoom)} data-bounds={JSON.stringify(bounds)}>
+      <div
+        data-testid="map"
+        data-center={JSON.stringify(center)}
+        data-zoom={String(zoom)}
+        data-bounds={JSON.stringify(bounds)}
+        data-width={style?.width}
+        data-height={style?.height}
+      >
         {children}
       </div>
     );
@@ -183,6 +198,18 @@ it("fits all the points at first", () => {
   ]);
 });
 
+// jsdom has no layout, so phone width is checked through the styles: the map
+// takes the full width of its column and a height that shrinks with the
+// viewport.
+it("fills the width and uses the viewport-based height, so it fits a phone", () => {
+  render(<LeafletMap markers={markers} />);
+
+  const map = screen.getByTestId("map");
+  expect(map).toHaveAttribute("data-width", "100%");
+  expect(map).toHaveAttribute("data-height", mapTheme.height);
+  expect(mapTheme.height).toMatch(/^clamp\(.*vh/);
+});
+
 it("centers on a single point, or on a fixed center", () => {
   render(<LeafletMap school={school} />);
   expect(screen.getByTestId("map")).toHaveAttribute("data-center", "[33.896,35.484]");
@@ -297,4 +324,45 @@ it("moves from the latest pin after a rerender", () => {
   const [latitude, longitude] = onPinChange.mock.calls[0];
   expect(latitude).toBe(10);
   expect(longitude).toBeGreaterThan(20);
+});
+
+it("leaves out a school without coordinates and ends the line at the last stop", () => {
+  const noSchool = { latitude: null, longitude: null, arrivalTime: null };
+  render(<LeafletMap markers={markers} school={noSchool} path={[...stops, noSchool]} />);
+
+  expect(screen.queryByTestId("marker-school")).not.toBeInTheDocument();
+  expect(screen.getByTestId("polyline")).toHaveAttribute(
+    "data-positions",
+    JSON.stringify([
+      [33.886, 35.485],
+      [33.892, 35.49],
+    ]),
+  );
+});
+
+it("moves a stop's own marker when it changes place, leaving no stale one behind", () => {
+  const { rerender } = render(<LeafletMap markers={markers} />);
+  const first = screen.getByRole("button", { name: "Stop 1: Hadi Rizk" });
+
+  // Hadi becomes stop 3 at a new spot; Jad becomes stop 1.
+  const moved = [
+    { ...markers[2], label: "Stop 1: Jad Salameh", number: 1 },
+    { ...markers[0], label: "Stop 3: Hadi Rizk", number: 3, latitude: 33.88, longitude: 35.47 },
+  ];
+  rerender(<LeafletMap markers={moved} />);
+
+  const drawn = screen.getAllByTestId("marker-stop");
+  expect(drawn).toHaveLength(2);
+  const hadi = screen.getByRole("button", { name: "Stop 3: Hadi Rizk" });
+  expect(hadi).toBe(first); // the same marker, updated in place
+  expect(hadi).toHaveAttribute("data-position", "[33.88,35.47]");
+  expect(hadi.getAttribute("data-html")).toContain(">3</div>");
+  expect(screen.queryByRole("button", { name: "Stop 1: Hadi Rizk" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Stop 1: Jad Salameh" }).getAttribute("data-html")).toContain(
+    ">1</div>",
+  );
+
+  rerender(<LeafletMap markers={moved.slice(0, 1)} />);
+  expect(screen.getAllByTestId("marker-stop")).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: /Hadi Rizk/ })).not.toBeInTheDocument();
 });

@@ -79,14 +79,14 @@ it("saves the trimmed input, closes and returns focus to the trigger", async () 
 it("shows a backend field error under the right input and focuses it", async () => {
   const onAdd = vi
     .fn()
-    .mockRejectedValue(new ApiValidationError({ vehicleId: "This vehicle is already on Hamra morning run." }));
+    .mockRejectedValue(new ApiValidationError({ vehicleId: 'Vehicle is already on route "Hamra morning run".' }));
   const { dialog } = await open(onAdd);
   fill(dialog);
   submit(dialog);
 
   const vehicle = within(dialog).getByLabelText("Vehicle");
   await waitFor(() =>
-    expect(vehicle).toHaveAccessibleDescription("This vehicle is already on Hamra morning run."),
+    expect(vehicle).toHaveAccessibleDescription('Vehicle is already on route "Hamra morning run".'),
   );
   expect(vehicle).toHaveAttribute("aria-invalid", "true");
   expect(vehicle).toHaveFocus();

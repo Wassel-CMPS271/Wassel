@@ -16,11 +16,16 @@ export interface MapMarker extends MaybeCoordinates {
   id: string; // e.g. the stop's studentId
   label: string; // accessible name, e.g. "Stop 1: Hadi Rizk"
   number?: number; // shows a numbered badge, e.g. Stop.position
+  // One marker can stand in for several stops that share a spot (e.g.
+  // siblings at one address). `count` is how many more besides the one
+  // shown by `number`, drawn as a small "+N" badge.
+  count?: number;
   popup?: ReactNode; // opened on click or Enter
 }
 
-// `RouteSchool` from lib/api/routes.ts fits as is.
-export interface MapSchool extends Coordinates {
+// `RouteSchool` from lib/api/routes.ts fits as is. A school without
+// coordinates is skipped, like a stop without a pin.
+export interface MapSchool extends MaybeCoordinates {
   label?: string; // default "School"
   popup?: ReactNode;
 }

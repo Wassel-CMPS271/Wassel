@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DndContextProps, DragEndEvent } from "@dnd-kit/core";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import {
   addStudentToRoute,
   getRoute,
@@ -41,11 +41,31 @@ vi.mock("@/lib/api/routes", () => ({
   removeStudentFromRoute: vi.fn(),
 }));
 
+// Leaflet needs a real browser; the stand-in draws one button per pinned
+// stop, so a test can see what the map shows.
+vi.mock("@/components/map/MapView", () => ({
+  MapView: ({ label, markers = [] }: { label: string; markers?: { id: string; label: string; latitude: number | null }[] }) => (
+    <section aria-label={label}>
+      {markers
+        .filter((marker) => marker.latitude !== null)
+        .map((marker) => (
+          <span key={marker.id} role="img" aria-label={marker.label} />
+        ))}
+    </section>
+  ),
+}));
+
 // The page only takes the Student type from here; mocked so nothing reaches
-// the students sample data.
+// the backend.
 vi.mock("@/lib/api/students", () => ({
   getStudents: vi.fn(),
 }));
+
+// A pin per student, not one shared spot, so tests with several stops on
+// the map don't coincidentally exercise the same-spot grouping (SCRUM-220).
+function pinFor(studentId: string): number {
+  return Number(studentId.replace(/\D/g, "")) || 0;
+}
 
 function stop(studentId: string, firstName: string, lastName: string, position: number): Stop {
   return {
@@ -54,8 +74,8 @@ function stop(studentId: string, firstName: string, lastName: string, position: 
     firstName,
     lastName,
     address: null,
-    latitude: 33.89,
-    longitude: 35.5,
+    latitude: 33.89 + pinFor(studentId) * 0.001,
+    longitude: 35.5 + pinFor(studentId) * 0.001,
     arrivalTime: null,
   };
 }
@@ -387,7 +407,7 @@ it("marks an over-capacity route and keeps Add disabled", async () => {
 });
 
 it("shows the backend's over-capacity 409 as a focused alert and resyncs the counter", async () => {
-  const message = "This route has 3 students and the vehicle has 3 seats.";
+  const message = "The route has 3 students but the vehicle seats 3.";
   vi.mocked(addStudentToRoute).mockRejectedValue(new ApiError(409, message));
   await renderPage();
   // Someone else filled the vehicle meanwhile; the resync shows it.
@@ -405,18 +425,33 @@ it("shows the backend's over-capacity 409 as a focused alert and resyncs the cou
   expect(alert).toHaveFocus();
 });
 
-it("drops a student someone else already placed when the add is refused", async () => {
+// The backend answers an inactive student with a 409 that has `errors.studentId`.
+it("shows the field message when the student was made inactive elsewhere, and drops them", async () => {
   vi.mocked(addStudentToRoute).mockRejectedValue(
-    new ApiError(409, "This student is already on Verdun morning run."),
+    new ApiValidationError({ studentId: "Only an active student can be put on a route." }),
   );
   await renderPage();
   vi.mocked(listUnassignedStudents).mockResolvedValue([RAMI]);
 
   fireEvent.click(within(row("Not on a route", "Omar Nasser")).getByRole("button", { name: "Add" }));
 
-  expect(await screen.findByRole("alert")).toHaveTextContent("already on Verdun morning run");
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Only an active student can be put on a route.");
+  expect(alert).toHaveFocus();
   await waitFor(() => expect(screen.queryByText("Omar Nasser")).not.toBeInTheDocument());
   expect(screen.getByText("1 of 3 seats")).toBeInTheDocument();
+});
+
+it("shows the not-found state when the route was deleted elsewhere", async () => {
+  vi.mocked(addStudentToRoute).mockRejectedValue(new ApiError(404, "Route not found."));
+  await renderPage();
+  vi.mocked(getRoute).mockRejectedValue(new ApiError(404, "Route not found."));
+
+  fireEvent.click(within(row("Not on a route", "Omar Nasser")).getByRole("button", { name: "Add" }));
+
+  const heading = await screen.findByRole("heading", { name: "Route not found" });
+  await waitFor(() => expect(heading).toHaveFocus());
+  expect(screen.queryByRole("region", { name: "On this route" })).not.toBeInTheDocument();
 });
 
 it("says something went wrong for a failure without a message, and re-enables the buttons", async () => {
@@ -625,4 +660,57 @@ it("ignores a load that finishes after a newer one", async () => {
 
   expect(screen.getByRole("heading", { name: "Verdun morning run" })).toBeInTheDocument();
   expect(screen.queryByText("Lina Saad")).not.toBeInTheDocument();
+});
+
+function mapMarkers() {
+  return within(screen.getByRole("region", { name: "Map of Hamra morning run" }))
+    .queryAllByRole("img")
+    .map((marker) => marker.getAttribute("aria-label"));
+}
+
+it("shows the route's pinned stops on the map", async () => {
+  await renderPage();
+
+  expect(mapMarkers()).toEqual(["Stop 1: Lina Saad"]);
+});
+
+it("redraws the map from the route an add answers with, without fetching it again", async () => {
+  vi.mocked(addStudentToRoute).mockResolvedValue(route([LINA, stop("s-2", "Omar", "Nasser", 2)]));
+  await renderPage();
+
+  fireEvent.click(within(row("Not on a route", "Omar Nasser")).getByRole("button", { name: "Add" }));
+
+  await waitFor(() => expect(mapMarkers()).toEqual(["Stop 1: Lina Saad", "Stop 2: Omar Nasser"]));
+  expect(getRoute).toHaveBeenCalledTimes(1);
+});
+
+it("redraws the map from the route a drop answers with", async () => {
+  vi.mocked(addStudentToRoute).mockResolvedValue(route([LINA, stop("s-3", "Rami", "Khoury", 2)]));
+  await renderPage();
+
+  drop(RAMI_DRAG, "on-route");
+
+  await waitFor(() => expect(mapMarkers()).toEqual(["Stop 1: Lina Saad", "Stop 2: Rami Khoury"]));
+  expect(getRoute).toHaveBeenCalledTimes(1);
+});
+
+it("takes a removed student off the map", async () => {
+  vi.mocked(removeStudentFromRoute).mockResolvedValue(route([]));
+  await renderPage();
+
+  fireEvent.click(within(row("On this route", "Lina Saad")).getByRole("button", { name: "Remove" }));
+
+  await screen.findByText("0 of 3 seats");
+  expect(mapMarkers()).toEqual([]);
+  expect(getRoute).toHaveBeenCalledTimes(1);
+});
+
+it("puts the map before the student lists, so a phone shows it first", async () => {
+  await renderPage();
+
+  const map = screen.getByRole("region", { name: "Map of Hamra morning run" });
+  for (const name of ["On this route", "Not on a route"]) {
+    const heading = screen.getByRole("heading", { name });
+    expect(map.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
 });
