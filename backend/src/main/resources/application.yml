@@ -78,6 +78,15 @@ geocoding:
     # Connect and read timeout: a slow Nominatim must not hold the save (and its database connection) open.
     timeout: ${NOMINATIM_TIMEOUT:5s}
 
+routing:
+  openrouteservice:
+    base-url: https://api.openrouteservice.org
+    # Free key from openrouteservice.org. Blank = no road times: every matrix is straight-line (fine locally and
+    # in CI). Sent in the Authorization header, never in a URL, so it cannot end up in an error message.
+    api-key: ${ORS_API_KEY:}
+    # Connect and read timeout: route responses wait on this while holding a database connection.
+    timeout: 3s
+
 # One JSON object per log line, with the severity in "log.level" (ECS). Loki (see
 # docker-compose.staging.yml) parses these, so the level can be filtered on.
 logging:
