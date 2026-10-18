@@ -232,7 +232,16 @@ that's the structure this codebase moved away from.
   `-Reset` 24 hours out, which reads as 50 requests a day for that key, not the 500 the plans page lists: unconfirmed,
   but it makes the cache and the pauses matter more. One 502 (an HTML gateway page) appeared once and did not repeat,
   and was handled as a failure. The real answers to a wrong key and to a pin with no road nearby were not checked; the
-  401/403 and other-4xx handling above rests on the provider's documentation and forum reports. `OrToolsRouteOptimizer` is the only `RouteOptimizer`: Google OR-Tools
+  401/403 and other-4xx handling above rests on the provider's documentation and forum reports. Independent tests
+  for this client (SCRUM-215, by Moustafa): `OpenRouteServiceTravelTimesCriteriaTests` and
+  `OpenRouteServiceApiKeyCriteriaTests`, written from the ticket and the `TravelTimes` contract, not from
+  `OpenRouteServiceTravelTimesHttpTests` (Hashem's own suite). Found one narrow gap while reviewing: `fetch()`
+  writes a point set's results to the cache inside the lock, but a caller reads its own just-fetched values back
+  *outside* the lock; a different, concurrently fetched point set that trips the 100,000-pair cache clear in that
+  gap can evict them first, so a fetch that actually succeeded falls back to straight-line for that one call.
+  Needs the cache near its size limit and two different point sets fetched within microseconds of each other, so
+  it is unlikely to matter for one school's worth of routes; flagged on the PR rather than fixed here or given a
+  (necessarily flaky) test. `OrToolsRouteOptimizer` is the only `RouteOptimizer`: Google OR-Tools
   (`ortools-java`, native libraries loaded on the first solve), guided local search seeded with the
   given order (50 ms per stop, capped at 2 s) and never worse than that order. It asks for one
   matrix per route and checks capacity first. `RouteTimings` is the one place the arrival-time rule
