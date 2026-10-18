@@ -53,7 +53,7 @@ class StudentGeocodingCriteriaTests {
 
 	private UUID newStudent() {
 		StudentResponse student = studentService.addStudent(school,
-				new CreateStudentRequest("Test", "Student" + UUID.randomUUID(), "Grade 3", "Guardian", "+961 3 123 456"));
+				new CreateStudentRequest("Test", "Student" + UUID.randomUUID(), "Grade 3", "Guardian", "+961 3 123 456", null));
 		return student.id();
 	}
 
