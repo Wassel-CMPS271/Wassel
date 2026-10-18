@@ -20,3 +20,8 @@ wassel:
   school:
     latitude: 33.896
     longitude: 35.484
+
+# Tests expect straight-line times, so an ORS_API_KEY exported in the developer's shell must not reach them.
+routing:
+  openrouteservice:
+    api-key: ""

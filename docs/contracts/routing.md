@@ -107,7 +107,7 @@ Arrival times are worked **backwards from the school's arrival time** using `Tra
 
 A stop with no pin gets `arrivalTime: null` and is skipped in the legs. Times change whenever the order or the students change.
 
-Until the road provider client exists (SCRUM-204) the legs are **straight-line distance at 30 km/h, each leg rounded up to whole minutes**. The sample files were generated with exactly that rule. Real road times will be different numbers, never different shapes.
+The legs are **road driving times from OpenRouteService, each leg rounded up to whole minutes** (SCRUM-204). When the provider cannot answer (no key, a failure, its quota used up) the leg is **straight-line distance at 30 km/h, rounded up**, which is also what the sample files were generated with. A pair of points with no road between them is also straight-line, even while the provider answers. Real road times are different numbers, never different shapes.
 
 ### Optimizing
 
@@ -188,14 +188,14 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 - **Morning run only.** Afternoon (dismissal) routes and depot legs are out of scope.
 - **No boarding time.** A stop takes zero minutes, so real pickup windows are a little longer than shown.
 - **The school's location is a configuration value**, not an admin setting, because the MVP serves one school. The `school` object has the final shape, so moving it to a school setting later changes nothing for consumers. The first story that reads it adds the property, and the app should refuse to start without it.
-- **Straight-line times** until SCRUM-204 (see [Arrival times](#arrival-times)).
+- **Straight-line times when the road provider is unavailable** (see [Arrival times](#arrival-times)). While the provider is unavailable, a route whose stops changed shows straight-line times for every leg (never a mix of road and straight-line legs), and goes back to road times once the provider answers; a route whose points were all seen before keeps its road times. A change to a route's stops costs one provider request for its whole set of points.
 - **The solver is a heuristic.** It starts from the order it was given and is never worse than it, and it matched the brute-force best on every small test route, but for large routes it does not prove optimality. `ARRIVAL_TIME_UNREACHABLE` therefore says the best order *found* starts too early.
 
 ## Interfaces (backend)
 
 In `com.wassel.backend.routing.service`:
 
-- `TravelTimes.matrix(List<Coordinate>)`: square matrix of `Duration`, `[i][j]` is point i to point j in input order, never null, zero on the diagonal, not assumed symmetric. Every entry is a whole number of minutes, rounded up. One call per route, because the road provider is rate limited. `StraightLineTravelTimes` is the stand-in; the road client (SCRUM-204) wraps it as its fallback and is `@Primary`, because two `TravelTimes` beans stop startup.
+- `TravelTimes.matrix(List<Coordinate>)`: square matrix of `Duration`, `[i][j]` is point i to point j in input order, never null, zero on the diagonal, not assumed symmetric. Every entry is a whole number of minutes, rounded up. One call per route, because the road provider is rate limited. `OpenRouteServiceTravelTimes` (SCRUM-204) is the `@Primary` implementation: it asks OpenRouteService, caches every pair, and wraps `StraightLineTravelTimes` as its fallback, because two `TravelTimes` beans stop startup.
 - `RouteOptimizer.optimize(stops, school, capacity, schoolArrivalTime)`: returns a `Plan` with the order, arrival times, total driving time and reasons, which become `proposed` and `reasons`. A plan that is not feasible has reasons, no stops and zero time, and the `Plan` constructor enforces it. `Reason.code` is the `RouteOptimizer.Code` enum, so the codes above cannot be misspelled. The caller checks that stops are non-empty and pinned first. `OrToolsRouteOptimizer` (SCRUM-202) implements it.
 - `RouteTimings.schedule(...)`: the arrival-time rule, written once. Pass `TravelTimes`, the pinned stops already in order, the school and its arrival time, or a matrix you already hold with a visiting order. It returns `Timing(arrivals, drivingTime, crossesMidnight)` and `startsTooEarly()`. The propose endpoint's `current` (SCRUM-203) and the route's own arrival times (SCRUM-212) must call it instead of redoing the arithmetic. When the first pickup falls before midnight `arrivals` is empty, because a time of day cannot say it: treat `startsTooEarly()` as "no times".
 
