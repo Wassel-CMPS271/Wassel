@@ -181,7 +181,7 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 | Apply or discard a proposal that is gone, replaced, never existed or is on another route | 404 | `detail` |
 | Propose while another propose for the route is in flight | 409 | `detail` |
 
-`studentIds` is an extra property, not part of `errors`, because `errors` is for field messages. The current client keeps only `detail`; the stops already say which students have no pin (`latitude: null`), so a screen does not need it.
+`studentIds` is an extra property, not part of `errors`, because `errors` is for field messages. The client keeps it as `ApiError.studentIds` (undefined for every other answer), so the route screen can name the students and link to the Students page.
 
 ## Known limits
 

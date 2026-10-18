@@ -1,5 +1,5 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MapViewProps } from "@/components/map/MapView";
 import type { Route, Stop } from "@/lib/api/routes";
 import { sizing } from "@/styles/tokens";
@@ -312,4 +312,51 @@ it("keeps the line's stop order unchanged when markers are grouped", () => {
       [33.9, 35.48],
     ]),
   );
+});
+
+// SCRUM-221: while a proposal is open the map can show either order.
+describe("order switch", () => {
+  const PROPOSED = [{ ...JAD, position: 1, arrivalTime: "07:08" }, { ...HADI, position: 2, arrivalTime: "07:18" }];
+  const twoStops = route([HADI, JAD]);
+
+  it("isn't shown without a comparison", () => {
+    render(<RouteMap route={twoStops} />);
+
+    expect(screen.queryByRole("group", { name: "Map shows" })).not.toBeInTheDocument();
+  });
+
+  it("draws the proposed order's markers, line and list when it is chosen", () => {
+    render(<RouteMap route={twoStops} comparison={{ proposedStops: PROPOSED, view: "proposed", onViewChange: vi.fn() }} />);
+
+    expect(within(screen.getByRole("group", { name: "Map shows" })).getByRole("radio", { name: "Proposed order" })).toBeChecked();
+    expect(within(map()).getAllByTestId("marker").map((marker) => marker.getAttribute("aria-label"))).toEqual([
+      "Stop 1: Jad Salameh",
+      "Stop 2: Hadi Rizk",
+    ]);
+    expect(screen.getByTestId("path")).toHaveAttribute(
+      "data-path",
+      JSON.stringify([
+        [33.892, 35.49],
+        [33.886, 35.485],
+        [33.9, 35.48],
+      ]),
+    );
+    const list = screen.getByRole("heading", { name: "Stops in proposed order" }).parentElement!.querySelector("ol")!;
+    expect(within(list).getAllByRole("listitem")[0]).toHaveTextContent("Stop 1: Jad Salameh");
+    expect(within(list).getAllByRole("listitem")[0]).toHaveTextContent("Arrives 07:08");
+  });
+
+  it("draws the route's own order when Current order is chosen, and reports a change", () => {
+    const onViewChange = vi.fn();
+    render(<RouteMap route={twoStops} comparison={{ proposedStops: PROPOSED, view: "current", onViewChange }} />);
+
+    expect(within(map()).getAllByTestId("marker").map((marker) => marker.getAttribute("aria-label"))).toEqual([
+      "Stop 1: Hadi Rizk",
+      "Stop 3: Jad Salameh",
+    ]);
+    expect(screen.getByRole("heading", { name: "Stops in current order" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Proposed order" }));
+    expect(onViewChange).toHaveBeenCalledWith("proposed");
+  });
 });

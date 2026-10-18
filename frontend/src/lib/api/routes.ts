@@ -9,6 +9,9 @@
 //   POST   /api/head-of-transport/routes/{routeId}/students  { studentId } -> Route (SCRUM-209)
 //   DELETE /api/head-of-transport/routes/{routeId}/students/{studentId} -> Route (SCRUM-209)
 //   PUT    /api/head-of-transport/routes/{routeId}/stops  { studentIds } -> Route (SCRUM-210)
+//   POST   /api/head-of-transport/routes/{routeId}/optimization                        -> Proposal (201, SCRUM-203)
+//   POST   /api/head-of-transport/routes/{routeId}/optimization/{proposalId}/apply     -> Route (200, SCRUM-203)
+//   DELETE /api/head-of-transport/routes/{routeId}/optimization/{proposalId}           -> 204 (SCRUM-203)
 //
 // Adding a student who is already on another route moves them; it is not an
 // error.
@@ -104,6 +107,9 @@ interface RoutesApi {
   addStudent(routeId: string, studentId: string): Promise<Route>;
   removeStudent(routeId: string, studentId: string): Promise<Route>;
   reorderStops(routeId: string, studentIds: string[]): Promise<Route>;
+  proposeOptimization(routeId: string): Promise<Proposal>;
+  applyProposal(routeId: string, proposalId: string): Promise<Route>;
+  discardProposal(routeId: string, proposalId: string): Promise<void>;
   unassignedStudents(): Promise<Student[]>;
 }
 
@@ -116,6 +122,11 @@ function routePath(routeId: string): string {
 function studentPath(routeId: string, studentId?: string): string {
   const base = `${routePath(routeId)}/students`;
   return studentId === undefined ? base : `${base}/${encodeURIComponent(studentId)}`;
+}
+
+function optimizationPath(routeId: string, proposalId?: string): string {
+  const base = `${routePath(routeId)}/optimization`;
+  return proposalId === undefined ? base : `${base}/${encodeURIComponent(proposalId)}`;
 }
 
 // The active students who are not a stop on any of `routes`. An inactive
@@ -138,6 +149,12 @@ export const httpRoutes: RoutesApi = {
   // The full new order: exactly the route's current stops, each once.
   reorderStops: (routeId, studentIds) =>
     request<Route>(`${routePath(routeId)}/stops`, { method: "PUT", body: { studentIds } }),
+  // A 201 even when infeasible: feasible, id and proposed say so, never a thrown error.
+  proposeOptimization: (routeId) => request<Proposal>(optimizationPath(routeId), { method: "POST" }),
+  applyProposal: (routeId, proposalId) =>
+    request<Route>(`${optimizationPath(routeId, proposalId)}/apply`, { method: "POST" }),
+  discardProposal: (routeId, proposalId) =>
+    request(optimizationPath(routeId, proposalId), { method: "DELETE" }),
 
   // WORKAROUND: the backend has no endpoint for this. The real students minus
   // every route's stops. The list has no stops, so this gets every route: one
@@ -183,6 +200,18 @@ export function removeStudentFromRoute(routeId: string, studentId: string): Prom
 
 export function reorderStops(routeId: string, studentIds: string[]): Promise<Route> {
   return api.reorderStops(routeId, studentIds);
+}
+
+export function proposeOptimization(routeId: string): Promise<Proposal> {
+  return api.proposeOptimization(routeId);
+}
+
+export function applyProposal(routeId: string, proposalId: string): Promise<Route> {
+  return api.applyProposal(routeId, proposalId);
+}
+
+export function discardProposal(routeId: string, proposalId: string): Promise<void> {
+  return api.discardProposal(routeId, proposalId);
 }
 
 // WORKAROUND: see unassignedStudents above; the backend has no endpoint.
