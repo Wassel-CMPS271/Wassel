@@ -115,9 +115,11 @@ Until the road provider client exists (SCRUM-204) the legs are **straight-line d
 - The optimizer only orders the stops inside one route. It never moves students between routes.
 - The route is an open path: the first pickup is the start and the school is the end. There is no depot leg.
 - Not being able to find an order is **not an error**. It is a 201 with `feasible: false`, `id: null`, `proposed: null` and `reasons`.
-- A route has at most one pending proposal. **Every propose clears it first**, even when the new answer is not feasible, so an earlier proposal can never be applied after a later one found nothing.
+- A route has at most one pending proposal. **Every propose that answers 201 clears it first**, even when the new answer is not feasible, so an earlier proposal can never be applied after a later one found nothing. A propose rejected with a 409 (no stops, no school arrival time, stops without a pin) changes nothing, so the earlier proposal stays pending.
 - **Apply** makes the proposal the route's order and keeps the previous order as a version. It answers 404 if the proposal was discarded, replaced or never existed, and **409 if the route's stops or their order have changed since the proposal was made** (compare with `current`). The screen should say so and offer to optimize again.
-- **Discard** drops the proposal. The route is untouched.
+- **Discard** drops the proposal. The route is untouched. It answers 404 for a proposal that is already gone, the same as apply.
+- Two proposes for one route at the same moment: one wins, the other answers **409** and the screen asks again.
+- The previous orders kept by apply are stored only: no endpoint lists or restores them yet, and a manual reorder (`PUT .../stops`) does not make a version.
 
 ### Earliest first pickup
 
@@ -176,6 +178,8 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 | Optimize before the school's arrival time is set | 409 | `detail` |
 | Optimize with stops that have no pin | 409 | `detail` naming them, and `studentIds: [uuid, ...]` as an extra property |
 | Apply on a route that changed since the proposal | 409 | `detail` |
+| Apply or discard a proposal that is gone, replaced, never existed or is on another route | 404 | `detail` |
+| Propose while another propose for the route is in flight | 409 | `detail` |
 
 `studentIds` is an extra property, not part of `errors`, because `errors` is for field messages. The current client keeps only `detail`; the stops already say which students have no pin (`latitude: null`), so a screen does not need it.
 

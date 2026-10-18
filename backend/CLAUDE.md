@@ -169,7 +169,7 @@ that's the structure this codebase moved away from.
   route is moved rather than rejected. Deleting a route releases its students
   (`StudentService.clearRoute`) so none are left pointing at a dead route id.
   `studentCount`/`seatsLeft`/`stops` are computed fresh from `StudentService` on every response,
-  never cached on `Route`. Each stop's `arrivalTime` (`RouteService.arrivalTimesByStudent`) uses
+  never cached on `Route`. Each stop's `arrivalTime` (`RouteService.schedule`) uses
   `routing.service.RouteTimings` over only the pinned stops, in position order, and is null for
   every stop when the school's arrival time isn't set, no stop has a pin, or the computed
   schedule isn't drivable (`Timing.startsTooEarly()`) — the contract treats "would start before
@@ -180,6 +180,24 @@ that's the structure this codebase moved away from.
   `schools.config.SchoolLocationProperties` (`wassel.school.latitude`/`longitude`, required — the
   app refuses to start without it) for the `Route.school` block. Response shapes follow
   `docs/contracts/routing.md`.
+  Optimization (SCRUM-203): `propose` asks `routing.service.RouteOptimizer` for an order and saves it as the
+  route's one pending proposal (`entity/RouteProposal`, table `route_proposals`, unique `route_id`; it holds
+  the route's order when it was made, `baseOrder`, and the suggestion, `proposedOrder`). Every propose
+  that gets as far as the optimizer clears the old proposal first, even when the new answer is infeasible
+  (then nothing is saved and `id` is null); one rejected with a 409 for no stops, no school arrival time
+  or an unpinned stop leaves it alone. Two proposes at once end in a 409 from the unique key. `current` comes from the same
+  `schedule` the route's own arrival times use. `applyProposal` claims the proposal with a bulk delete
+  that reports how many rows it removed (`RouteProposalRepository.claim`), so two applies can't both win
+  and the loser gets the 404 of a proposal that is gone; it then answers 409 if the route's ordered student
+  ids differ from `baseOrder` (that rolls the claim back, so the proposal stays), saves the replaced order
+  as a `RouteVersion` (`route_versions`) and calls `StudentService.reorderRoute`. Discarding an unknown or
+  already-gone proposal is a 404, like apply. Versions are only stored: nothing lists or restores them
+  yet, and a manual reorder (SCRUM-210) doesn't make one. Orders are comma-joined ids in a `text` column
+  (`UuidListConverter`), not a join table or `uuid[]`, so the schema H2 builds in the tests can't differ
+  from the Flyway one. Deleting a route deletes its proposal and versions in `RouteService.deleteRoute`
+  (there are no foreign keys). Known limit: a manual reorder or student change that commits between
+  apply's comparison and its write is overwritten; closing it needs a route-row lock that every
+  stop-changing method also takes. The solve runs inside the propose transaction (at most 2 s).
 - `routing` — the contracts the route features code against (SCRUM-201) and the solver behind them
   (SCRUM-202). `service/RouteOptimizer` orders one route's stops and `service/TravelTimes` gives a
   driving-time matrix between points, so the road provider client (SCRUM-204) swaps in without its
