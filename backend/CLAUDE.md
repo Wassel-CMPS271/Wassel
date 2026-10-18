@@ -155,23 +155,29 @@ that's the structure this codebase moved away from.
   touched regardless of what the address becomes; a failed or empty lookup clears any previous
   (non-manual) pin rather than leaving it pointing at the old address. `updateLocation` (the
   hand-correction endpoint) sets `manualPin = true`.
-- `routes` — a school's routes (SCRUM-208), which students ride each one (SCRUM-209), and their
-  hand-set order (SCRUM-210), under `/api/head-of-transport/routes`. A vehicle or driver can be
-  on at most one route (checked in `RouteService`, backed by a unique constraint on `Route` as
-  the race-condition backstop); an inactive vehicle or deactivated driver can't be assigned
-  (there's no deactivate endpoint for drivers yet; the check exists for when one lands). Adding a
-  student checks capacity against the route's current occupants before resolving the student (so
-  a full route 409s even for an unknown student id, and re-adding a student already on this exact
-  route skips the check — no new seat taken), then only an active student can be added, and a
-  student already on another route is moved rather than rejected. Deleting a route releases its
-  students (`StudentService.clearRoute`) so none are left pointing at a dead route id.
+- `routes` — a school's routes (SCRUM-208), which students ride each one (SCRUM-209), their
+  hand-set order (SCRUM-210), and each stop's arrival time (SCRUM-212), under
+  `/api/head-of-transport/routes`. A vehicle or driver can be on at most one route (checked in
+  `RouteService`, backed by a unique constraint on `Route` as the race-condition backstop); an
+  inactive vehicle or deactivated driver can't be assigned (there's no deactivate endpoint for
+  drivers yet; the check exists for when one lands). Adding a student checks capacity against the
+  route's current occupants before resolving the student (so a full route 409s even for an
+  unknown student id, and re-adding a student already on this exact route skips the check — no
+  new seat taken), then only an active student can be added, and a student already on another
+  route is moved rather than rejected. Deleting a route releases its students
+  (`StudentService.clearRoute`) so none are left pointing at a dead route id.
   `studentCount`/`seatsLeft`/`stops` are computed fresh from `StudentService` on every response,
-  never cached on `Route`; every stop's `arrivalTime` is still always null until SCRUM-212.
-  Depends on `vehicles` (`VehicleService.getOwnedVehicle`), `drivers`
-  (`DriverService.getOwnedDriver`) and `students` (`StudentService`) for eligibility, and
-  `schools` (`SchoolSettingsService.getTimes`) plus the `schools.config.SchoolLocationProperties`
-  (`wassel.school.latitude`/`longitude`, required — the app refuses to start without it) for the
-  `Route.school` block. Response shapes follow `docs/contracts/routing.md`.
+  never cached on `Route`. Each stop's `arrivalTime` (`RouteService.arrivalTimesByStudent`) uses
+  `routing.service.RouteTimings` over only the pinned stops, in position order, and is null for
+  every stop when the school's arrival time isn't set, no stop has a pin, or the computed
+  schedule isn't drivable (`Timing.startsTooEarly()`) — the contract treats "would start before
+  06:00" the same as "no schedule" rather than publishing an unrealistic one. Depends on
+  `vehicles` (`VehicleService.getOwnedVehicle`), `drivers` (`DriverService.getOwnedDriver`),
+  `students` (`StudentService`) and `routing` (`TravelTimes`, `RouteTimings`) for eligibility and
+  timing, and `schools` (`SchoolSettingsService.getTimes`) plus the
+  `schools.config.SchoolLocationProperties` (`wassel.school.latitude`/`longitude`, required — the
+  app refuses to start without it) for the `Route.school` block. Response shapes follow
+  `docs/contracts/routing.md`.
 - `routing` — the contracts the route features code against (SCRUM-201) and the solver behind them
   (SCRUM-202). `service/RouteOptimizer` orders one route's stops and `service/TravelTimes` gives a
   driving-time matrix between points, so the road provider client (SCRUM-204) swaps in without its
