@@ -3,7 +3,10 @@ package com.wassel.backend.routes.controller;
 import com.wassel.backend.drivers.entity.Driver;
 import com.wassel.backend.drivers.entity.DriverStatus;
 import com.wassel.backend.drivers.repository.DriverRepository;
+import com.jayway.jsonpath.JsonPath;
+import com.wassel.backend.routes.repository.RouteProposalRepository;
 import com.wassel.backend.routes.repository.RouteRepository;
+import com.wassel.backend.routes.repository.RouteVersionRepository;
 import com.wassel.backend.schools.entity.SchoolSettings;
 import com.wassel.backend.schools.repository.SchoolSettingsRepository;
 import com.wassel.backend.students.entity.Student;
@@ -34,6 +37,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -60,6 +64,12 @@ class RouteControllerTests {
 	private RouteRepository routeRepository;
 
 	@Autowired
+	private RouteProposalRepository proposalRepository;
+
+	@Autowired
+	private RouteVersionRepository versionRepository;
+
+	@Autowired
 	private VehicleRepository vehicleRepository;
 
 	@Autowired
@@ -73,6 +83,8 @@ class RouteControllerTests {
 
 	@BeforeEach
 	void cleanDatabase() {
+		proposalRepository.deleteAll();
+		versionRepository.deleteAll();
 		routeRepository.deleteAll();
 		driverRepository.deleteAll();
 		vehicleRepository.deleteAll();
@@ -713,6 +725,301 @@ class RouteControllerTests {
 				.andExpect(jsonPath("$.stops[0].arrivalTime").isEmpty())
 				.andExpect(jsonPath("$.stops[1].arrivalTime").isEmpty())
 				.andExpect(jsonPath("$.stops[2].arrivalTime").isEmpty());
+	}
+
+	// SCRUM-203: propose, apply and discard an optimized order. The optimizer and the straight-line
+	// travel times are the real ones; the order it finds is not asserted, only what must hold for
+	// any answer (same students, no worse than the current order, route untouched until apply).
+
+	private List<UUID> assignFourStops(UUID schoolId, String routeId) throws Exception {
+		List<UUID> ids = new java.util.ArrayList<>();
+		for (double[] pin : new double[][] { RAMI, SALMA, TAREK, DANA }) {
+			UUID studentId = aStudentAt(schoolId, pin[0], pin[1]);
+			assignAs(schoolId, routeId, studentId).andExpect(status().isOk());
+			ids.add(studentId);
+		}
+		return ids;
+	}
+
+	/** A route with the four sample stops in the sample's order and a 07:30 school arrival. */
+	private String aRouteWithFourStops(List<UUID> ids) throws Exception {
+		String id = createAs(schoolA, "Hamra morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		setSchoolArrivalTime(schoolA, LocalTime.of(7, 30));
+		ids.addAll(assignFourStops(schoolA, id));
+		return id;
+	}
+
+	private org.springframework.test.web.servlet.ResultActions proposeAs(UUID schoolId, String routeId) throws Exception {
+		return mockMvc.perform(post(URL + "/" + routeId + "/optimization")
+				.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolId)));
+	}
+
+	private String proposalIdOf(String routeId) throws Exception {
+		String body = proposeAs(schoolA, routeId).andExpect(status().isCreated())
+				.andExpect(jsonPath("$.feasible").value(true)).andReturn().getResponse().getContentAsString();
+		return JsonPath.read(body, "$.id");
+	}
+
+	private org.springframework.test.web.servlet.ResultActions applyAs(UUID schoolId, String routeId, Object proposalId)
+			throws Exception {
+		return mockMvc.perform(post(URL + "/" + routeId + "/optimization/" + proposalId + "/apply")
+				.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolId)));
+	}
+
+	private org.springframework.test.web.servlet.ResultActions discardAs(UUID schoolId, String routeId,
+			Object proposalId) throws Exception {
+		return mockMvc.perform(delete(URL + "/" + routeId + "/optimization/" + proposalId)
+				.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolId)));
+	}
+
+	private List<String> stopIdsOf(String routeId) throws Exception {
+		String body = mockMvc.perform(get(URL + "/" + routeId).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andReturn().getResponse().getContentAsString();
+		return JsonPath.read(body, "$.stops[*].studentId");
+	}
+
+	private List<String> asStrings(List<UUID> ids) {
+		return ids.stream().map(UUID::toString).toList();
+	}
+
+	/** Lowers the vehicle's capacity below the stops on the route, as the contract says can happen. */
+	private void lowerCapacityTo(String routeId, int capacity) {
+		UUID vehicleId = routeRepository.findById(UUID.fromString(routeId)).orElseThrow().getVehicleId();
+		Vehicle vehicle = vehicleRepository.findById(vehicleId).orElseThrow();
+		vehicle.setCapacity(capacity);
+		vehicleRepository.save(vehicle);
+	}
+
+	@Test
+	void proposingReturnsAnOrderWithArrivalTimesAndLeavesTheRouteUnchanged() throws Exception {
+		List<UUID> ids = new java.util.ArrayList<>();
+		String id = aRouteWithFourStops(ids);
+
+		String body = proposeAs(schoolA, id).andExpect(status().isCreated())
+				.andExpect(jsonPath("$.id").isNotEmpty())
+				.andExpect(jsonPath("$.feasible").value(true))
+				.andExpect(jsonPath("$.reasons.length()").value(0))
+				.andExpect(jsonPath("$.current.drivingMinutes").value(22))
+				.andExpect(jsonPath("$.current.stops[0].arrivalTime").value("07:08"))
+				.andExpect(jsonPath("$.current.stops[3].arrivalTime").value("07:28"))
+				.andExpect(jsonPath("$.proposed.stops.length()").value(4))
+				.andExpect(jsonPath("$.proposed.stops[0].position").value(1))
+				.andExpect(jsonPath("$.proposed.stops[3].position").value(4))
+				.andExpect(jsonPath("$.proposed.stops[3].arrivalTime").value("07:28"))
+				.andReturn().getResponse().getContentAsString();
+
+		List<String> proposedIds = JsonPath.read(body, "$.proposed.stops[*].studentId");
+		assertEquals(java.util.Set.copyOf(asStrings(ids)), java.util.Set.copyOf(proposedIds));
+		int proposedMinutes = JsonPath.read(body, "$.proposed.drivingMinutes");
+		assertTrue(proposedMinutes <= 22, "the proposal is never worse than the current order");
+		assertEquals(asStrings(ids), stopIdsOf(id));
+		assertEquals(1, proposalRepository.count());
+	}
+
+	@Test
+	void aLongOrderIsSavedAndAppliedWhole() throws Exception {
+		String id = createAs(schoolA, "Big run", aVehicle(schoolA, true), aDriver(schoolA));
+		setSchoolArrivalTime(schoolA, LocalTime.of(7, 30));
+		for (int i = 0; i < 8; i++) {
+			assignAs(schoolA, id, aStudentAt(schoolA, 33.88 + i * 0.003, 35.49 + i * 0.002)).andExpect(status().isOk());
+		}
+
+		String proposalId = proposalIdOf(id);
+
+		applyAs(schoolA, id, proposalId).andExpect(status().isOk())
+				.andExpect(jsonPath("$.stops.length()").value(8));
+		assertEquals(8, versionRepository.findAll().get(0).getStopOrder().size());
+	}
+
+	@Test
+	void aRouteOverCapacityGetsAnInfeasibleProposalWithNothingSaved() throws Exception {
+		String id = aRouteWithFourStops(new java.util.ArrayList<>());
+		lowerCapacityTo(id, 3);
+
+		proposeAs(schoolA, id).andExpect(status().isCreated())
+				.andExpect(jsonPath("$.id").isEmpty())
+				.andExpect(jsonPath("$.feasible").value(false))
+				.andExpect(jsonPath("$.proposed").isEmpty())
+				.andExpect(jsonPath("$.current.stops.length()").value(4))
+				.andExpect(jsonPath("$.reasons[0].code").value("CAPACITY_EXCEEDED"));
+		assertEquals(0, proposalRepository.count());
+	}
+
+	@Test
+	void anUndrivableCurrentOrderShowsNoTimesButStillItsDrivingTotal() throws Exception {
+		String id = aRouteWithFourStops(new java.util.ArrayList<>());
+		// Same arrangement as arrivalTimesAreAllNullWhenTheScheduleIsNotDrivable: a 06:05 arrival
+		// puts the first pickup before 06:00, so there are no times, but the legs still add up.
+		schoolSettingsRepository.deleteAll();
+		setSchoolArrivalTime(schoolA, LocalTime.of(6, 5));
+
+		proposeAs(schoolA, id).andExpect(status().isCreated())
+				.andExpect(jsonPath("$.feasible").value(false))
+				.andExpect(jsonPath("$.reasons[0].code").value("ARRIVAL_TIME_UNREACHABLE"))
+				.andExpect(jsonPath("$.current.drivingMinutes").value(22))
+				.andExpect(jsonPath("$.current.stops[0].arrivalTime").isEmpty())
+				.andExpect(jsonPath("$.current.stops[3].arrivalTime").isEmpty());
+		assertEquals(0, proposalRepository.count());
+	}
+
+	@Test
+	void proposingAgainReplacesThePendingProposal() throws Exception {
+		String id = aRouteWithFourStops(new java.util.ArrayList<>());
+		String first = proposalIdOf(id);
+		String second = proposalIdOf(id);
+
+		assertEquals(1, proposalRepository.count());
+		applyAs(schoolA, id, first).andExpect(status().isNotFound());
+		applyAs(schoolA, id, second).andExpect(status().isOk());
+	}
+
+	@Test
+	void anInfeasibleProposeStillClearsTheEarlierProposal() throws Exception {
+		String id = aRouteWithFourStops(new java.util.ArrayList<>());
+		String first = proposalIdOf(id);
+		lowerCapacityTo(id, 3);
+
+		proposeAs(schoolA, id).andExpect(status().isCreated()).andExpect(jsonPath("$.feasible").value(false));
+
+		applyAs(schoolA, id, first).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void aRouteWithNoStopsCannotBeOptimized() throws Exception {
+		String id = createAs(schoolA, "Empty run", aVehicle(schoolA, true), aDriver(schoolA));
+		setSchoolArrivalTime(schoolA, LocalTime.of(7, 30));
+
+		proposeAs(schoolA, id).andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").isNotEmpty());
+		assertEquals(0, proposalRepository.count());
+	}
+
+	@Test
+	void aRouteCannotBeOptimizedBeforeTheSchoolsArrivalTimeIsSet() throws Exception {
+		String id = createAs(schoolA, "Hamra morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		assignAs(schoolA, id, aStudentAt(schoolA, RAMI[0], RAMI[1])).andExpect(status().isOk());
+
+		proposeAs(schoolA, id).andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value("The school's arrival time is not set."));
+	}
+
+	@Test
+	void stopsWithoutAPinAreNamedAndBlockOptimizing() throws Exception {
+		String id = createAs(schoolA, "Hamra morning run", aVehicle(schoolA, true), aDriver(schoolA));
+		setSchoolArrivalTime(schoolA, LocalTime.of(7, 30));
+		assignAs(schoolA, id, aStudentAt(schoolA, RAMI[0], RAMI[1])).andExpect(status().isOk());
+		UUID noPin = aStudentWithNoPin(schoolA);
+		assignAs(schoolA, id, noPin).andExpect(status().isOk());
+
+		proposeAs(schoolA, id).andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("Hadi Rizk")))
+				.andExpect(jsonPath("$.studentIds.length()").value(1))
+				.andExpect(jsonPath("$.studentIds[0]").value(noPin.toString()));
+	}
+
+	@Test
+	void anotherSchoolsOrUnknownRouteIsNotFoundForAllThreeEndpoints() throws Exception {
+		String id = aRouteWithFourStops(new java.util.ArrayList<>());
+		String proposalId = proposalIdOf(id);
+
+		proposeAs(schoolB, id).andExpect(status().isNotFound());
+		applyAs(schoolB, id, proposalId).andExpect(status().isNotFound());
+		discardAs(schoolB, id, proposalId).andExpect(status().isNotFound());
+		proposeAs(schoolA, UUID.randomUUID().toString()).andExpect(status().isNotFound());
+		assertEquals(1, proposalRepository.count());
+	}
+
+	@Test
+	void applyingMakesTheProposalTheRoutesOrderAndKeepsThePreviousOrderAsAVersion() throws Exception {
+		List<UUID> ids = new java.util.ArrayList<>();
+		String id = aRouteWithFourStops(ids);
+		String body = proposeAs(schoolA, id).andReturn().getResponse().getContentAsString();
+		String proposalId = JsonPath.read(body, "$.id");
+		List<String> proposedIds = JsonPath.read(body, "$.proposed.stops[*].studentId");
+
+		applyAs(schoolA, id, proposalId).andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(id))
+				.andExpect(jsonPath("$.stops[3].arrivalTime").value("07:28"));
+
+		assertEquals(proposedIds, stopIdsOf(id));
+		assertEquals(0, proposalRepository.count());
+		assertEquals(1, versionRepository.count());
+		assertEquals(ids, versionRepository.findAll().get(0).getStopOrder());
+	}
+
+	@Test
+	void aProposalCanOnlyBeAppliedOnce() throws Exception {
+		String id = aRouteWithFourStops(new java.util.ArrayList<>());
+		String proposalId = proposalIdOf(id);
+
+		applyAs(schoolA, id, proposalId).andExpect(status().isOk());
+		applyAs(schoolA, id, proposalId).andExpect(status().isNotFound());
+		assertEquals(1, versionRepository.count());
+	}
+
+	@Test
+	void aProposalFromAnotherRouteCannotBeApplied() throws Exception {
+		String id = aRouteWithFourStops(new java.util.ArrayList<>());
+		String proposalId = proposalIdOf(id);
+		String other = createAs(schoolA, "Other run", aVehicle(schoolA, true), aDriver(schoolA));
+
+		applyAs(schoolA, other, proposalId).andExpect(status().isNotFound());
+		discardAs(schoolA, other, proposalId).andExpect(status().isNotFound());
+		assertEquals(1, proposalRepository.count());
+	}
+
+	@Test
+	void applyingAfterTheOrderWasChangedByHandIsAConflictAndKeepsTheProposal() throws Exception {
+		List<UUID> ids = new java.util.ArrayList<>();
+		String id = aRouteWithFourStops(ids);
+		String proposalId = proposalIdOf(id);
+		reorderAs(schoolA, id, ids.get(3), ids.get(2), ids.get(1), ids.get(0)).andExpect(status().isOk());
+
+		applyAs(schoolA, id, proposalId).andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").isNotEmpty());
+
+		assertEquals(1, proposalRepository.count());
+		assertEquals(0, versionRepository.count());
+		assertEquals(asStrings(List.of(ids.get(3), ids.get(2), ids.get(1), ids.get(0))), stopIdsOf(id));
+	}
+
+	@Test
+	void applyingAfterAStudentWasAddedIsAConflict() throws Exception {
+		String id = aRouteWithFourStops(new java.util.ArrayList<>());
+		String proposalId = proposalIdOf(id);
+		assignAs(schoolA, id, aStudentAt(schoolA, 33.9, 35.5)).andExpect(status().isOk());
+
+		applyAs(schoolA, id, proposalId).andExpect(status().isConflict());
+	}
+
+	@Test
+	void discardingDropsTheProposalAndLeavesTheRouteUntouched() throws Exception {
+		List<UUID> ids = new java.util.ArrayList<>();
+		String id = aRouteWithFourStops(ids);
+		String proposalId = proposalIdOf(id);
+
+		discardAs(schoolA, id, proposalId).andExpect(status().isNoContent());
+
+		assertEquals(0, proposalRepository.count());
+		assertEquals(asStrings(ids), stopIdsOf(id));
+		applyAs(schoolA, id, proposalId).andExpect(status().isNotFound());
+		discardAs(schoolA, id, proposalId).andExpect(status().isNotFound());
+		discardAs(schoolA, id, UUID.randomUUID()).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void deletingARouteDeletesItsProposalAndVersions() throws Exception {
+		String id = aRouteWithFourStops(new java.util.ArrayList<>());
+		applyAs(schoolA, id, proposalIdOf(id)).andExpect(status().isOk());
+		proposalIdOf(id);
+		assertEquals(1, proposalRepository.count());
+		assertEquals(1, versionRepository.count());
+
+		mockMvc.perform(delete(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(status().isNoContent());
+
+		assertEquals(0, proposalRepository.count());
+		assertEquals(0, versionRepository.count());
 	}
 
 	@Test
