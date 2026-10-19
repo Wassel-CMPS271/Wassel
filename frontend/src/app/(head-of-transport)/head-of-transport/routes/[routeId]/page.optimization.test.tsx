@@ -303,15 +303,14 @@ it("discards the proposal and leaves the route as it was", async () => {
   await waitFor(() => expect(optimizeButton()).toHaveFocus());
 });
 
-it("discards on Escape and never applies", async () => {
-  vi.mocked(discardProposal).mockResolvedValue(undefined);
+it("closes a feasible proposal on Escape without discarding or applying", async () => {
   await renderPage();
   await openProposal();
 
   fireEvent.keyDown(screen.getByRole("button", { name: "Apply" }), { key: "Escape" });
 
-  await waitFor(() => expect(panel()).not.toBeInTheDocument());
-  expect(discardProposal).toHaveBeenCalledTimes(1);
+  expect(panel()).not.toBeInTheDocument();
+  expect(discardProposal).not.toHaveBeenCalled();
   expect(applyProposal).not.toHaveBeenCalled();
   await waitFor(() => expect(optimizeButton()).toHaveFocus());
 });

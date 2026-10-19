@@ -70,6 +70,29 @@ describe("studentAnnouncements", () => {
     expect(announce.onDragEnd({ active, over: null })).toBe("Omar Nasser was not moved.");
   });
 
+  it("says a stop was not moved when dropped on the list's empty area, not on another stop", () => {
+    const lina: StudentDragData = {
+      from: "on-route",
+      name: "Lina Saad",
+      stop: {
+        studentId: "s-1",
+        position: 1,
+        firstName: "Lina",
+        lastName: "Saad",
+        address: null,
+        latitude: 33.89,
+        longitude: 35.5,
+        arrivalTime: "07:00",
+      },
+    };
+    const linaActive = { id: "student-s-1", data: { current: lina } } as unknown as Active;
+    const announce = studentAnnouncements(undefined);
+
+    // "on-route" is the list's own droppable id, not another stop, so this
+    // isn't a reorder (handleDragEnd finds no matching stop either).
+    expect(announce.onDragEnd({ active: linaActive, over: onRoute })).toBe("Lina Saad was not moved.");
+  });
+
   it("gives the warning when the route list would refuse the drop", () => {
     const announce = studentAnnouncements("This vehicle is full (3 of 3 seats).");
     expect(announce.onDragOver({ active, over: onRoute })).toBe(

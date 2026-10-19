@@ -203,10 +203,13 @@ it("does nothing when a card is dropped back on its own list or outside both", a
 
   drop(OMAR_DRAG, "unassigned");
   drop(OMAR_DRAG, null);
+  // Lina dropped on "on-route" lands on the list's own empty area, not on
+  // another stop, so this isn't a reorder either.
   drop(LINA_DRAG, "on-route");
 
   expect(addStudentToRoute).not.toHaveBeenCalled();
   expect(removeStudentFromRoute).not.toHaveBeenCalled();
+  expect(reorderStops).not.toHaveBeenCalled();
 });
 
 it("refuses a drop on the route list when the vehicle is full, with the full warning", async () => {

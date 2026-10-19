@@ -103,12 +103,13 @@ export function OptimizationPanel({
     if (error) errorRef.current?.focus();
   }, [error]);
 
-  // Escape never applies: it discards a proposal, or closes an infeasible answer.
+  // Escape never applies and never discards: it only closes the panel
+  // locally, the same for a feasible proposal as for an infeasible answer.
+  // Discard stays an explicit button that sends a request to the backend.
   function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.key !== "Escape" || busy) return;
     event.preventDefault();
-    if (proposed) onDiscard();
-    else onClose();
+    onClose();
   }
 
   return (

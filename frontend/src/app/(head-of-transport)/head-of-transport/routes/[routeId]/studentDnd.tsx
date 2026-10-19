@@ -152,9 +152,10 @@ export function studentAnnouncements(refusal: string | undefined): Announcements
         if (list === "on-route" && refusal) return `${data.name} was not added. ${refusal}`;
         return `Dropped ${data.name} on ${LIST_LABELS[list]}.`;
       }
-      // Still in the list it started in: a reorder if it landed on a
-      // different stop, otherwise it ends up back where it was.
-      if (data.from === "on-route" && over && active.id !== over.id) {
+      // Still in the list it started in: a reorder if it landed on another
+      // stop, otherwise (including the list's own empty area, id "on-route",
+      // which handleDragEnd does nothing with) it ends up back where it was.
+      if (data.from === "on-route" && over && active.id !== over.id && over.id !== "on-route") {
         return `Reordered ${data.name} on ${LIST_LABELS[list]}.`;
       }
       return `${data.name} was not moved.`;
