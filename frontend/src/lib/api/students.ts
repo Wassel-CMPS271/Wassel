@@ -53,6 +53,12 @@ export interface StudentFilters {
 
 const STUDENTS_PATH = "/api/head-of-transport/students";
 
+export function linkStudentParent(id: string, parentUserId: string): Promise<Student> {
+  return request<Student>(`${STUDENTS_PATH}/${encodeURIComponent(id)}/parent`, {
+    method: "PATCH", body: { parentUserId },
+  });
+}
+
 // Optional server-side filters use the exact StudentController parameter names.
 // The current roster also filters locally after an initial GET for instant UI
 // response; its data still comes exclusively from the real backend.

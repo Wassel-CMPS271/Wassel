@@ -81,7 +81,8 @@ demos and pre-release verification.
    Then edit `.env.staging` and set real, generated values for `DB_PASSWORD` and
    `JWT_SECRET` — don't reuse the local-dev defaults — and the mail account (see
    [Email on staging](#email-on-staging)). Compose will not start the backend without
-   `MAIL_USERNAME` and `MAIL_PASSWORD`.
+   `MAIL_USERNAME` and `MAIL_PASSWORD`, nor without `ORS_API_KEY`, a free key from
+   [openrouteservice.org](https://openrouteservice.org) that gives routes real road travel times.
 
 2. **Build and start the full stack** (Postgres, backend, frontend):
 

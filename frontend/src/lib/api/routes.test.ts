@@ -252,6 +252,78 @@ describe("httpRoutes", () => {
 
     await expect(httpRoutes.unassignedStudents()).resolves.toEqual([student("s-free", "Lara", true)]);
   });
+
+  it("maps no student to a route when there are no routes", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(200, []); // list() returns no summaries, so get() is never called
+
+    await expect(httpRoutes.routeAssignments()).resolves.toEqual({ routes: [], byStudent: new Map() });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps every stop on every route to its route, by getting each route", async () => {
+    const { httpRoutes } = await loadRoutes();
+    const stopsById: Record<string, unknown[]> = {
+      [HAMRA_ID]: [{ ...ROUTE.stops[0], studentId: "s-a" }],
+      [VERDUN_ID]: [{ ...ROUTE.stops[0], studentId: "s-b" }],
+    };
+    fetchMock = vi.fn((url: string) => {
+      const id = url.slice(ROUTES_URL.length + 1);
+      const body = id ? { ...ROUTE, id, name: `route-${id}`, stops: stopsById[id] } : SUMMARIES;
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const assignments = await httpRoutes.routeAssignments();
+
+    expect(assignments).toEqual({
+      routes: [
+        { id: HAMRA_ID, name: `route-${HAMRA_ID}` },
+        { id: VERDUN_ID, name: `route-${VERDUN_ID}` },
+      ],
+      byStudent: new Map([
+        ["s-a", { routeId: HAMRA_ID, routeName: `route-${HAMRA_ID}` }],
+        ["s-b", { routeId: VERDUN_ID, routeName: `route-${VERDUN_ID}` }],
+      ]),
+    });
+    // One list, then one get per route.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("maps a student on exactly one route to that route", async () => {
+    const { httpRoutes } = await loadRoutes();
+    const stopsById: Record<string, unknown[]> = {
+      [HAMRA_ID]: [{ ...ROUTE.stops[0], studentId: ON_ROUTE_STUDENT_ID }],
+      [VERDUN_ID]: [],
+    };
+    fetchMock = vi.fn((url: string) => {
+      const id = url.slice(ROUTES_URL.length + 1);
+      const body = id ? { ...ROUTE, id, stops: stopsById[id] } : SUMMARIES;
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const assignments = await httpRoutes.routeAssignments();
+
+    expect(assignments.byStudent.get(ON_ROUTE_STUDENT_ID)).toEqual({ routeId: HAMRA_ID, routeName: ROUTE.name });
+    expect(assignments.byStudent.size).toBe(1);
+  });
+
+  it("propagates an error from getting one of the routes", async () => {
+    const { httpRoutes } = await loadRoutes();
+    fetchMock = vi.fn((url: string) => {
+      if (url === ROUTES_URL) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(SUMMARIES) });
+      }
+      if (url === `${ROUTES_URL}/${VERDUN_ID}`) {
+        return Promise.reject(new Error("network down"));
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(ROUTE) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(httpRoutes.routeAssignments()).rejects.toThrow("network down");
+  });
 });
 
 describe("optimization", () => {

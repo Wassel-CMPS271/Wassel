@@ -35,6 +35,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -68,6 +69,13 @@ public class GlobalExceptionHandler {
 	public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Malformed request body");
+	}
+
+	// Path and query parameter conversion failures are client errors, not unexpected failures.
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ProblemDetail handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid request parameter");
 	}
 
 	// Same "errors" shape as bean validation so clients can render it against the field.

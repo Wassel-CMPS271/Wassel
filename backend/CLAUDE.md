@@ -197,12 +197,78 @@ that's the structure this codebase moved away from.
   from the Flyway one. Deleting a route deletes its proposal and versions in `RouteService.deleteRoute`
   (there are no foreign keys). Known limit: a manual reorder or student change that commits between
   apply's comparison and its write is overwritten; closing it needs a route-row lock that every
-  stop-changing method also takes. The solve runs inside the propose transaction (at most 2 s).
+  stop-changing method also takes. The solve runs inside the propose transaction (at most 2 s, plus up to the road provider's 3 s timeout when the
+  matrix is not cached).
+  Generate all (SCRUM-207): `RouteGenerationController` under `/api/head-of-transport/routes/generation` (generate, apply,
+  discard) and `RouteGenerationService`, mirroring SCRUM-203 with one proposal per school (`entity/FleetProposal`, table
+  `fleet_proposals`, unique `school_id`; its planned routes are `FleetProposalRoute` rows; migration V5). `collect` reads the
+  school once (active students, routes with their members, vehicles, drivers, arrival time) and both generate and apply use it.
+  A vehicle is planned when it is active and its driver is ACTIVE: the driver of the route it is already on, or else its
+  assigned driver, who must not be on another route. Other active vehicles are `excludedVehicles` with a message, so an INVITED
+  driver is excluded here although `RouteService` accepts one. `generate` is not transactional: it reads and saves in two
+  `TransactionTemplate` transactions around `FleetPlanner.plan`, and a `ConcurrentHashMap` set allows one generation per school
+  at a time (409, this process only). The proposal keeps a fingerprint, four SHA-256 prefixes (students with pins, planned
+  vehicles with capacity and driver, routes with members in order, arrival time). `apply` claims the proposal (a second apply is
+  a 404), recollects, and answers 409 naming the parts that differ (the claim rolls back, so the proposal stays); a student who
+  is gone or inactive by the time they are placed gets the same 409, not the student module's 404. Generate's save deletes the
+  proposal row before its route rows, the order apply and discard use: the other order deadlocked against an apply on PostgreSQL
+  (reproduced by replaying both transactions in two sessions). It updates the
+  route of a planned vehicle (name and driver kept) or creates one (`<plate> morning run`, the vehicle's assigned driver) with
+  `routeRepository.saveAndFlush`, not `RouteService.createRoute`, because that swallows `DataIntegrityViolationException` and a
+  failed flush would poison the surrounding transaction. Then `StudentService.placeOnRoutes` replaces each written route's students
+  (releases them, then positions 1..n, moving a student off any other route) and the answer is `RouteService.listRoutes`. Routes of
+  vehicles that are not planned are left alone. Active students without a pin are `unplaced` with `NO_PIN`, a `RouteOptimizer.Code`
+  only this endpoint produces. There is no undo: apply logs the previous studentId:routeId:position map at INFO. Known limits: a
+  manual edit that commits between apply's comparison and its writes is overwritten (as in 203); single-route proposals are not
+  cleared by an apply (a stale one answers 409 on its own); generating 150 students on 10 vehicles took 13.5 s on straight-line
+  times and applying 0.26 s, and each generate can spend road-provider requests (about one for the fleet, none above 58 students,
+  plus one per route, when uncached). Not checked: the deployed proxy's timeout for a request that long. A planned vehicle
+  that the solver gives no students but whose route has students is listed with no stops and those students in `leaving`, and
+  apply empties that route (`placeOnRoutes` with an empty list). Still not shown: a route of an excluded vehicle that a moved
+  student leaves (the contract's known limit).
 - `routing` — the contracts the route features code against (SCRUM-201) and the solver behind them
   (SCRUM-202). `service/RouteOptimizer` orders one route's stops and `service/TravelTimes` gives a
-  driving-time matrix between points, so the road provider client (SCRUM-204) swaps in without its
+  driving-time matrix between points, so the road provider client (SCRUM-204) plugs in without its
   callers changing. `StraightLineTravelTimes` (30 km/h, rounded up to whole minutes) is the stand-in
-  and the fallback. `OrToolsRouteOptimizer` is the only `RouteOptimizer`: Google OR-Tools
+  and the fallback.
+  Road times (SCRUM-204): `OpenRouteServiceTravelTimes` is the `@Primary` `TravelTimes`; it posts to
+  OpenRouteService's matrix endpoint (`driving-car`, longitude first, seconds rounded up to whole minutes) with
+  the key from `ORS_API_KEY` in the `Authorization` header (never a query parameter, because
+  `RestClientException` messages carry the URL and are logged). A blank key is not an error: the client logs one
+  warning at startup and never calls out, so local runs and CI get straight-line times (the `test` profile blanks
+  it so an exported key can't change test numbers), but `docker-compose.staging.yml` refuses to start without it.
+  Every ordered pair is cached in memory, keyed to 1e-5 degrees (about 1 m; also what is sent), and not persisted:
+  a restart costs the first request per route, and ORS durations don't depend on traffic so nothing expires. When
+  any pair of a request is missing the **whole point set** goes in one request, not only the missing pairs: the
+  free plan (40 a minute, 500 a day, about 3,500 routes so at most 59 points a request) counts requests, and one new
+  stop would otherwise need two, its row and its column. So "each pair is requested at most once" holds as "a route
+  whose pairs are all known never calls the provider". A `null` cell (no route) takes the straight-line value and is
+  cached. It never throws and caches nothing from a failed or malformed answer. If any pair is still unknown after a
+  fetch, the **whole** matrix is straight-line, never road legs mixed with straight-line ones (the mix made the optimizer
+  answer `ARRIVAL_TIME_UNREACHABLE` during an outage), and the provider is left alone for 60 s after a 429, a 5xx or a timeout (a route response waits on this while it
+  holds a database connection, so a dead provider must not cost each request a timeout, hence the 3 s `timeout`),
+  and for 1 h after a 401/403 (quota used up or a wrong key; not told apart on purpose). Any other 4xx, or more than
+  59 distinct points, leaves only that point set alone for an hour, so one pin more than 350 m from a road can't use
+  up the day's quota by being asked about on every page load. Moving the pin changes the set. One lock serialises
+  provider calls, and the cache empties when it passes 100,000 pairs. Known limit: legs are rounded up one by one,
+  so a long route of short legs reads longer than the drive. A route response or propose can wait up to that 3 s
+  timeout on an uncached matrix, behind one lock, while holding its database connection. Checked against the real
+  provider (2026-10-18, a free key): the key is accepted raw in the `Authorization` header, the live test passed with
+  real Beirut road times, and the answer carries more than `durations` (`sources`, `destinations` with
+  `snapped_distance`, `metadata`), which is ignored. Its responses carry `X-Ratelimit-Limit: 50`, `-Remaining` and a
+  `-Reset` 24 hours out, which reads as 50 requests a day for that key, not the 500 the plans page lists: unconfirmed,
+  but it makes the cache and the pauses matter more. One 502 (an HTML gateway page) appeared once and did not repeat,
+  and was handled as a failure. The real answers to a wrong key and to a pin with no road nearby were not checked; the
+  401/403 and other-4xx handling above rests on the provider's documentation and forum reports. Independent tests
+  for this client (SCRUM-215, by Moustafa): `OpenRouteServiceTravelTimesCriteriaTests` and
+  `OpenRouteServiceApiKeyCriteriaTests`, written from the ticket and the `TravelTimes` contract, not from
+  `OpenRouteServiceTravelTimesHttpTests` (Hashem's own suite). Found one narrow gap while reviewing: `fetch()`
+  writes a point set's results to the cache inside the lock, but a caller reads its own just-fetched values back
+  *outside* the lock; a different, concurrently fetched point set that trips the 100,000-pair cache clear in that
+  gap can evict them first, so a fetch that actually succeeded falls back to straight-line for that one call.
+  Needs the cache near its size limit and two different point sets fetched within microseconds of each other, so
+  it is unlikely to matter for one school's worth of routes; flagged on the PR rather than fixed here or given a
+  (necessarily flaky) test. `OrToolsRouteOptimizer` is the only `RouteOptimizer`: Google OR-Tools
   (`ortools-java`, native libraries loaded on the first solve), guided local search seeded with the
   given order (50 ms per stop, capped at 2 s) and never worse than that order. It asks for one
   matrix per route and checks capacity first. `RouteTimings` is the one place the arrival-time rule
@@ -211,7 +277,18 @@ that's the structure this codebase moved away from.
   `RouteTimings.EARLIEST_FIRST_PICKUP` (06:00, a constant while there is one school) or before
   midnight makes a plan `ARRIVAL_TIME_UNREACHABLE`. Run the packaged jar once after upgrading
   `ortools-java`: the natives are extracted at runtime, and a container that mounts `/tmp` as
-  `noexec` fails to load them. Other modules use `routing.service` only, never anything deeper, and `routing` imports
+  `noexec` fails to load them.
+  Fleet planning (SCRUM-206): `FleetPlanner.plan` splits students across vehicles and orders each route; it only
+  proposes (the `routes` module's `RouteGenerationService` saves it, SCRUM-207). One OR-Tools model over one matrix assigns students within each vehicle's seats and a
+  driving time of at most arrival − 06:00, with every student droppable at a penalty larger than any driving, then each
+  route goes back through `RouteOptimizer` on its own matrix. Above 58 students the whole-fleet matrix is straight-line
+  (the road client refuses more than 59 points without spending a request) but each route still gets road times; a route
+  that fails 06:00 on its own times has its students reported `ARRIVAL_TIME_UNREACHABLE` rather than kept. Left-out
+  students are `CAPACITY_EXCEEDED` when there are more students than seats, otherwise `ARRIVAL_TIME_UNREACHABLE`. The
+  caller passes only pinned active students and vehicles that have a driver. The search is time-limited (50 ms a student,
+  at most 5 s, plus up to 2 s a route; 12.5 s measured at 150 students), so answers vary between runs and tests assert
+  rules, not exact splits; don't run it inside a transaction. A solver that finds nothing throws rather than report
+  everyone unplaced. Other modules use `routing.service` only, never anything deeper, and `routing` imports
   no other module: it takes plain `Coordinate`s and ids so it does not depend on the routes
   entities. The JSON shapes, endpoint table and rules are in `docs/contracts/routing.md`, with
   samples in `docs/contracts/samples/routing/`; change them by pull request that tags the owners.

@@ -1,13 +1,26 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { getStudents, setStudentLocation, updateStudentAddress, type Student } from "@/lib/api/students";
+import { getRouteAssignments, type RouteAssignment, type RouteAssignments } from "@/lib/api/routes";
+import {
+  addStudentWithAddress,
+  getStudents,
+  setStudentLocation,
+  updateStudentAddress,
+  type Student,
+} from "@/lib/api/students";
 import StudentsPage from "./page";
 
 vi.mock("@/lib/api/students", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/students")>()),
   getStudents: vi.fn(),
+  addStudentWithAddress: vi.fn(),
   updateStudentAddress: vi.fn(),
   setStudentLocation: vi.fn(),
+}));
+
+vi.mock("@/lib/api/routes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api/routes")>()),
+  getRouteAssignments: vi.fn(),
 }));
 
 vi.mock("next/dynamic", () => ({
@@ -38,10 +51,20 @@ const LINA: Student = {
 };
 const HADI: Student = { ...LINA, id: "st-2", firstName: "Hadi", lastName: "Rizk", latitude: 33.886, longitude: 35.485 };
 
+const HAMRA_ROUTE = { id: "route-1", name: "Hamra morning run" };
+const VERDUN_ROUTE = { id: "route-2", name: "Verdun morning run" };
+const ON_HAMRA: RouteAssignment = { routeId: HAMRA_ROUTE.id, routeName: HAMRA_ROUTE.name };
+
+function routeData(byStudent: [string, RouteAssignment][] = [[HADI.id, ON_HAMRA]]): RouteAssignments {
+  return { routes: [HAMRA_ROUTE, VERDUN_ROUTE], byStudent: new Map(byStudent) };
+}
+
 beforeEach(() => {
   vi.mocked(getStudents).mockReset().mockResolvedValue([LINA, HADI]);
+  vi.mocked(addStudentWithAddress).mockReset();
   vi.mocked(updateStudentAddress).mockReset();
   vi.mocked(setStudentLocation).mockReset();
+  vi.mocked(getRouteAssignments).mockReset().mockResolvedValue(routeData());
 });
 
 afterEach(() => {
@@ -51,6 +74,151 @@ afterEach(() => {
 function row(name: string) {
   return screen.getByText(name).closest("li")!;
 }
+
+it("shows a loading status while the students load", () => {
+  vi.mocked(getStudents).mockReturnValue(new Promise(() => {}));
+  render(<StudentsPage />);
+
+  expect(screen.getByText("Loading students…")).toHaveAttribute("role", "status");
+  expect(screen.queryByRole("list")).not.toBeInTheDocument();
+});
+
+it("shows the empty state when there are no students", async () => {
+  vi.mocked(getStudents).mockResolvedValue([]);
+  render(<StudentsPage />);
+
+  expect(await screen.findByText("No students yet")).toBeInTheDocument();
+  expect(screen.queryByRole("list")).not.toBeInTheDocument();
+});
+
+it("shows an error when the students fail to load", async () => {
+  vi.mocked(getStudents).mockRejectedValue(new Error("down"));
+  render(<StudentsPage />);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load students. Please try again.");
+  expect(screen.queryByRole("list")).not.toBeInTheDocument();
+});
+
+// BUG (SCRUM-223): the alert says "Please try again" but the page has no
+// retry control and never calls getStudents() again; only a full page reload
+// recovers. Same gap as the vehicles and drivers pages. To reproduce: make
+// getStudents() reject once, render StudentsPage, and look for any control
+// that reloads the roster: there is none.
+it.skip("shows an error with a retry when the students fail to load", async () => {
+  vi.mocked(getStudents).mockRejectedValueOnce(new Error("down")).mockResolvedValueOnce([LINA]);
+  render(<StudentsPage />);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load students. Please try again.");
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+  expect(await screen.findByText("Lina Daher")).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(getStudents).toHaveBeenCalledTimes(2);
+});
+
+// NOT BUILT (SCRUM-223), a design observation rather than a bug: search,
+// status and grade filter the roster loaded once on mount, in memory
+// (matchesFilters), and never ask the backend, although getStudents() already
+// takes filters and builds the query string. SCRUM-223's criteria don't
+// require backend filtering, but SCRUM-66 (filter students by route) will.
+it.skip("asks the backend for filtered results instead of filtering the loaded roster in memory", async () => {
+  vi.mocked(getStudents).mockResolvedValueOnce([LINA, HADI]).mockResolvedValueOnce([HADI]);
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+
+  fireEvent.change(screen.getByLabelText("Search"), { target: { value: "Hadi" } });
+
+  await waitFor(() =>
+    expect(getStudents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: "Hadi" }),
+    ),
+  );
+  expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument();
+});
+
+function addStudentThroughTheDialog() {
+  fireEvent.click(screen.getByRole("button", { name: "Add student" }));
+  const dialog = screen.getByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("First name"), { target: { value: "Maya" } });
+  fireEvent.change(within(dialog).getByLabelText("Last name"), { target: { value: "Saad" } });
+  fireEvent.change(within(dialog).getByLabelText("Grade"), { target: { value: "Grade 2" } });
+  fireEvent.change(within(dialog).getByLabelText("Guardian name"), { target: { value: "Nour Saad" } });
+  fireEvent.change(within(dialog).getByLabelText("Guardian phone"), { target: { value: "+961 70 234 567" } });
+  fireEvent.change(within(dialog).getByLabelText("Pickup address"), { target: { value: "Verdun, Beirut" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add student" }));
+}
+
+const MAYA: Student = {
+  ...LINA,
+  id: "st-3",
+  firstName: "Maya",
+  lastName: "Saad",
+  grade: "Grade 2",
+  guardianName: "Nour Saad",
+  guardianPhone: "+961 70 234 567",
+  address: "Verdun, Beirut",
+};
+
+it("adds a student to the roster and confirms the pickup address was saved", async () => {
+  vi.mocked(addStudentWithAddress).mockResolvedValue({ student: MAYA, addressSaved: true });
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+
+  addStudentThroughTheDialog();
+
+  expect(await screen.findByText("Maya Saad")).toBeInTheDocument();
+  expect(addStudentWithAddress).toHaveBeenCalledWith({
+    firstName: "Maya",
+    lastName: "Saad",
+    grade: "Grade 2",
+    guardianName: "Nour Saad",
+    guardianPhone: "+961 70 234 567",
+    address: "Verdun, Beirut",
+  });
+  const toast = await screen.findByText("Maya Saad added with pickup address.");
+  expect(toast.closest('[role="status"]')).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+});
+
+it("says so when the student was created but the address was not saved", async () => {
+  vi.mocked(addStudentWithAddress).mockResolvedValue({ student: { ...MAYA, address: null }, addressSaved: false });
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+
+  addStudentThroughTheDialog();
+
+  expect(await screen.findByText("Maya Saad")).toBeInTheDocument();
+  expect(
+    await screen.findByText(
+      "Maya Saad was created, but the address was not saved. Use Edit pickup details to retry.",
+    ),
+  ).toBeInTheDocument();
+  expect(screen.queryByText("Maya Saad added with pickup address.")).not.toBeInTheDocument();
+});
+
+it("narrows the roster as the user searches, and shows a no-match message", async () => {
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+
+  fireEvent.change(screen.getByLabelText("Search"), { target: { value: "hadi" } });
+  await waitFor(() => expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument());
+  expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText("Search"), { target: { value: "nobody" } });
+  expect(await screen.findByText("No students match your search.")).toBeInTheDocument();
+  expect(screen.queryByText("Hadi Rizk")).not.toBeInTheDocument();
+});
+
+it("filters the roster by status", async () => {
+  vi.mocked(getStudents).mockResolvedValue([LINA, { ...HADI, status: "inactive" }]);
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+
+  fireEvent.click(screen.getByRole("button", { name: "Inactive" }));
+
+  await waitFor(() => expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument());
+  expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
+});
 
 it("flags students without coordinates as needing a pin", async () => {
   render(<StudentsPage />);
@@ -96,4 +264,188 @@ it("keeps the saved address in the list when the pin fails", async () => {
   expect(screen.queryByText("Pickup location updated for Lina Daher.")).not.toBeInTheDocument();
   expect(within(row("Lina Daher")).getByText("Pickup address: Verdun, Beirut")).toBeInTheDocument();
   expect(within(row("Lina Daher")).getByText("Needs pin")).toBeInTheDocument();
+});
+
+// Waits until the roster and the route filter have both loaded.
+async function renderLoaded() {
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+  await waitFor(() => expect(screen.getByLabelText("Route")).toBeEnabled());
+}
+
+it("shows each student's route, or 'No route' when they're on none", async () => {
+  await renderLoaded();
+
+  expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument();
+  expect(within(row("Lina Daher")).getByText("No route")).toBeInTheDocument();
+});
+
+it("loads the routes in one call and offers each one, plus 'All routes' and 'No route'", async () => {
+  await renderLoaded();
+
+  const options = within(screen.getByLabelText("Route")).getAllByRole("option");
+  expect(options.map((o) => o.textContent)).toEqual([
+    "All routes",
+    "No route",
+    "Hamra morning run",
+    "Verdun morning run",
+  ]);
+  expect(getRouteAssignments).toHaveBeenCalledTimes(1);
+});
+
+it("filters the roster by route", async () => {
+  await renderLoaded();
+
+  fireEvent.change(screen.getByLabelText("Route"), { target: { value: HAMRA_ROUTE.id } });
+
+  expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument());
+});
+
+it("filters the roster to students on no route", async () => {
+  await renderLoaded();
+
+  fireEvent.change(screen.getByLabelText("Route"), { target: { value: "none" } });
+
+  expect(screen.getByText("Lina Daher")).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByText("Hadi Rizk")).not.toBeInTheDocument());
+});
+
+it("shows the empty state for a route with no students, and Clear filters resets the route", async () => {
+  await renderLoaded();
+
+  fireEvent.change(screen.getByLabelText("Route"), { target: { value: VERDUN_ROUTE.id } });
+
+  expect(await screen.findByText("No students match your search.")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+
+  expect(await screen.findByText("Lina Daher")).toBeInTheDocument();
+  expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
+  expect(screen.getByLabelText("Route")).toHaveValue("all");
+});
+
+it("combines the route filter with search", async () => {
+  vi.mocked(getStudents).mockResolvedValue([LINA, HADI, { ...HADI, id: "st-3", firstName: "Hana" }]);
+  vi.mocked(getRouteAssignments).mockResolvedValue(routeData([[HADI.id, ON_HAMRA], ["st-3", ON_HAMRA]]));
+  await renderLoaded();
+
+  fireEvent.change(screen.getByLabelText("Route"), { target: { value: HAMRA_ROUTE.id } });
+  expect(screen.getByText("Hana Rizk")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText("Search"), { target: { value: "Hadi" } });
+
+  await waitFor(() => expect(screen.queryByText("Hana Rizk")).not.toBeInTheDocument());
+  expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
+  expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument();
+});
+
+it("keeps the route filter disabled and the rows without a route line while routes load", async () => {
+  vi.mocked(getRouteAssignments).mockReturnValue(new Promise(() => {}));
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+
+  const select = screen.getByLabelText("Route");
+  expect(select).toBeDisabled();
+  expect(select).toHaveAccessibleDescription("Loading routes…");
+  expect(screen.getByText("Loading routes…")).toHaveAttribute("role", "status");
+  expect(within(row("Lina Daher")).queryByText("No route")).not.toBeInTheDocument();
+});
+
+it("says so when there are no routes yet", async () => {
+  vi.mocked(getRouteAssignments).mockResolvedValue({ routes: [], byStudent: new Map() });
+  await renderLoaded();
+
+  expect(screen.getByLabelText("Route")).toHaveAccessibleDescription("No routes yet.");
+  expect(within(row("Lina Daher")).getByText("No route")).toBeInTheDocument();
+});
+
+it("keeps the roster working, announces the failure and offers a retry when routes fail", async () => {
+  vi.mocked(getRouteAssignments).mockRejectedValueOnce(new Error("down"));
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load routes.");
+  const select = screen.getByLabelText("Route");
+  expect(select).toBeDisabled();
+  expect(select).toHaveAccessibleDescription(expect.stringContaining("Couldn't load routes."));
+  // Unknown, not "No route": the data didn't load.
+  expect(within(row("Hadi Rizk")).queryByText("No route")).not.toBeInTheDocument();
+
+  const retry = screen.getByRole("button", { name: "Retry routes" });
+  retry.focus();
+  fireEvent.click(retry);
+
+  await waitFor(() => expect(screen.getByLabelText("Route")).toBeEnabled());
+  expect(screen.getByLabelText("Route")).toHaveFocus();
+  expect(screen.queryByRole("button", { name: "Retry routes" })).not.toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument();
+});
+
+it("keeps focus on Retry and announces again when the retry fails too", async () => {
+  let rejectRetry: (error: Error) => void = () => {};
+  vi.mocked(getRouteAssignments)
+    .mockRejectedValueOnce(new Error("down"))
+    .mockReturnValueOnce(new Promise((_, reject) => { rejectRetry = reject; }));
+  render(<StudentsPage />);
+  await screen.findByRole("alert");
+
+  const retry = screen.getByRole("button", { name: "Retry routes" });
+  retry.focus();
+  fireEvent.click(retry);
+
+  const retrying = await screen.findByRole("button", { name: "Retrying…" });
+  expect(retrying).toBe(retry);
+  expect(retrying).toHaveAttribute("aria-disabled", "true");
+  expect(retrying).toHaveFocus();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.click(retrying);
+  expect(getRouteAssignments).toHaveBeenCalledTimes(2);
+
+  rejectRetry(new Error("still down"));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load routes.");
+  expect(screen.getByRole("button", { name: "Retry routes" })).toHaveFocus();
+});
+
+it("still filters by search, status and grade as before", async () => {
+  vi.mocked(getStudents).mockResolvedValue([
+    LINA,
+    { ...HADI, grade: "Grade 5" },
+    { ...LINA, id: "st-3", firstName: "Maya", lastName: "Saad", status: "inactive", guardianName: "Nadia Saad" },
+  ]);
+  await renderLoaded();
+
+  fireEvent.click(screen.getByRole("button", { name: "Inactive" }));
+  await waitFor(() => expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument());
+  expect(screen.getByText("Maya Saad")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Inactive" })).toHaveAttribute("aria-pressed", "true");
+
+  fireEvent.click(screen.getByRole("button", { name: "All" }));
+  fireEvent.change(screen.getByLabelText("Grade"), { target: { value: "Grade 5" } });
+  await waitFor(() => expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument());
+  expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
+  expect(screen.queryByText("Maya Saad")).not.toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText("Grade"), { target: { value: "all" } });
+  // Search matches the guardian's name too.
+  fireEvent.change(screen.getByLabelText("Search"), { target: { value: "Nadia" } });
+  await waitFor(() => expect(screen.queryByText("Hadi Rizk")).not.toBeInTheDocument());
+  expect(screen.getByText("Maya Saad")).toBeInTheDocument();
+  expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument();
+});
+
+it("still filters by search, status and grade when the routes fail", async () => {
+  vi.mocked(getRouteAssignments).mockRejectedValue(new Error("down"));
+  vi.mocked(getStudents).mockResolvedValue([LINA, { ...HADI, status: "inactive" }]);
+  render(<StudentsPage />);
+  await screen.findByRole("alert");
+
+  fireEvent.click(screen.getByRole("button", { name: "Inactive" }));
+  await waitFor(() => expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument());
+  expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "All" }));
+  fireEvent.change(screen.getByLabelText("Search"), { target: { value: "Lina" } });
+  await waitFor(() => expect(screen.queryByText("Hadi Rizk")).not.toBeInTheDocument());
+  expect(screen.getByText("Lina Daher")).toBeInTheDocument();
 });

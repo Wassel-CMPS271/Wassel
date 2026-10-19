@@ -51,6 +51,9 @@ services:
       # The school's location (routing contract): required, the MVP serves one school.
       SCHOOL_LATITUDE: ${SCHOOL_LATITUDE:?Set SCHOOL_LATITUDE in .env.staging}
       SCHOOL_LONGITUDE: ${SCHOOL_LONGITUDE:?Set SCHOOL_LONGITUDE in .env.staging}
+      # Road travel times (SCRUM-204). Without a key the backend still starts but every route time is a
+      # straight-line estimate, which would pass unnoticed in a demo, so compose insists on it.
+      ORS_API_KEY: ${ORS_API_KEY:?Set ORS_API_KEY in .env.staging}
     depends_on:
       postgres:
         condition: service_healthy

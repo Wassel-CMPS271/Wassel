@@ -25,6 +25,7 @@ interface NavItem {
 
 // Settings has no ticket yet.
 const NAV_ITEMS: NavItem[] = [
+  { label: "Parents", href: "/head-of-transport/parents", enabled: true, Icon: StudentIcon },
   { label: "Vehicles", href: "/head-of-transport/vehicles", enabled: true, Icon: VehicleIcon },
   { label: "Drivers", href: "/head-of-transport/drivers", enabled: true, Icon: DriverIcon },
   { label: "Students", href: "/head-of-transport/students", enabled: true, Icon: StudentIcon },

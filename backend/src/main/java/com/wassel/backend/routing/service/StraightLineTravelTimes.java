@@ -7,12 +7,12 @@ import java.util.List;
 
 /**
  * Stand-in {@link TravelTimes}: great-circle distance at a fixed 30 km/h, rounded up to whole
- * minutes. It lets the solver and the arrival times work before the road provider exists, and it
- * is the fallback when that provider fails. The speed and the rounding are part of the routing
+ * minutes. It is what local and CI runs use (no road provider key), and the fallback when the road
+ * provider fails. The speed and the rounding are part of the routing
  * contract, because sample arrival times and tests depend on them.
  *
- * <p>Only one {@link TravelTimes} bean may be injected. When the road client arrives it uses this
- * class as its fallback and must be {@code @Primary}, otherwise startup fails with two beans.
+ * <p>Only one {@link TravelTimes} bean may be injected. {@link OpenRouteServiceTravelTimes} is the
+ * {@code @Primary} one and uses this class as its fallback; callers get it, not this.
  */
 @Component
 public class StraightLineTravelTimes implements TravelTimes {
