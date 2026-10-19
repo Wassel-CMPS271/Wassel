@@ -112,7 +112,7 @@ The legs are **road driving times from OpenRouteService, each leg rounded up to 
 ### Optimizing
 
 - A route can only be optimized when it has at least one stop, **every stop has a pin**, and the school's arrival time is set. Otherwise the request answers 409 (see [Errors](#errors)): a `detail` for no stops or no school time, and a `detail` naming the students plus `studentIds` for stops without a pin.
-- The optimizer only orders the stops inside one route. It never moves students between routes.
+- The optimizer only orders the stops inside one route. It never moves students between routes. Splitting students across vehicles is the fleet planner's job (see [Fleet planning](#fleet-planning-scrum-206)), and it only proposes.
 - The route is an open path: the first pickup is the start and the school is the end. There is no depot leg.
 - Not being able to find an order is **not an error**. It is a 201 with `feasible: false`, `id: null`, `proposed: null` and `reasons`.
 - A route has at most one pending proposal. **Every propose that answers 201 clears it first**, even when the new answer is not feasible, so an earlier proposal can never be applied after a later one found nothing. A propose rejected with a 409 (no stops, no school arrival time, stops without a pin) changes nothing, so the earlier proposal stays pending.
@@ -127,7 +127,17 @@ Arrival times are worked backwards, so no stop can arrive after the school's arr
 
 ### Capacity
 
-Capacity is checked first. A route with more stops than the vehicle has seats answers `CAPACITY_EXCEEDED` only, without searching, so it never also reports `ARRIVAL_TIME_UNREACHABLE`. No student is ever dropped to make a route fit.
+Capacity is checked first. A route with more stops than the vehicle has seats answers `CAPACITY_EXCEEDED` only, without searching, so it never also reports `ARRIVAL_TIME_UNREACHABLE`. No student is ever dropped to make a route fit. The fleet planner may leave students out, but never silently: each one is reported with a reason.
+
+### Fleet planning (SCRUM-206)
+
+The fleet planner splits a school's students across its vehicles and orders each route. It only proposes; saving the result is the generate-all endpoints' job (SCRUM-207).
+
+- **Input:** the students to place (each with a pin), the vehicles (id and seats), the school and its arrival time. The caller chooses them: only active students with a pin, and only active vehicles with a driver who can drive them, because a route needs both. A vehicle without a driver is not a seat.
+- **Output:** one route per vehicle that got students, each a feasible plan with the same arrival-time rule as above, and the students it could not place, each with a reason. A vehicle with no students gets no route. Every student given is on exactly one route or in the unplaced list.
+- **Rules:** no vehicle carries more students than its seats, and no route's first pickup is before 06:00. Within that, it keeps the total driving time low. It does not balance route lengths.
+- **Unplaced reasons:** `CAPACITY_EXCEEDED` when there are more students than seats in the whole fleet (checked first, as for one route), otherwise `ARRIVAL_TIME_UNREACHABLE`: the student could not be fitted into a route that starts at or after 06:00, or, above 58 students only, was on a route that failed 06:00 once its own road times were known, in which case some of those students might fit on another vehicle (see [Known limits](#known-limits)); the screen should offer to add them by hand. Who is left out when seats run short is whoever costs the most driving to collect, usually the students farthest away; the head of transportation sees the list before anything is saved.
+- It ignores which routes students are on today. Matching the result to existing routes is SCRUM-207's job.
 
 ### Reason codes
 
@@ -189,6 +199,8 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 - **No boarding time.** A stop takes zero minutes, so real pickup windows are a little longer than shown.
 - **The school's location is a configuration value**, not an admin setting, because the MVP serves one school. The `school` object has the final shape, so moving it to a school setting later changes nothing for consumers. The first story that reads it adds the property, and the app should refuse to start without it.
 - **Straight-line times when the road provider is unavailable** (see [Arrival times](#arrival-times)). While the provider is unavailable, a route whose stops changed shows straight-line times for every leg (never a mix of road and straight-line legs), and goes back to road times once the provider answers; a route whose points were all seen before keeps its road times. A change to a route's stops costs one provider request for its whole set of points.
+- **The fleet planner assigns on straight-line times above 58 students.** It asks for one matrix over every student and the school, and the road provider takes at most 59 points a request, so a larger school is split using straight-line times (no request is spent on it). Each route is then ordered again with its own road matrix; a route that turns out to start before 06:00 on road times is dropped and its students are reported `ARRIVAL_TIME_UNREACHABLE`.
+- **The fleet planner's answer can differ between runs.** Its search stops at a time limit (50 ms per student, at most 5 s, plus each route's own ordering), so two runs on the same input may split students differently. Every answer keeps the rules above. Measured on straight-line times: about 1 s for the demo school, 12.5 s for 150 students on 10 vehicles, so a caller shows progress and does not hold a database transaction while it runs.
 - **The solver is a heuristic.** It starts from the order it was given and is never worse than it, and it matched the brute-force best on every small test route, but for large routes it does not prove optimality. `ARRIVAL_TIME_UNREACHABLE` therefore says the best order *found* starts too early.
 
 ## Interfaces (backend)
@@ -197,6 +209,7 @@ In `com.wassel.backend.routing.service`:
 
 - `TravelTimes.matrix(List<Coordinate>)`: square matrix of `Duration`, `[i][j]` is point i to point j in input order, never null, zero on the diagonal, not assumed symmetric. Every entry is a whole number of minutes, rounded up. One call per route, because the road provider is rate limited. `OpenRouteServiceTravelTimes` (SCRUM-204) is the `@Primary` implementation: it asks OpenRouteService, caches every pair, and wraps `StraightLineTravelTimes` as its fallback, because two `TravelTimes` beans stop startup.
 - `RouteOptimizer.optimize(stops, school, capacity, schoolArrivalTime)`: returns a `Plan` with the order, arrival times, total driving time and reasons, which become `proposed` and `reasons`. A plan that is not feasible has reasons, no stops and zero time, and the `Plan` constructor enforces it. `Reason.code` is the `RouteOptimizer.Code` enum, so the codes above cannot be misspelled. The caller checks that stops are non-empty and pinned first. `OrToolsRouteOptimizer` (SCRUM-202) implements it.
+- `FleetPlanner.plan(students, vehicles, school, schoolArrivalTime)` (SCRUM-206): returns a `FleetPlan` of `VehicleRoute(vehicleId, plan)`, each plan feasible and made by `RouteOptimizer`, and `Unplaced(studentId, reason)` using the same `Reason` and codes. One matrix for the assignment, then one per route. If the solver itself fails it throws (the endpoint answers 500); a failure is never reported as unplaced students.
 - `RouteTimings.schedule(...)`: the arrival-time rule, written once. Pass `TravelTimes`, the pinned stops already in order, the school and its arrival time, or a matrix you already hold with a visiting order. It returns `Timing(arrivals, drivingTime, crossesMidnight)` and `startsTooEarly()`. The propose endpoint's `current` (SCRUM-203) and the route's own arrival times (SCRUM-212) must call it instead of redoing the arithmetic. When the first pickup falls before midnight `arrivals` is empty, because a time of day cannot say it: treat `startsTooEarly()` as "no times".
 
 ## Changing this contract
