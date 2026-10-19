@@ -10,6 +10,8 @@ The JSON examples live in [`samples/routing/`](samples/routing). They are the so
 | [`route.json`](samples/routing/route.json) | `Route`, with a stop that has no pin | Verdun morning run | route page, map |
 | [`proposal.json`](samples/routing/proposal.json) | `Proposal`, feasible | Hamra morning run | optimize preview |
 | [`proposal-infeasible.json`](samples/routing/proposal-infeasible.json) | `Proposal`, not feasible (4 students, 3 seats) | Achrafieh morning run | optimize preview |
+| [`fleet-proposal.json`](samples/routing/fleet-proposal.json) | `FleetProposal` with five routes: three update existing routes, one is new, one existing route is emptied (no stops) | all three, plus a new D 456789 run and an emptied Gemmayzeh run | generate-all screen |
+| [`fleet-proposal-nothing.json`](samples/routing/fleet-proposal-nothing.json) | `FleetProposal` with nothing to apply (`id: null`, no seats) | none | generate-all screen |
 
 The school in every sample is the one in `route.json`.
 
@@ -74,6 +76,31 @@ What the optimizer suggests. Making one never changes the route.
 
 `proposed.stops` uses the same `Stop` shape, with `position` renumbered, so the map and the preview need no second request.
 
+### FleetProposal
+
+What generating all routes suggests for the whole school (SCRUM-207). Making one never changes a route or a student.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | uuid or null | the handle for apply and discard. **Null when `routes` is empty**: there is nothing to apply and nothing is saved |
+| `routes` | `PlannedRoute[]` | one per vehicle that got students, plus one with **empty `stops`** for each planned vehicle whose existing route gets none of its students: applying empties that route, and its students are in `leaving` |
+| `unplaced` | `UnplacedStudent[]` | every active student that is on none of `routes`, each with a reason |
+| `excludedVehicles` | `{ vehicle, message }[]` | active vehicles that were not planned because no active driver is free for them: none is assigned, the driver is invited or deactivated, or the assigned driver is already on another route. `vehicle` is `{ id, plateNumber, capacity }`. Show `message` |
+| `school` | `{ latitude, longitude, arrivalTime }` | same as `Route.school`, so the map needs no second request |
+
+`PlannedRoute`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `existingRouteId` | uuid or null | the route this one updates. **Null means applying creates it** |
+| `name` | string | the existing route's name, or `"<plate> morning run"` for a new one |
+| `vehicle`, `driver` | as in `RouteSummary` | an existing route keeps its driver; a new one gets the vehicle's assigned driver |
+| `drivingMinutes` | integer | from the first pickup to the school. 0 when `stops` is empty |
+| `stops` | `Stop[]` | in `position` order, with arrival times, as in `proposed.stops`. Seats used is `stops.length` against `vehicle.capacity`. **Can be empty**: the route is emptied (no line to draw on the map) |
+| `leaving` | `{ studentId, firstName, lastName }[]` | students on the existing route today who will not be on it afterwards (moved to another route, or unplaced). Empty for a new route |
+
+`UnplacedStudent` is `{ studentId, firstName, lastName, address, reason: { code, message } }`.
+
 ## Endpoints
 
 All of Moustafa's rows are confirmed: the request bodies below are what's actually built.
@@ -91,6 +118,9 @@ All of Moustafa's rows are confirmed: the request bodies below are what's actual
 | POST | `/api/head-of-transport/routes/{routeId}/optimization` | none | 201 `Proposal` | Hashem, SCRUM-203 |
 | POST | `/api/head-of-transport/routes/{routeId}/optimization/{proposalId}/apply` | none | 200 `Route` | Hashem, SCRUM-203 |
 | DELETE | `/api/head-of-transport/routes/{routeId}/optimization/{proposalId}` | | 204 | Hashem, SCRUM-203 |
+| POST | `/api/head-of-transport/routes/generation` | none | 201 `FleetProposal` | Hashem, SCRUM-207 |
+| POST | `/api/head-of-transport/routes/generation/{proposalId}/apply` | none | 200 `RouteSummary[]`, the same list as `GET /routes` | Hashem, SCRUM-207 |
+| DELETE | `/api/head-of-transport/routes/generation/{proposalId}` | | 204 | Hashem, SCRUM-207 |
 
 Every route response includes the arrival times, so there is no separate arrival-time endpoint. Assigning, removing and reordering return the whole `Route`, so the screen redraws from one response.
 
@@ -139,12 +169,24 @@ The fleet planner splits a school's students across its vehicles and orders each
 - **Unplaced reasons:** `CAPACITY_EXCEEDED` when there are more students than seats in the whole fleet (checked first, as for one route), otherwise `ARRIVAL_TIME_UNREACHABLE`: the student could not be fitted into a route that starts at or after 06:00, or, above 58 students only, was on a route that failed 06:00 once its own road times were known, in which case some of those students might fit on another vehicle (see [Known limits](#known-limits)); the screen should offer to add them by hand. Who is left out when seats run short is whoever costs the most driving to collect, usually the students farthest away; the head of transportation sees the list before anything is saved.
 - It ignores which routes students are on today. Matching the result to existing routes is SCRUM-207's job.
 
+### Generating all routes (SCRUM-207)
+
+- **Generate** gathers the school's active students and vehicles, asks the fleet planner, and saves the result as the school's one pending proposal. It changes no route and no student. A new generate replaces the pending proposal, so the old id answers 404. It is one request that can take 10 to 20 seconds for a large school, so the screen shows progress until it answers. Only one generation per school runs at a time.
+- **Who is planned:** every active student with a pin. An active student **without a pin** is in `unplaced` with `NO_PIN`. Inactive students are ignored. An active vehicle is planned when its driver is **active** (not invited, not deactivated): the driver of the route it is already on, or, if it has no route, its assigned driver, who must not be on another route. Any other active vehicle is in `excludedVehicles`.
+- **Apply** is one transaction. A planned vehicle that already has a route **updates that route**: it keeps its name and driver, and its students and their order are replaced by the proposal's. A planned vehicle without a route gets a **new route**. A planned vehicle that already has a route but gets no students still updates it: the route is **emptied**, and the proposal lists it with no stops and everyone on it in `leaving`. Routes of vehicles that are not planned are left alone. A student is taken off a route only when the proposal puts them on another one, or when the route is updated and the student is not on it (see `leaving`). Stop positions become a clean `1..n` on every route it writes. It answers with the school's routes as `GET /routes` would.
+- **Apply is refused with 409 if the data changed since the proposal was made**: a student added, deactivated or given a different pin; a vehicle, its capacity or its driver changed; a route created or deleted, its vehicle or driver changed, or its students or their order changed (renaming a route does not count); or the school's arrival time changed. The `detail` says which of these changed, nothing is written, and the proposal stays so it can be discarded. The screen offers to generate again.
+- **Applying the same proposal twice:** the second answers **404**, like apply on a proposal that is gone. Generating and applying again never duplicates a route, because a vehicle's route is matched, not created again.
+- **Discard** drops the proposal and changes nothing. A proposal that is gone answers 404.
+- A pending single-route proposal (SCRUM-203) is left as it is. If apply changed that route's students or order, the single-route apply answers 409 as it does today.
+- There is no undo. Apply logs the previous student-to-route assignment at INFO, which is the only record.
+
 ### Reason codes
 
 | `code` | Meaning |
 |---|---|
 | `CAPACITY_EXCEEDED` | more students on the route than the vehicle has seats |
 | `ARRIVAL_TIME_UNREACHABLE` | the best order found would have to start before the earliest first pickup (06:00), or before midnight, to reach the school on time. See [Earliest first pickup](#earliest-first-pickup) |
+| `NO_PIN` | an active student has no map pin, so generating all routes could not place them (SCRUM-207). Only in `FleetProposal.unplaced` |
 
 More codes may be added later. A client must show `message` for a code it does not know.
 
@@ -191,6 +233,10 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 | Apply on a route that changed since the proposal | 409 | `detail` |
 | Apply or discard a proposal that is gone, replaced, never existed or is on another route | 404 | `detail` |
 | Propose while another propose for the route is in flight | 409 | `detail` |
+| Generate before the school's arrival time is set | 409 | `detail` |
+| Generate while another generate for the school is running | 409 | `detail` |
+| Apply generated routes when the data changed since the proposal was made | 409 | `detail` naming what changed |
+| Apply or discard a generated proposal that is gone, replaced, already applied, never existed or is another school's | 404 | `detail` |
 
 `studentIds` is an extra property, not part of `errors`, because `errors` is for field messages. The current client keeps only `detail`; the stops already say which students have no pin (`latitude: null`), so a screen does not need it.
 
@@ -202,6 +248,9 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 - **Straight-line times when the road provider is unavailable** (see [Arrival times](#arrival-times)). While the provider is unavailable, a route whose stops changed shows straight-line times for every leg (never a mix of road and straight-line legs), and goes back to road times once the provider answers; a route whose points were all seen before keeps its road times. A change to a route's stops costs one provider request for its whole set of points.
 - **The fleet planner assigns on straight-line times above 58 students.** It asks for one matrix over every student and the school, and the road provider takes at most 59 points a request, so a larger school is split using straight-line times (no request is spent on it). Each route is then ordered again with its own road matrix; a route that turns out to start before 06:00 on road times is dropped and its students are reported `ARRIVAL_TIME_UNREACHABLE`.
 - **The fleet planner's answer can differ between runs.** Its search stops at a time limit (50 ms per student, at most 5 s, plus each route's own ordering), so two runs on the same input may split students differently. Every answer keeps the rules above. Measured on straight-line times: about 1 s for the demo school, 12.5 s for 150 students on 10 vehicles, so a caller shows progress and does not hold a database transaction while it runs.
+- **Generating all routes costs road-provider requests.** About one for the whole fleet (none above 58 students) plus one per route, for point sets not seen before. The free key appears to allow about 50 requests a day (unconfirmed), so generating repeatedly on changed data can use the day up; times then fall back to straight-line, as above. Generating the same data again costs nothing once its pairs are cached.
+- **A route of a vehicle that is not planned is not listed.** If the proposal moves one of its students onto a planned route, the student shows up in that route's `stops`, but the route they leave has no `leaving` entry. This only happens when a vehicle with a route lost its driver or its driver became unusable.
+- **Apply can overwrite a change made at the same moment.** The data is compared and written in one transaction, but a manual edit that commits between the comparison and the write is overwritten, the same limit as the single-route apply.
 - **The solver is a heuristic.** It starts from the order it was given and is never worse than it, and it matched the brute-force best on every small test route, but for large routes it does not prove optimality. `ARRIVAL_TIME_UNREACHABLE` therefore says the best order *found* starts too early.
 
 ## Interfaces (backend)
