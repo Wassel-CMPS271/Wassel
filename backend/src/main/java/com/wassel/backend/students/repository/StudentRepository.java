@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +29,8 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
 	boolean existsBySchoolIdAndIdAndRouteId(UUID schoolId, UUID id, UUID routeId);
 
 	List<Student> findBySchoolIdAndRouteIdOrderByStopPositionAsc(UUID schoolId, UUID routeId);
+
+	List<Student> findBySchoolIdAndIdIn(UUID schoolId, Collection<UUID> ids);
 
 	/** Null when the route has no stops yet. The next stop's position is this plus one. */
 	@Query("SELECT MAX(s.stopPosition) FROM Student s WHERE s.schoolId = :schoolId AND s.routeId = :routeId")

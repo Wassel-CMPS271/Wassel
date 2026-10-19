@@ -1,0 +1,27 @@
+{
+  "id": null,
+  "routes": [],
+  "unplaced": [
+    {
+      "studentId": "40000000-0000-4000-8000-000000000001",
+      "firstName": "Rami",
+      "lastName": "Nasr",
+      "address": "Rue Hamra, Beirut",
+      "reason": { "code": "CAPACITY_EXCEEDED", "message": "There are 2 students but the vehicles seat 0." }
+    },
+    {
+      "studentId": "40000000-0000-4000-8000-000000000002",
+      "firstName": "Salma",
+      "lastName": "Khoury",
+      "address": "Clemenceau Street, Beirut",
+      "reason": { "code": "CAPACITY_EXCEEDED", "message": "There are 2 students but the vehicles seat 0." }
+    }
+  ],
+  "excludedVehicles": [
+    {
+      "vehicle": { "id": "20000000-0000-4000-8000-000000000005", "plateNumber": "E 567890", "capacity": 14 },
+      "message": "Vehicle E 567890 has no driver."
+    }
+  ],
+  "school": { "latitude": 33.896, "longitude": 35.484, "arrivalTime": "07:30" }
+}
