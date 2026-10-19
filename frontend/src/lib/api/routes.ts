@@ -12,6 +12,9 @@
 //   POST   /api/head-of-transport/routes/{routeId}/optimization                        -> Proposal (201, SCRUM-203)
 //   POST   /api/head-of-transport/routes/{routeId}/optimization/{proposalId}/apply     -> Route (200, SCRUM-203)
 //   DELETE /api/head-of-transport/routes/{routeId}/optimization/{proposalId}           -> 204 (SCRUM-203)
+//   POST   /api/head-of-transport/routes/generation                        -> FleetProposal (201, SCRUM-207)
+//   POST   /api/head-of-transport/routes/generation/{proposalId}/apply     -> RouteSummary[] (200, SCRUM-207)
+//   DELETE /api/head-of-transport/routes/generation/{proposalId}           -> 204 (SCRUM-207)
 //
 // Adding a student who is already on another route moves them; it is not an
 // error.
@@ -99,6 +102,57 @@ export interface RouteInput {
   driverId: string;
 }
 
+// A student on a route today who will not be on it once the proposal is applied.
+export interface LeavingStudent {
+  studentId: string;
+  firstName: string;
+  lastName: string;
+}
+
+// One route of a FleetProposal: one per vehicle that got students, plus one
+// with empty stops for each planned vehicle whose existing route gets none of
+// its students.
+export interface PlannedRoute {
+  existingRouteId: string | null; // null means applying creates it
+  name: string;
+  vehicle: RouteVehicle;
+  driver: RouteDriver;
+  drivingMinutes: number; // 0 when stops is empty
+  stops: Stop[]; // in position order, with arrival times. Can be empty.
+  leaving: LeavingStudent[];
+}
+
+// More codes may be added: show `message` for a code you don't know.
+export interface UnplacedReason {
+  code: "CAPACITY_EXCEEDED" | "ARRIVAL_TIME_UNREACHABLE" | "NO_PIN" | (string & {});
+  message: string;
+}
+
+// An active student the proposal puts on no route, and why.
+export interface UnplacedStudent {
+  studentId: string;
+  firstName: string;
+  lastName: string;
+  address: string | null;
+  reason: UnplacedReason;
+}
+
+// An active vehicle that was not planned because no active driver is free for it.
+export interface ExcludedVehicle {
+  vehicle: RouteVehicle;
+  message: string;
+}
+
+// What generating all routes suggests for the whole school (SCRUM-207).
+// Making one never changes a route or a student.
+export interface FleetProposal {
+  id: string | null; // the handle for apply and discard. Null when routes is empty.
+  routes: PlannedRoute[];
+  unplaced: UnplacedStudent[];
+  excludedVehicles: ExcludedVehicle[];
+  school: RouteSchool; // same as Route.school, so the map needs no second request
+}
+
 // Where a student who is a stop on some route is riding.
 export interface RouteAssignment {
   routeId: string;
@@ -125,6 +179,9 @@ interface RoutesApi {
   proposeOptimization(routeId: string): Promise<Proposal>;
   applyProposal(routeId: string, proposalId: string): Promise<Route>;
   discardProposal(routeId: string, proposalId: string): Promise<void>;
+  generateRoutes(): Promise<FleetProposal>;
+  applyGeneration(proposalId: string): Promise<RouteSummary[]>;
+  discardGeneration(proposalId: string): Promise<void>;
   unassignedStudents(): Promise<Student[]>;
   routeAssignments(): Promise<RouteAssignments>;
 }
@@ -143,6 +200,12 @@ function studentPath(routeId: string, studentId?: string): string {
 function optimizationPath(routeId: string, proposalId?: string): string {
   const base = `${routePath(routeId)}/optimization`;
   return proposalId === undefined ? base : `${base}/${encodeURIComponent(proposalId)}`;
+}
+
+const GENERATION_PATH = `${ROUTES_PATH}/generation`;
+
+function generationPath(proposalId?: string): string {
+  return proposalId === undefined ? GENERATION_PATH : `${GENERATION_PATH}/${encodeURIComponent(proposalId)}`;
 }
 
 // The active students who are not a stop on any of `routes`. An inactive
@@ -189,6 +252,11 @@ export const httpRoutes: RoutesApi = {
     request<Route>(`${optimizationPath(routeId, proposalId)}/apply`, { method: "POST" }),
   discardProposal: (routeId, proposalId) =>
     request(optimizationPath(routeId, proposalId), { method: "DELETE" }),
+  // Generating can take 10 to 20 seconds for a large school; the caller shows progress.
+  generateRoutes: () => request<FleetProposal>(GENERATION_PATH, { method: "POST" }),
+  applyGeneration: (proposalId) =>
+    request<RouteSummary[]>(`${generationPath(proposalId)}/apply`, { method: "POST" }),
+  discardGeneration: (proposalId) => request(generationPath(proposalId), { method: "DELETE" }),
 
   // WORKAROUND: the backend has no endpoint for this. The real students minus
   // every route's stops. The list has no stops, so this gets every route: one
@@ -254,6 +322,18 @@ export function applyProposal(routeId: string, proposalId: string): Promise<Rout
 
 export function discardProposal(routeId: string, proposalId: string): Promise<void> {
   return api.discardProposal(routeId, proposalId);
+}
+
+export function generateRoutes(): Promise<FleetProposal> {
+  return api.generateRoutes();
+}
+
+export function applyGeneration(proposalId: string): Promise<RouteSummary[]> {
+  return api.applyGeneration(proposalId);
+}
+
+export function discardGeneration(proposalId: string): Promise<void> {
+  return api.discardGeneration(proposalId);
 }
 
 // WORKAROUND: see unassignedStudents above; the backend has no endpoint.

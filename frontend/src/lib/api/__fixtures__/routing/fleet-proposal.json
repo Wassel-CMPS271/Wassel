@@ -1,0 +1,196 @@
+{
+  "id": "60000000-0000-4000-8000-000000000001",
+  "routes": [
+    {
+      "existingRouteId": "10000000-0000-4000-8000-000000000001",
+      "name": "Hamra morning run",
+      "vehicle": { "id": "20000000-0000-4000-8000-000000000001", "plateNumber": "A 123456", "capacity": 14 },
+      "driver": { "id": "30000000-0000-4000-8000-000000000001", "firstName": "Karim", "lastName": "Haddad" },
+      "drivingMinutes": 13,
+      "stops": [
+        {
+          "studentId": "40000000-0000-4000-8000-000000000001",
+          "position": 1,
+          "firstName": "Rami",
+          "lastName": "Nasr",
+          "address": "Rue Hamra, Beirut",
+          "latitude": 33.8995,
+          "longitude": 35.521,
+          "arrivalTime": "07:17"
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000003",
+          "position": 2,
+          "firstName": "Tarek",
+          "lastName": "Mansour",
+          "address": "Bliss Street, Beirut",
+          "latitude": 33.905,
+          "longitude": 35.51,
+          "arrivalTime": "07:20"
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000002",
+          "position": 3,
+          "firstName": "Salma",
+          "lastName": "Khoury",
+          "address": "Clemenceau Street, Beirut",
+          "latitude": 33.887,
+          "longitude": 35.488,
+          "arrivalTime": "07:26"
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000004",
+          "position": 4,
+          "firstName": "Dana",
+          "lastName": "Fares",
+          "address": "Jeanne d'Arc Street, Beirut",
+          "latitude": 33.891,
+          "longitude": 35.48,
+          "arrivalTime": "07:28"
+        }
+      ],
+      "leaving": []
+    },
+    {
+      "existingRouteId": "10000000-0000-4000-8000-000000000002",
+      "name": "Achrafieh morning run",
+      "vehicle": { "id": "20000000-0000-4000-8000-000000000002", "plateNumber": "B 234567", "capacity": 3 },
+      "driver": { "id": "30000000-0000-4000-8000-000000000002", "firstName": "Nadine", "lastName": "Saab" },
+      "drivingMinutes": 11,
+      "stops": [
+        {
+          "studentId": "40000000-0000-4000-8000-000000000006",
+          "position": 1,
+          "firstName": "Elie",
+          "lastName": "Sfeir",
+          "address": "Rue Monot, Beirut",
+          "latitude": 33.893,
+          "longitude": 35.523,
+          "arrivalTime": "07:19"
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000005",
+          "position": 2,
+          "firstName": "Yara",
+          "lastName": "Aoun",
+          "address": "Sursock Street, Beirut",
+          "latitude": 33.889,
+          "longitude": 35.517,
+          "arrivalTime": "07:21"
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000007",
+          "position": 3,
+          "firstName": "Mira",
+          "lastName": "Gemayel",
+          "address": "Rue Gouraud, Beirut",
+          "latitude": 33.885,
+          "longitude": 35.514,
+          "arrivalTime": "07:23"
+        }
+      ],
+      "leaving": [
+        { "studentId": "40000000-0000-4000-8000-000000000008", "firstName": "Nabil", "lastName": "Hayek" }
+      ]
+    },
+    {
+      "existingRouteId": "10000000-0000-4000-8000-000000000003",
+      "name": "Verdun morning run",
+      "vehicle": { "id": "20000000-0000-4000-8000-000000000003", "plateNumber": "C 345678", "capacity": 14 },
+      "driver": { "id": "30000000-0000-4000-8000-000000000003", "firstName": "Walid", "lastName": "Barakat" },
+      "drivingMinutes": 11,
+      "stops": [
+        {
+          "studentId": "40000000-0000-4000-8000-000000000008",
+          "position": 1,
+          "firstName": "Nabil",
+          "lastName": "Hayek",
+          "address": "Rue Alfred Naccache, Beirut",
+          "latitude": 33.896,
+          "longitude": 35.519,
+          "arrivalTime": "07:19"
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000009",
+          "position": 2,
+          "firstName": "Hadi",
+          "lastName": "Rizk",
+          "address": "Verdun Street, Beirut",
+          "latitude": 33.886,
+          "longitude": 35.485,
+          "arrivalTime": "07:26"
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000011",
+          "position": 3,
+          "firstName": "Jad",
+          "lastName": "Salameh",
+          "address": "Madame Curie Street, Beirut",
+          "latitude": 33.892,
+          "longitude": 35.49,
+          "arrivalTime": "07:28"
+        }
+      ],
+      "leaving": [
+        { "studentId": "40000000-0000-4000-8000-000000000010", "firstName": "Lina", "lastName": "Daher" }
+      ]
+    },
+    {
+      "existingRouteId": null,
+      "name": "D 456789 morning run",
+      "vehicle": { "id": "20000000-0000-4000-8000-000000000004", "plateNumber": "D 456789", "capacity": 14 },
+      "driver": { "id": "30000000-0000-4000-8000-000000000004", "firstName": "Rita", "lastName": "Nassar" },
+      "drivingMinutes": 9,
+      "stops": [
+        {
+          "studentId": "40000000-0000-4000-8000-000000000012",
+          "position": 1,
+          "firstName": "Georges",
+          "lastName": "Khalil",
+          "address": "Armenia Street, Beirut",
+          "latitude": 33.8965,
+          "longitude": 35.5265,
+          "arrivalTime": "07:21"
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000013",
+          "position": 2,
+          "firstName": "Nour",
+          "lastName": "Abi Nader",
+          "address": "Mar Mikhael Street, Beirut",
+          "latitude": 33.8975,
+          "longitude": 35.5225,
+          "arrivalTime": "07:22"
+        }
+      ],
+      "leaving": []
+    },
+    {
+      "existingRouteId": "10000000-0000-4000-8000-000000000004",
+      "name": "Gemmayzeh morning run",
+      "vehicle": { "id": "20000000-0000-4000-8000-000000000006", "plateNumber": "F 678901", "capacity": 8 },
+      "driver": { "id": "30000000-0000-4000-8000-000000000006", "firstName": "Joelle", "lastName": "Karam" },
+      "drivingMinutes": 0,
+      "stops": [],
+      "leaving": [
+        { "studentId": "40000000-0000-4000-8000-000000000012", "firstName": "Georges", "lastName": "Khalil" }
+      ]
+    }
+  ],
+  "unplaced": [
+    {
+      "studentId": "40000000-0000-4000-8000-000000000010",
+      "firstName": "Lina",
+      "lastName": "Daher",
+      "address": "Rue Sourati, Beirut",
+      "reason": { "code": "NO_PIN", "message": "This student has no map pin." }
+    }
+  ],
+  "excludedVehicles": [
+    {
+      "vehicle": { "id": "20000000-0000-4000-8000-000000000005", "plateNumber": "E 567890", "capacity": 14 },
+      "message": "Vehicle E 567890 has no driver."
+    }
+  ],
+  "school": { "latitude": 33.896, "longitude": 35.484, "arrivalTime": "07:30" }
+}

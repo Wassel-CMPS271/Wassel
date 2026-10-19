@@ -65,6 +65,16 @@ it("shows the empty state when there are no routes", async () => {
   expect(screen.queryByRole("list")).not.toBeInTheDocument();
 });
 
+it("links to the generate routes page", async () => {
+  vi.mocked(listRoutes).mockResolvedValue([]);
+  render(<RoutesPage />);
+
+  expect(await screen.findByRole("link", { name: "Generate routes" })).toHaveAttribute(
+    "href",
+    "/head-of-transport/routes/generate",
+  );
+});
+
 it("shows an error with a retry when the routes fail to load", async () => {
   vi.mocked(listRoutes).mockRejectedValueOnce(new Error("down")).mockResolvedValueOnce([HAMRA]);
   render(<RoutesPage />);
