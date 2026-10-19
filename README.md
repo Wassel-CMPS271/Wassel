@@ -208,7 +208,7 @@ The backend and its PostgreSQL database run on [Railway](https://railway.com), i
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | the first admin, created on the first start; the email must be an inbox you can open because the sign-in code is emailed there (the password is secret, 10+ characters) |
 | `MAIL_USERNAME`, `MAIL_PASSWORD` | the Gmail address that sends the codes and its app password (secret); see [Email on staging](#email-on-staging) |
 | `SCHOOL_LATITUDE`, `SCHOOL_LONGITUDE` | where every route ends (`33.896`, `35.484`) |
-| `CORS_ALLOWED_ORIGINS`, `FRONTEND_BASE_URL` | both exactly `https://wassel-sooty.vercel.app`, with no trailing slash and `https`, not `http` (the backend compares origins exactly, so anything else gives a 403 on every POST, sign-in included). See [One site for the app and its API](#one-site-for-the-app-and-its-api) |
+| `CORS_ALLOWED_ORIGINS`, `FRONTEND_BASE_URL` | both `https://wassel-sooty.vercel.app`, with no trailing slash (`https`, not `http`: the backend compares the scheme and host of the origin, so a different one gives a 403 on every POST, sign-in included). See [One site for the app and its API](#one-site-for-the-app-and-its-api) |
 | `ORS_API_KEY` | OpenRouteService key for road times (secret). Required, as in `docker-compose.staging.yml`: without it the hosted demo quietly shows straight-line times |
 | `DEMO_DATA_ENABLED`, `DEMO_PASSWORD`, `DEMO_EMAIL_BASE` (optional) | the demo school, see [Demo data](#demo-data) |
 
