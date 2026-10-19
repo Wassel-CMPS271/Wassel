@@ -16,12 +16,16 @@ export class ApiValidationError extends Error {
 // Any other non-2xx answer: the status tells callers what to do (401 means
 // signed out, 429 means wait), and the message is the backend's `detail` when
 // it sent one. A 401 from /api/auth/me has an empty body, so there is a fallback.
+// `studentIds` is the extra property of the optimize 409 for stops without a
+// pin (docs/contracts/routing.md); undefined for every other answer.
 export class ApiError extends Error {
   readonly status: number;
+  readonly studentIds?: string[];
 
-  constructor(status: number, detail?: string) {
+  constructor(status: number, detail?: string, studentIds?: string[]) {
     super(detail || "Request failed");
     this.name = "ApiError";
     this.status = status;
+    this.studentIds = studentIds;
   }
 }

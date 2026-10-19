@@ -195,7 +195,31 @@ describe("request", () => {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(409);
       expect((error as ApiError).message).toBe("Already exists");
+      expect((error as ApiError).studentIds).toBeUndefined();
     }
+  });
+
+  it("keeps the optimize 409's studentIds next to the detail", async () => {
+    mockFetchOnce({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({ detail: "Lina Saad has no pin.", studentIds: ["s-1"] }),
+    });
+
+    try {
+      await request("/api/head-of-transport/routes/r-1/optimization", { method: "POST" });
+      expect.unreachable("expected request() to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).message).toBe("Lina Saad has no pin.");
+      expect((error as ApiError).studentIds).toEqual(["s-1"]);
+    }
+  });
+
+  it("drops a studentIds that isn't a list of strings", async () => {
+    mockFetchOnce({ ok: false, status: 409, json: () => Promise.resolve({ detail: "x", studentIds: [1, 2] }) });
+
+    await expect(request("/api/x", { method: "POST" })).rejects.toMatchObject({ studentIds: undefined });
   });
 
   it("throws ApiError with a fallback message when the error body is empty", async () => {

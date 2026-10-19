@@ -238,7 +238,7 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 | Apply generated routes when the data changed since the proposal was made | 409 | `detail` naming what changed |
 | Apply or discard a generated proposal that is gone, replaced, already applied, never existed or is another school's | 404 | `detail` |
 
-`studentIds` is an extra property, not part of `errors`, because `errors` is for field messages. The current client keeps only `detail`; the stops already say which students have no pin (`latitude: null`), so a screen does not need it.
+`studentIds` is an extra property, not part of `errors`, because `errors` is for field messages. The client keeps it as `ApiError.studentIds` (undefined for every other answer), so the route screen can name the students and link to the Students page.
 
 ## Known limits
 

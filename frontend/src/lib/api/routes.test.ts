@@ -2,7 +2,7 @@
 // calls are checked against the contract's paths, methods and bodies with fetch mocked.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Route, RouteSummary } from "./routes";
+import type { Proposal, Route, RouteSummary } from "./routes";
 
 function student(id: string, firstName: string, pin: boolean, status: "active" | "inactive" = "active") {
   return {
@@ -72,10 +72,45 @@ const ROUTE: Route = {
   ],
 };
 
+const PROPOSAL_ID = "50000000-0000-4000-8000-000000000001";
+
+const FEASIBLE_PROPOSAL: Proposal = {
+  id: PROPOSAL_ID,
+  feasible: true,
+  current: { drivingMinutes: 22, stops: ROUTE.stops },
+  proposed: { drivingMinutes: 13, stops: ROUTE.stops },
+  reasons: [],
+};
+
+const INFEASIBLE_PROPOSAL: Proposal = {
+  id: null,
+  feasible: false,
+  current: { drivingMinutes: 15, stops: ROUTE.stops },
+  proposed: null,
+  reasons: [{ code: "CAPACITY_EXCEEDED", message: "The route has 4 students but the vehicle seats 3." }],
+};
+
 // A fresh copy of the module for each test.
 async function loadRoutes() {
   vi.resetModules();
   return import("./routes");
+}
+
+// loadRoutes() resets the module registry, so an ApiError imported statically
+// at the top of this file would be a different class than the one routes.ts
+// actually throws. Import it from the same fresh registry instead.
+async function loadErrors() {
+  return import("./errors");
+}
+
+function mockFetchError(status: number, detail: string) {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: false,
+    status,
+    json: () => Promise.resolve({ detail }),
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
 }
 
 describe("httpRoutes", () => {
@@ -288,6 +323,125 @@ describe("httpRoutes", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(httpRoutes.routeAssignments()).rejects.toThrow("network down");
+  });
+});
+
+describe("optimization", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  function mockFetchOnce(status: number, body?: unknown) {
+    fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status,
+      json: () => Promise.resolve(body),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("proposes an optimization with a POST to the route's optimization path", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(201, FEASIBLE_PROPOSAL);
+
+    await expect(httpRoutes.proposeOptimization(HAMRA_ID)).resolves.toEqual(FEASIBLE_PROPOSAL);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${ROUTES_URL}/${HAMRA_ID}/optimization`,
+      expect.objectContaining({ method: "POST", body: undefined }),
+    );
+  });
+
+  it("resolves a 201 with feasible: false, id: null and proposed: null when the route can't be planned", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(201, INFEASIBLE_PROPOSAL);
+
+    await expect(httpRoutes.proposeOptimization(HAMRA_ID)).resolves.toEqual(INFEASIBLE_PROPOSAL);
+  });
+
+  it.each([
+    "the route has no stops",
+    "the school's arrival time is not set",
+    "some stops have no pin",
+    "another propose for this route is already in flight",
+  ])("rejects proposing with a 409 when %s", async (detail) => {
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+    mockFetchError(409, detail);
+
+    try {
+      await httpRoutes.proposeOptimization(HAMRA_ID);
+      expect.unreachable("expected proposeOptimization to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(409);
+      expect((error as InstanceType<typeof ApiError>).message).toBe(detail);
+    }
+  });
+
+  it("applies a proposal with a POST to its apply path, encoding both ids", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(200, ROUTE);
+
+    await expect(httpRoutes.applyProposal("a/b", "p/1")).resolves.toEqual(ROUTE);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${ROUTES_URL}/a%2Fb/optimization/p%2F1/apply`,
+      expect.objectContaining({ method: "POST", body: undefined }),
+    );
+  });
+
+  it("rejects applying with a 404 when the proposal is gone, replaced or unknown", async () => {
+    mockFetchError(404, "Proposal not found");
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+
+    try {
+      await httpRoutes.applyProposal(HAMRA_ID, PROPOSAL_ID);
+      expect.unreachable("expected applyProposal to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(404);
+    }
+  });
+
+  it("rejects applying with a 409 when the route's stops changed since the proposal", async () => {
+    mockFetchError(409, "The route has changed since this proposal was made");
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+
+    try {
+      await httpRoutes.applyProposal(HAMRA_ID, PROPOSAL_ID);
+      expect.unreachable("expected applyProposal to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(409);
+    }
+  });
+
+  it("discards a proposal with a DELETE to its path, resolving with undefined on a 204", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(204);
+
+    await expect(httpRoutes.discardProposal("a/b", "p/1")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${ROUTES_URL}/a%2Fb/optimization/p%2F1`,
+      expect.objectContaining({ method: "DELETE", body: undefined }),
+    );
+  });
+
+  it("rejects discarding with a 404 when the proposal is already gone", async () => {
+    mockFetchError(404, "Proposal not found");
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+
+    try {
+      await httpRoutes.discardProposal(HAMRA_ID, PROPOSAL_ID);
+      expect.unreachable("expected discardProposal to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(404);
+    }
   });
 });
 

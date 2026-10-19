@@ -1,8 +1,10 @@
 "use client";
 
 // Drag and drop between the "On this route" and "Not on a route" lists
-// (SCRUM-219). A drop only decides which of the page's add/remove handlers to
-// call; the Add and Remove buttons stay the accessible way to do the same thing.
+// (SCRUM-219), and reordering within "On this route" (SCRUM-221/SCRUM-73). A
+// drop only decides which of the page's add/remove/reorder handlers to call;
+// the Add, Remove and Move up/down buttons stay the accessible way to do the
+// same things.
 
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useReducedMotion } from "framer-motion";
@@ -21,10 +23,11 @@ import {
   type Over,
   type PointerSensorOptions,
   type ScreenReaderInstructions,
+  type UniqueIdentifier,
 } from "@dnd-kit/core";
 import type { Stop } from "@/lib/api/routes";
 import type { UnassignedEntry } from "./UnassignedStudentRow";
-import { GripIcon } from "@/components/ui/icons";
+import { ArrowDownIcon, ArrowUpIcon, GripIcon } from "@/components/ui/icons";
 import { colors, darkTheme, radius, sizing, spacing } from "@/styles/tokens";
 
 export type ListId = "on-route" | "unassigned";
@@ -43,6 +46,11 @@ export function draggableId(studentId: string): string {
   return `student-${studentId}`;
 }
 
+// The inverse of draggableId, for reading which stop a sortable drop landed on.
+export function studentIdFromDraggable(id: UniqueIdentifier): string {
+  return String(id).slice("student-".length);
+}
+
 export function dragData(active: Active | null): StudentDragData | undefined {
   return active?.data.current as StudentDragData | undefined;
 }
@@ -51,8 +59,12 @@ function otherList(list: ListId): ListId {
   return list === "on-route" ? "unassigned" : "on-route";
 }
 
-function overList(over: Over | null): ListId | undefined {
-  return over?.id === "on-route" || over?.id === "unassigned" ? over.id : undefined;
+// "On this route" rows are also sortable drop targets (SCRUM-221), so a drop
+// over one of them lands with that row's own id, not the list's. Only
+// "unassigned" is ever a container id with nothing else droppable inside it.
+export function overList(over: Over | null): ListId | undefined {
+  if (!over) return undefined;
+  return over.id === "unassigned" ? "unassigned" : "on-route";
 }
 
 // PointerSensor for mouse and pen only. A pointerdown goes to the first sensor
@@ -101,7 +113,7 @@ export function useStudentSensors() {
 
 export const screenReaderInstructions: ScreenReaderInstructions = {
   draggable:
-    "To move this student to the other list, press Space or Enter, then use the up and down arrow keys. Press Space or Enter again to drop, or Escape to cancel. The Add and Remove buttons do the same thing.",
+    "To move this student to the other list, press Space or Enter, then use the up and down arrow keys. Press Space or Enter again to drop, or Escape to cancel. The Add and Remove buttons do the same thing. To reorder a stop on this route, use its Move up and Move down buttons instead.",
 };
 
 // `refusal` is why the route list won't take a student right now (vehicle
@@ -109,7 +121,13 @@ export const screenReaderInstructions: ScreenReaderInstructions = {
 export function studentAnnouncements(refusal: string | undefined): Announcements {
   function describeOver(data: StudentDragData, list: ListId | undefined): string {
     if (!list) return `${data.name} is not over a list.`;
-    if (list === data.from) return `${data.name} is back over ${LIST_LABELS[list]}.`;
+    if (list === data.from) {
+      // Moving around inside the list it started in (SCRUM-221): no "back"
+      // wording, since it never left.
+      return data.from === "on-route"
+        ? `${data.name} is over ${LIST_LABELS[list]}.`
+        : `${data.name} is back over ${LIST_LABELS[list]}.`;
+    }
     if (list === "on-route" && refusal) {
       return `${data.name} is over ${LIST_LABELS[list]}. ${refusal} Dropping here won't add them.`;
     }
@@ -129,9 +147,18 @@ export function studentAnnouncements(refusal: string | undefined): Announcements
       const data = dragData(active);
       if (!data) return undefined;
       const list = overList(over);
-      if (!list || list === data.from) return `${data.name} was not moved.`;
-      if (list === "on-route" && refusal) return `${data.name} was not added. ${refusal}`;
-      return `Dropped ${data.name} on ${LIST_LABELS[list]}.`;
+      if (!list) return `${data.name} was not moved.`;
+      if (list !== data.from) {
+        if (list === "on-route" && refusal) return `${data.name} was not added. ${refusal}`;
+        return `Dropped ${data.name} on ${LIST_LABELS[list]}.`;
+      }
+      // Still in the list it started in: a reorder if it landed on another
+      // stop, otherwise (including the list's own empty area, id "on-route",
+      // which handleDragEnd does nothing with) it ends up back where it was.
+      if (data.from === "on-route" && over && active.id !== over.id && over.id !== "on-route") {
+        return `Reordered ${data.name} on ${LIST_LABELS[list]}.`;
+      }
+      return `${data.name} was not moved.`;
     },
     onDragCancel({ active }) {
       const data = dragData(active);
@@ -225,6 +252,44 @@ export function DragHandle({ name, disabled, setActivatorNodeRef, attributes }: 
       }}
     >
       <GripIcon size={16} />
+    </button>
+  );
+}
+
+export type MoveDirection = "up" | "down";
+
+interface MoveButtonProps {
+  studentId: string;
+  name: string;
+  direction: MoveDirection;
+  disabled: boolean;
+  onMove: () => void;
+}
+
+// The keyboard (and pointer) way to reorder a stop one place at a time
+// (SCRUM-221/SCRUM-73), without needing a pointer drag. Absent at the end of
+// the list it would move past, rather than shown disabled, so Tab skips
+// straight over it. The data attributes let the page put focus back on it
+// (or its partner) once the row has moved.
+export function MoveButton({ studentId, name, direction, disabled, onMove }: MoveButtonProps) {
+  const Icon = direction === "up" ? ArrowUpIcon : ArrowDownIcon;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-label={`Move ${name} ${direction}`}
+      data-move-for={studentId}
+      data-move={direction}
+      onClick={onMove}
+      className="inline-flex items-center justify-center shrink-0 rounded-md disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+      style={{
+        width: sizing.tapTarget,
+        height: sizing.tapTarget,
+        color: darkTheme.text.muted,
+        outlineColor: darkTheme.interactive.focusRing,
+      }}
+    >
+      <Icon size={16} />
     </button>
   );
 }
