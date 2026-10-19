@@ -6,12 +6,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card } from "@/components/ui/Card";
+import { StudentParentForm } from "./StudentParentForm";
 import { MapView, type Coordinates } from "@/components/map/MapView";
 import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import type { Student } from "@/lib/api/students";
 import { colors, darkTheme, sizing, spacing } from "@/styles/tokens";
 
 interface Props {
+  onLinked?: (student: Student) => void;
   student: Student;
   onSave: (studentId: string, address: string) => Promise<void>;
   onSaveLocation: (studentId: string, latitude: number, longitude: number) => Promise<void>;
@@ -56,9 +58,10 @@ function locationErrorMessage(err: unknown): string {
 }
 
 const FOCUSABLE =
-  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+  'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex="-1"])';
 
-export function EditStudentAddressForm({ student, onSave, onSaveLocation }: Props) {
+export function EditStudentAddressForm({ student, onSave, onSaveLocation, onLinked }: Props) {
+  const [savingParent, setSavingParent] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [address, setAddress] = useState(student.address ?? "");
   const [pin, setPin] = useState<Coordinates | null>(() => pinFromStudent(student));
@@ -113,7 +116,7 @@ export function EditStudentAddressForm({ student, onSave, onSaveLocation }: Prop
   // only retries the pin.
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSaving) return;
+    if (isSaving || savingParent) return;
     const trimmed = address.trim();
     if (!trimmed) {
       setErrors({ address: "Pickup address is required." });
@@ -162,7 +165,7 @@ export function EditStudentAddressForm({ student, onSave, onSaveLocation }: Prop
   function handleKeys(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
-      if (!isSaving) close();
+      if (!isSaving && !savingParent) close();
       return;
     }
     if (event.key !== "Tab") return;
@@ -248,10 +251,11 @@ export function EditStudentAddressForm({ student, onSave, onSaveLocation }: Prop
                     </p>
                   )}
                   <div className="flex flex-wrap" style={{ gap: spacing.sm, marginTop: spacing.lg }}>
-                    <Button ref={submitRef} type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save"}</Button>
-                    <Button type="button" variant="ghost" onClick={close} disabled={isSaving}>Cancel</Button>
+                    <Button ref={submitRef} type="submit" disabled={isSaving || savingParent}>{isSaving ? "Saving..." : "Save"}</Button>
+                    <Button type="button" variant="ghost" onClick={close} disabled={isSaving || savingParent}>Cancel</Button>
                   </div>
                 </form>
+                {onLinked && <fieldset disabled={isSaving}><StudentParentForm student={student} onLinked={onLinked} onBusyChange={setSavingParent} /></fieldset>}
               </Card>
             </motion.div>
           </motion.div>

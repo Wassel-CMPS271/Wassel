@@ -260,6 +260,10 @@ export default function StudentsPage() {
                   <StudentListItem
                     key={student.id}
                     student={student}
+                    onLinked={(updated) => {
+                      setStudents(prev => prev.map(item => item.id === updated.id ? updated : item));
+                      pushToast(`Parent updated for ${updated.firstName} ${updated.lastName}.`);
+                    }}
                     onUpdateAddress={handleUpdateAddress}
                     onUpdateLocation={handleUpdateLocation}
                   />

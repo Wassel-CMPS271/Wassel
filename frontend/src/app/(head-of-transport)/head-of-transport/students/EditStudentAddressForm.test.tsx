@@ -28,6 +28,7 @@ vi.mock("next/dynamic", () => ({
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 const UNPINNED: Student = {
@@ -46,6 +47,25 @@ const UNPINNED: Student = {
   createdAt: "",
 };
 const PINNED: Student = { ...UNPINNED, latitude: 33.8961, longitude: 35.4823 };
+
+it("includes parent linking in the existing editor without saving pickup details", async () => {
+  const parent = { id: "p1", email: "parent@example.com", status: "active", createdAt: "" };
+  const updated = { ...PINNED, parentUserId: parent.id };
+  const fetch = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify([parent])))
+    .mockResolvedValueOnce(new Response(JSON.stringify(updated)));
+  vi.stubGlobal("fetch", fetch);
+  const onLinked = vi.fn();
+  const { props } = setup(PINNED, { onLinked });
+  await screen.findByLabelText("Parent");
+  fireEvent.change(screen.getByLabelText("Parent"), { target: { value: parent.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Save parent" }));
+  await screen.findByText("Parent relationship saved.");
+  expect(onLinked).toHaveBeenCalledWith(updated);
+  expect(props.onSave).not.toHaveBeenCalled();
+  expect(props.onSaveLocation).not.toHaveBeenCalled();
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+});
 
 function setup(student: Student, overrides: Partial<Parameters<typeof EditStudentAddressForm>[0]> = {}) {
   const onSave = vi.fn().mockResolvedValue(undefined);

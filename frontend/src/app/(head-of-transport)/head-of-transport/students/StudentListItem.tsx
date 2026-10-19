@@ -6,6 +6,7 @@ import { EditStudentAddressForm } from "./EditStudentAddressForm";
 import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
 
 interface StudentListItemProps {
+  onLinked?: (student: Student) => void;
   student: Student;
   onUpdateAddress: (id: string, address: string) => Promise<void>;
   onUpdateLocation: (id: string, latitude: number, longitude: number) => Promise<void>;
@@ -15,7 +16,7 @@ const GLOW_REST = "0 0 0px 0px rgba(18, 183, 106, 0)";
 const GLOW_PEAK = "0 0 12px 4px rgba(18, 183, 106, 0.55)";
 const GLOW_STATIC = "0 0 8px 2px rgba(18, 183, 106, 0.45)";
 
-export function StudentListItem({ student, onUpdateAddress, onUpdateLocation }: StudentListItemProps) {
+export function StudentListItem({ student, onUpdateAddress, onUpdateLocation, onLinked }: StudentListItemProps) {
   const prefersReducedMotion = useReducedMotion();
   const isActive = student.status === "active";
 
@@ -48,6 +49,9 @@ export function StudentListItem({ student, onUpdateAddress, onUpdateLocation }: 
         </span>
         <span className="text-sm" style={{ color: darkTheme.text.secondary }}>
           Pickup address: {student.address || "Not set"}
+        </span>
+        <span className="text-sm break-all" style={{ color: darkTheme.text.secondary }}>
+          Parent account: {student.parentUserId ? "Linked" : "Not assigned"}. Manage in Edit pickup details.
         </span>
         {(student.latitude == null || student.longitude == null) && (
           // Not role="alert": every unpinned row would be announced on load.
@@ -91,7 +95,7 @@ export function StudentListItem({ student, onUpdateAddress, onUpdateLocation }: 
           </span>
         </div>
 
-        <EditStudentAddressForm student={student} onSave={onUpdateAddress} onSaveLocation={onUpdateLocation} />
+        <EditStudentAddressForm student={student} onSave={onUpdateAddress} onSaveLocation={onUpdateLocation} onLinked={onLinked} />
         <span aria-disabled="true" className="text-xs" style={{ color: darkTheme.text.muted }}>Other edits and status changes coming soon</span>
       </div>
     </motion.li>
