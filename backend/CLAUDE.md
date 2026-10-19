@@ -225,7 +225,13 @@ that's the structure this codebase moved away from.
   plus one per route, when uncached). Not checked: the deployed proxy's timeout for a request that long. A planned vehicle
   that the solver gives no students but whose route has students is listed with no stops and those students in `leaving`, and
   apply empties that route (`placeOnRoutes` with an empty list). Still not shown: a route of an excluded vehicle that a moved
-  student leaves (the contract's known limit).
+  student leaves (the contract's known limit). Independent tests (SCRUM-216, by Moustafa):
+  `RouteGenerationCriteriaTests`, written from the ticket, not from `RouteGenerationControllerTests` or
+  `FleetPlannerTests` (the author's own suites for this and SCRUM-206). Besides re-checking the AC's four rules through
+  a fresh set of scenarios, it adds coverage neither existing suite had: two `generate` calls for the same school at
+  once, which the service already guards against (a `ConcurrentHashMap` key per school) but nothing exercised — the
+  second now reliably gets 409 while the first is still solving a 60-student fleet, and the guard releases correctly
+  once it finishes.
 - `routing` — the contracts the route features code against (SCRUM-201) and the solver behind them
   (SCRUM-202). `service/RouteOptimizer` orders one route's stops and `service/TravelTimes` gives a
   driving-time matrix between points, so the road provider client (SCRUM-204) plugs in without its
