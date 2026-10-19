@@ -228,6 +228,37 @@ public class StudentService {
 		}
 	}
 
+	/**
+	 * Sets, for each route, exactly these students in this order (positions 1..n): everyone now on
+	 * those routes is released first, then each listed student is placed, which also moves a
+	 * student off any other route. For the routes module's generate-all apply (SCRUM-207), so unlike
+	 * {@link #reorderRoute} it can change who is on a route, and unlike {@link #assignToRoute} it
+	 * loads the students in one query. Every student must exist in this school and be active.
+	 */
+	@Transactional
+	public void placeOnRoutes(UUID schoolId, Map<UUID, List<UUID>> studentsByRoute) {
+		studentsByRoute.keySet().forEach(routeId -> clearRoute(schoolId, routeId));
+		Set<UUID> ids = studentsByRoute.values().stream().flatMap(List::stream).collect(Collectors.toSet());
+		if (ids.isEmpty()) {
+			return;
+		}
+		Map<UUID, Student> byId = studentRepository.findBySchoolIdAndIdIn(schoolId, ids).stream()
+				.collect(Collectors.toMap(Student::getId, student -> student));
+		studentsByRoute.forEach((routeId, order) -> {
+			for (int i = 0; i < order.size(); i++) {
+				Student student = byId.get(order.get(i));
+				if (student == null) {
+					throw new StudentNotFoundException(NOT_FOUND_MESSAGE);
+				}
+				if (student.getStatus() != StudentStatus.ACTIVE) {
+					throw new StudentNotActiveException(NOT_ACTIVE_MESSAGE);
+				}
+				student.setRouteId(routeId);
+				student.setStopPosition(i + 1);
+			}
+		});
+	}
+
 	/** The route's stops, in position order, for the routes module to build its {@code Stop} shape. */
 	@Transactional(readOnly = true)
 	public List<StudentResponse> listOnRoute(UUID schoolId, UUID routeId) {
