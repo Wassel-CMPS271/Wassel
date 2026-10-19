@@ -71,12 +71,11 @@ public class GlobalExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Malformed request body");
 	}
 
-	// A path or query value of the wrong type, e.g. an id that is not a UUID. Without this the
-	// catch-all below would turn a client mistake into a 500. The bad value is not echoed back.
+	// Path and query parameter conversion failures are client errors, not unexpected failures.
 	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
 	public ProblemDetail handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
 		logRejected(ex);
-		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid value for '%s'.".formatted(ex.getName()));
+		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid request parameter");
 	}
 
 	// Same "errors" shape as bean validation so clients can render it against the field.

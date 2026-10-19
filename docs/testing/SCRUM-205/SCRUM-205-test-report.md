@@ -18,8 +18,8 @@ rounded up); expected times are worked out by hand from the contract sample.
 | `RouteContractTests` against the current code | 22 passed, 0 failed |
 | Full `mvn -B clean verify` (before A and B were added) | 428 run, 0 failed, 1 skipped (live OpenRouteService test, needs a key) |
 
-The 22 passing tests found no defect. Further tests reproduced bugs A and B and F (red), and their
-fixes are in this PR with those tests (green). E was fixed after a real-PostgreSQL run. **Limit of all of this:** the tests run on H2,
+The 22 passing tests found no defect. Further tests reproduced bugs A, B and F (red). The fixes for A and B are in this PR with those
+tests (green); F was fixed on `develop` by SCRUM-228 in the meantime, and its test here is green. E was fixed after a real-PostgreSQL run. **Limit of all of this:** the tests run on H2,
 so they say nothing about concurrency or PostgreSQL transaction behaviour (finding E was found only
 by running against a real PostgreSQL).
 
@@ -91,7 +91,7 @@ decision, D and G are one locking ticket, E needs a fix, F is a separate small P
 | C | Editing a route onto a vehicle smaller than its students is allowed (negative `seatsLeft`). | **Contract decision, no test.** The contract already allows negative `seatsLeft` (the vehicles endpoint can lower capacity), so blocking only `editRoute` would be inconsistent. Proposed contract sentence: "Editing a route onto a smaller vehicle is allowed; `seatsLeft` goes negative and the screen warns." |
 | D | Two concurrent adds to the last seat can both pass (check then write, no lock). | Reported, no test (flaky on H2). One ticket with G: a write lock on the route row taken by every stop-changing method. It also closes the apply race the code already documents. |
 | E | After a unique-constraint race, `createRoute` and `editRoute` re-query in the same transaction. | **Confirmed on real PostgreSQL 16** (throwaway container, temporary test, since deleted): two simultaneous creates with the same vehicle gave `[201, 500]` in 30 of 30 rounds, never `[201, 409]`. The app log shows `duplicate key value violates unique constraint`, then `current transaction is aborted, commands ignored until end of transaction block`, then `Unhandled exception`. Every race on a duplicate vehicle or driver is a 500. **Fixed in this PR** (`RouteService`, +16/-7): no query after the violation; the failed constraint's name picks `vehicleId` or `driverId`. Re-run on the same PostgreSQL: 30 of 30 races now `[201, 409]` with the right field. The race message no longer names the other route. No permanent test is possible on H2, which does not abort the transaction. |
-| F | `GET /routes/not-a-uuid` answered 500: the catch-all `Exception` handler swallowed Spring's 400. Affects every endpoint. | **Fixed in this PR** (9-line handler in `common` plus `MalformedPathVariableTests`, red 500 then green 400). It is shared code, so the `common` owners should be tagged on the PR. |
+| F | `GET /routes/not-a-uuid` answered 500: the catch-all `Exception` handler swallowed Spring's 400. Affects every endpoint. | **Fixed on `develop` by SCRUM-228 (#71)**, which landed the same `MethodArgumentTypeMismatchException` handler while this PR was open. This PR's own handler was dropped when `develop` was merged in; `MalformedPathVariableTests` stays (red 500 before either fix, green 400 now) and covers `GET /routes/{id}`, which SCRUM-228's tests don't. |
 | G | `ORDER BY stop_position` has no tiebreaker, so tied positions give an unstable order. | Only reachable through the race in D. Goes away with the D lock. |
 
 ## Follow-ups suggested

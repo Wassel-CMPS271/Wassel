@@ -232,7 +232,16 @@ that's the structure this codebase moved away from.
   `-Reset` 24 hours out, which reads as 50 requests a day for that key, not the 500 the plans page lists: unconfirmed,
   but it makes the cache and the pauses matter more. One 502 (an HTML gateway page) appeared once and did not repeat,
   and was handled as a failure. The real answers to a wrong key and to a pin with no road nearby were not checked; the
-  401/403 and other-4xx handling above rests on the provider's documentation and forum reports. `OrToolsRouteOptimizer` is the only `RouteOptimizer`: Google OR-Tools
+  401/403 and other-4xx handling above rests on the provider's documentation and forum reports. Independent tests
+  for this client (SCRUM-215, by Moustafa): `OpenRouteServiceTravelTimesCriteriaTests` and
+  `OpenRouteServiceApiKeyCriteriaTests`, written from the ticket and the `TravelTimes` contract, not from
+  `OpenRouteServiceTravelTimesHttpTests` (Hashem's own suite). Found one narrow gap while reviewing: `fetch()`
+  writes a point set's results to the cache inside the lock, but a caller reads its own just-fetched values back
+  *outside* the lock; a different, concurrently fetched point set that trips the 100,000-pair cache clear in that
+  gap can evict them first, so a fetch that actually succeeded falls back to straight-line for that one call.
+  Needs the cache near its size limit and two different point sets fetched within microseconds of each other, so
+  it is unlikely to matter for one school's worth of routes; flagged on the PR rather than fixed here or given a
+  (necessarily flaky) test. `OrToolsRouteOptimizer` is the only `RouteOptimizer`: Google OR-Tools
   (`ortools-java`, native libraries loaded on the first solve), guided local search seeded with the
   given order (50 ms per stop, capped at 2 s) and never worse than that order. It asks for one
   matrix per route and checks capacity first. `RouteTimings` is the one place the arrival-time rule
@@ -241,7 +250,18 @@ that's the structure this codebase moved away from.
   `RouteTimings.EARLIEST_FIRST_PICKUP` (06:00, a constant while there is one school) or before
   midnight makes a plan `ARRIVAL_TIME_UNREACHABLE`. Run the packaged jar once after upgrading
   `ortools-java`: the natives are extracted at runtime, and a container that mounts `/tmp` as
-  `noexec` fails to load them. Other modules use `routing.service` only, never anything deeper, and `routing` imports
+  `noexec` fails to load them.
+  Fleet planning (SCRUM-206): `FleetPlanner.plan` splits students across vehicles and orders each route; it only
+  proposes (saving is SCRUM-207). One OR-Tools model over one matrix assigns students within each vehicle's seats and a
+  driving time of at most arrival − 06:00, with every student droppable at a penalty larger than any driving, then each
+  route goes back through `RouteOptimizer` on its own matrix. Above 58 students the whole-fleet matrix is straight-line
+  (the road client refuses more than 59 points without spending a request) but each route still gets road times; a route
+  that fails 06:00 on its own times has its students reported `ARRIVAL_TIME_UNREACHABLE` rather than kept. Left-out
+  students are `CAPACITY_EXCEEDED` when there are more students than seats, otherwise `ARRIVAL_TIME_UNREACHABLE`. The
+  caller passes only pinned active students and vehicles that have a driver. The search is time-limited (50 ms a student,
+  at most 5 s, plus up to 2 s a route; 12.5 s measured at 150 students), so answers vary between runs and tests assert
+  rules, not exact splits; don't run it inside a transaction. A solver that finds nothing throws rather than report
+  everyone unplaced. Other modules use `routing.service` only, never anything deeper, and `routing` imports
   no other module: it takes plain `Coordinate`s and ids so it does not depend on the routes
   entities. The JSON shapes, endpoint table and rules are in `docs/contracts/routing.md`, with
   samples in `docs/contracts/samples/routing/`; change them by pull request that tags the owners.

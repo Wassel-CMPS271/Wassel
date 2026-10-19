@@ -37,6 +37,6 @@ class MalformedPathVariableTests {
 						.with(authentication(new UsernamePasswordAuthenticationToken(head, null,
 								List.of(new SimpleGrantedAuthority("ROLE_HEAD_OF_TRANSPORT"))))))
 				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.detail").value("Invalid value for 'id'."));
+				.andExpect(jsonPath("$.detail").value("Invalid request parameter"));
 	}
 }
