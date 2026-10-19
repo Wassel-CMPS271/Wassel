@@ -183,6 +183,22 @@ children), and school times of 08:00 arrival and 14:30 dismissal.
   (Gmail does, for example `you@gmail.com` makes `you+head@gmail.com`), and every demo account's code
   arrives there. The admin account is the one from `ADMIN_EMAIL` as before.
 
+## Hosted frontend (Vercel)
+
+The frontend runs on [Vercel](https://vercel.com).
+
+- **URL:** https://wassel-sooty.vercel.app (the landing page and `/login`).
+- **How it deploys:** the Vercel project `wassel` is connected to this repo with the root directory `frontend`. Every push to the production branch creates a production deployment, and every other branch and pull request gets a preview deployment. The production branch is `develop` while Sprint 2 is in progress and switches to `main` at the release, because `main` is still the Sprint 1 code. Change it under Project Settings, Environments, Production, "Branch Tracking".
+- **Settings live in Vercel, never in git** (Project Settings, Environment Variables, for Production and Preview). They are read when the app is built, so changing one needs a redeploy:
+
+| Variable | Value |
+| -------- | ----- |
+| `NEXT_PUBLIC_API_BASE_URL` | empty, so the browser calls the app's own origin |
+| `BACKEND_URL` | the hosted backend, https://wassel-production.up.railway.app (see [Hosted backend (Railway)](#hosted-backend-railway)) |
+
+- **Both halves must know each other's address.** The backend's `CORS_ALLOWED_ORIGINS` and `FRONTEND_BASE_URL` on Railway must be this site's address, otherwise sign-in is refused with a 403. If the Vercel address ever changes (a custom domain, say), update both there; see [One site for the app and its API](#one-site-for-the-app-and-its-api).
+- Preview deployments get their own address, which the backend does not allow, so sign-in only works on the production URL.
+
 ## Logs
 
 The staging stack collects every container's logs into one place (Loki), searchable in Grafana.
