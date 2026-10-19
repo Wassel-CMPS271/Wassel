@@ -18,6 +18,8 @@ import com.wassel.backend.vehicles.entity.Vehicle;
 import com.wassel.backend.vehicles.repository.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -27,6 +29,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -770,6 +773,39 @@ class RouteControllerTests {
 			Object proposalId) throws Exception {
 		return mockMvc.perform(delete(URL + "/" + routeId + "/optimization/" + proposalId)
 				.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolId)));
+	}
+
+	@ParameterizedTest
+	@CsvSource({
+			"propose, not-a-uuid, valid, id",
+			"apply, not-a-uuid, valid, id",
+			"apply, valid, not-a-uuid, proposalId",
+			"discard, not-a-uuid, valid, id",
+			"discard, valid, not-a-uuid, proposalId"
+	})
+	void malformedOptimizationUuidReturnsSafeBadRequest(String action, String routeId, String proposalId,
+			String parameter) throws Exception {
+		String validId = UUID.randomUUID().toString();
+		routeId = routeId.equals("valid") ? validId : routeId;
+		proposalId = proposalId.equals("valid") ? validId : proposalId;
+		var response = switch (action) {
+			case "propose" -> proposeAs(schoolA, routeId);
+			case "apply" -> applyAs(schoolA, routeId, proposalId);
+			case "discard" -> discardAs(schoolA, routeId, proposalId);
+			default -> throw new IllegalArgumentException(action);
+		};
+		response.andExpect(result -> {
+			assertTrue(result.getResolvedException() instanceof MethodArgumentTypeMismatchException);
+			var exception = (MethodArgumentTypeMismatchException) result.getResolvedException();
+			assertEquals(UUID.class, exception.getRequiredType());
+			assertEquals(parameter, exception.getName());
+		})
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.status").value(400))
+				.andExpect(jsonPath("$.title").value("Bad Request"))
+				.andExpect(jsonPath("$.detail").value("Invalid request parameter"))
+				.andExpect(jsonPath("$.exception").doesNotExist())
+				.andExpect(jsonPath("$.trace").doesNotExist());
 	}
 
 	private List<String> stopIdsOf(String routeId) throws Exception {
