@@ -155,6 +155,9 @@ public class StudentService {
 		if (student.getStatus() != StudentStatus.ACTIVE) {
 			throw new StudentNotActiveException(NOT_ACTIVE_MESSAGE);
 		}
+		if (routeId.equals(student.getRouteId())) {
+			return; // already a stop on this route: keep their place, don't move them to the end
+		}
 		Integer maxPosition = studentRepository.findMaxStopPosition(schoolId, routeId);
 		student.setRouteId(routeId);
 		student.setStopPosition((maxPosition == null ? 0 : maxPosition) + 1);
