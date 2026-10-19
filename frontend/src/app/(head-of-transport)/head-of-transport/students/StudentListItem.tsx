@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
+import type { RouteAssignment } from "@/lib/api/routes";
 import type { Student } from "@/lib/api/students";
 import { EditStudentAddressForm } from "./EditStudentAddressForm";
 import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
@@ -8,6 +9,9 @@ import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
 interface StudentListItemProps {
   onLinked?: (student: Student) => void;
   student: Student;
+  // null: on no route. undefined: the routes haven't loaded, so the row says
+  // nothing rather than a wrong "No route".
+  routeAssignment?: RouteAssignment | null;
   onUpdateAddress: (id: string, address: string) => Promise<void>;
   onUpdateLocation: (id: string, latitude: number, longitude: number) => Promise<void>;
 }
@@ -16,7 +20,7 @@ const GLOW_REST = "0 0 0px 0px rgba(18, 183, 106, 0)";
 const GLOW_PEAK = "0 0 12px 4px rgba(18, 183, 106, 0.55)";
 const GLOW_STATIC = "0 0 8px 2px rgba(18, 183, 106, 0.45)";
 
-export function StudentListItem({ student, onUpdateAddress, onUpdateLocation, onLinked }: StudentListItemProps) {
+export function StudentListItem({ student, routeAssignment, onUpdateAddress, onUpdateLocation, onLinked }: StudentListItemProps) {
   const prefersReducedMotion = useReducedMotion();
   const isActive = student.status === "active";
 
@@ -50,6 +54,11 @@ export function StudentListItem({ student, onUpdateAddress, onUpdateLocation, on
         <span className="text-sm" style={{ color: darkTheme.text.secondary }}>
           Pickup address: {student.address || "Not set"}
         </span>
+        {routeAssignment !== undefined && (
+          <span className="text-sm break-words" style={{ color: darkTheme.text.secondary }}>
+            {routeAssignment ? `Route: ${routeAssignment.routeName}` : "No route"}
+          </span>
+        )}
         <span className="text-sm break-all" style={{ color: darkTheme.text.secondary }}>
           Parent account: {student.parentUserId ? "Linked" : "Not assigned"}. Manage in Edit pickup details.
         </span>

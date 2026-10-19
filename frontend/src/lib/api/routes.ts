@@ -14,7 +14,8 @@
 // error.
 //
 // WORKAROUND: the contract has no endpoint for the students who are on no
-// route, so listUnassignedStudents() works it out on the client.
+// route, or for which route a student is on, so listUnassignedStudents() and
+// getRouteAssignments() work it out on the client (SCRUM-66).
 
 import { request } from "./client";
 import { getStudents, type Student } from "./students";
@@ -95,6 +96,20 @@ export interface RouteInput {
   driverId: string;
 }
 
+// Where a student who is a stop on some route is riding.
+export interface RouteAssignment {
+  routeId: string;
+  routeName: string;
+}
+
+// Every route (in the order list() returns them) and, for each student who is
+// a stop on one, which route that is. A student missing from byStudent is on
+// no route.
+export interface RouteAssignments {
+  routes: { id: string; name: string }[];
+  byStudent: Map<string, RouteAssignment>;
+}
+
 interface RoutesApi {
   list(): Promise<RouteSummary[]>;
   get(routeId: string): Promise<Route>;
@@ -105,6 +120,7 @@ interface RoutesApi {
   removeStudent(routeId: string, studentId: string): Promise<Route>;
   reorderStops(routeId: string, studentIds: string[]): Promise<Route>;
   unassignedStudents(): Promise<Student[]>;
+  routeAssignments(): Promise<RouteAssignments>;
 }
 
 const ROUTES_PATH = "/api/head-of-transport/routes";
@@ -123,6 +139,24 @@ function studentPath(routeId: string, studentId?: string): string {
 function subtractAssigned(students: Student[], routes: Route[]): Student[] {
   const assigned = new Set(routes.flatMap((route) => route.stops.map((stop) => stop.studentId)));
   return students.filter((student) => student.status === "active" && !assigned.has(student.id));
+}
+
+// Every route, with its stops: one GET per route, fine at MVP size. Shared by
+// unassignedStudents and routeAssignments below.
+async function listRoutesWithStops(): Promise<Route[]> {
+  const summaries = await httpRoutes.list();
+  return Promise.all(summaries.map((summary) => httpRoutes.get(summary.id)));
+}
+
+// Every student who is a stop on some route, and which one.
+function buildRouteAssignments(routes: Route[]): RouteAssignments {
+  const byStudent = new Map<string, RouteAssignment>();
+  for (const route of routes) {
+    for (const stop of route.stops) {
+      byStudent.set(stop.studentId, { routeId: route.id, routeName: route.name });
+    }
+  }
+  return { routes: routes.map(({ id, name }) => ({ id, name })), byStudent };
 }
 
 export const httpRoutes: RoutesApi = {
@@ -145,9 +179,17 @@ export const httpRoutes: RoutesApi = {
   // text column, not the assignment, so it can't be used instead. Replace this
   // with the endpoint if one is added.
   async unassignedStudents() {
-    const [students, summaries] = await Promise.all([getStudents(), httpRoutes.list()]);
-    const routes = await Promise.all(summaries.map((summary) => httpRoutes.get(summary.id)));
+    const [students, routes] = await Promise.all([getStudents(), listRoutesWithStops()]);
     return subtractAssigned(students, routes);
+  },
+
+  // WORKAROUND: same reason as unassignedStudents above, and the same cost:
+  // one request per route. The students list's `route` filter reads the old
+  // text column too, so the students screen filters by route in memory from
+  // this instead. Replace it with a backend filter by route id when one exists.
+  async routeAssignments() {
+    const routes = await listRoutesWithStops();
+    return buildRouteAssignments(routes);
   },
 };
 
@@ -188,4 +230,10 @@ export function reorderStops(routeId: string, studentIds: string[]): Promise<Rou
 // WORKAROUND: see unassignedStudents above; the backend has no endpoint.
 export function listUnassignedStudents(): Promise<Student[]> {
   return api.unassignedStudents();
+}
+
+// WORKAROUND: see unassignedStudents above; the backend has no endpoint for
+// a student's route assignment either.
+export function getRouteAssignments(): Promise<RouteAssignments> {
+  return api.routeAssignments();
 }
