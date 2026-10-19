@@ -140,12 +140,13 @@ More codes may be added later. A client must show `message` for a code it does n
 
 ### Vehicle and driver assignment
 
-All routes are the same morning run, so a vehicle and a driver can each be on **at most one route**. "Overlapping" has no other meaning until routes have times. An inactive vehicle, or a deactivated driver, cannot be put on a route — both must be reactivated first (confirmed, SCRUM-208). There is no deactivate endpoint for drivers yet; the check exists for when one lands.
+All routes are the same morning run, so a vehicle and a driver can each be on **at most one route**. "Overlapping" has no other meaning until routes have times. An inactive vehicle, or a deactivated driver, cannot be put on a route — both must be reactivated first (confirmed, SCRUM-208). There is no deactivate endpoint for drivers yet; the check exists for when one lands. Editing a route re-checks only a vehicle or driver that is being **changed**: a route can still be renamed after its current vehicle or driver was deactivated, which is a reminder to swap them, not a reason to refuse the rename.
 
 ### Student assignment (confirmed, SCRUM-209)
 
 - **Capacity is checked against the route's current occupants before the student is resolved**, so adding to a full route answers `CAPACITY_EXCEEDED`-shaped 409 even for an unknown student id — the same "cheapest check first" order the solver uses for capacity vs. arrival time.
 - **A student is on at most one route.** Adding a student already on a different route moves them: they leave the old route (its `studentCount` drops) and join the new one. There is nothing to undo on the old route beyond that — no version history, unlike optimizer apply/discard.
+- **Adding a student who is already a stop on this same route changes nothing**: they keep their place and the answer is the unchanged route (200). It takes no new seat, so the capacity check is skipped.
 - **Only an active student can be added.** Removing has no such restriction — an inactive student already on a route can still be taken off it.
 - **Removing a student who exists but isn't a stop on *that* route is 404**, the same as a route or student that doesn't exist — the endpoint describes a relationship between the two ids, not just whether the student exists.
 - The old text `students.route` column is untouched by any of this (still SCRUM-209's call per the earlier draft note, now settled: it keeps working for filtering, nothing here writes it).

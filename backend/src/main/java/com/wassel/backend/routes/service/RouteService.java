@@ -135,8 +135,14 @@ public class RouteService {
 	@Transactional
 	public RouteResponse editRoute(UUID schoolId, UUID routeId, RouteRequest request) {
 		Route route = findOwned(schoolId, routeId);
-		VehicleResponse vehicle = requireActiveVehicle(schoolId, request.vehicleId());
-		DriverResponse driver = requireUsableDriver(schoolId, request.driverId());
+		// Only a vehicle or driver being put on the route must be usable: a rename must not fail
+		// because the ones it already has were deactivated since.
+		VehicleResponse vehicle = request.vehicleId().equals(route.getVehicleId())
+				? vehicleService.getOwnedVehicle(schoolId, request.vehicleId())
+				: requireActiveVehicle(schoolId, request.vehicleId());
+		DriverResponse driver = request.driverId().equals(route.getDriverId())
+				? driverService.getOwnedDriver(schoolId, request.driverId())
+				: requireUsableDriver(schoolId, request.driverId());
 		checkNoConflict(schoolId, vehicle.id(), driver.id(), routeId);
 
 		route.setName(request.name());
