@@ -35,6 +35,7 @@ import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.vehicles.dto.VehicleResponse;
 import com.wassel.backend.vehicles.service.VehicleService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -123,11 +124,7 @@ public class RouteService {
 		try {
 			route = routeRepository.saveAndFlush(route);
 		} catch (DataIntegrityViolationException e) {
-			// Two requests claiming the same vehicle or driver at once: the unique constraints are
-			// the backstop for the check above. Re-check now that the conflicting row is committed,
-			// so the race is reported on the same field the non-race case would use.
-			checkNoConflict(schoolId, vehicle.id(), driver.id(), null);
-			throw new RouteAssignmentConflictException("vehicleId", "Vehicle or driver is already on another route.");
+			throw lostRace(e);
 		}
 		return toResponse(schoolId, route, vehicle, driver);
 	}
@@ -151,8 +148,7 @@ public class RouteService {
 		try {
 			routeRepository.saveAndFlush(route);
 		} catch (DataIntegrityViolationException e) {
-			checkNoConflict(schoolId, vehicle.id(), driver.id(), routeId);
-			throw new RouteAssignmentConflictException("vehicleId", "Vehicle or driver is already on another route.");
+			throw lostRace(e);
 		}
 		return toResponse(schoolId, route, vehicle, driver);
 	}
@@ -328,6 +324,19 @@ public class RouteService {
 			throw new RouteAssignmentConflictException("driverId", DRIVER_DEACTIVATED_MESSAGE);
 		}
 		return driver;
+	}
+
+	/**
+	 * Two requests claimed the same vehicle or driver at once and the unique constraints were the
+	 * backstop for {@link #checkNoConflict}. PostgreSQL aborts the transaction when a statement
+	 * fails, so nothing may query before this is thrown; the constraint name says which one lost.
+	 * The other route's name is not known here, unlike the message {@code checkNoConflict} gives.
+	 */
+	private RouteAssignmentConflictException lostRace(DataIntegrityViolationException e) {
+		String cause = String.valueOf(NestedExceptionUtils.getMostSpecificCause(e).getMessage()).toLowerCase();
+		return cause.contains("uq_routes_school_driver")
+				? new RouteAssignmentConflictException("driverId", "Driver is already on another route.")
+				: new RouteAssignmentConflictException("vehicleId", "Vehicle is already on another route.");
 	}
 
 	/** {@code excludedRouteId} is null for create (no route to exclude yet) or the route being edited. */
