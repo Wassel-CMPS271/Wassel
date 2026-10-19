@@ -1,3 +1,7 @@
+# Hosting platforms such as Railway and Render tell the app which port to listen on through PORT.
+server:
+  port: ${PORT:8080}
+
 spring:
   application:
     name: wassel-backend

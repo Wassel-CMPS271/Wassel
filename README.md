@@ -183,6 +183,33 @@ children), and school times of 08:00 arrival and 14:30 dismissal.
   (Gmail does, for example `you@gmail.com` makes `you+head@gmail.com`), and every demo account's code
   arrives there. The admin account is the one from `ADMIN_EMAIL` as before.
 
+## Hosted backend (Railway)
+
+The backend and its PostgreSQL database run on [Railway](https://railway.com), in one project with two services.
+
+- **URL:** https://wassel-production.up.railway.app (for example `GET /api/auth/me` answers `401` when signed out).
+- **How it deploys:** the Railway service builds `backend/Dockerfile` (root directory `/backend`) from the connected branch on every push to it. It follows `develop` while Sprint 2 is in progress and switches to `main` at the release, because `main` is still the Sprint 1 code. Change the branch under the service's Settings, "Branch connected to production".
+- **Database:** a Railway PostgreSQL service in the same project. The backend reads it through variable references, so no database password is stored in git or typed anywhere. Flyway builds the schema on the first start.
+- **Settings live on Railway, never in git** (service "Wassel", Variables tab):
+
+| Variable | Value |
+| -------- | ----- |
+| `DB_URL` | `jdbc:postgresql://${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}` |
+| `DB_USERNAME` | `${{Postgres.PGUSER}}` |
+| `DB_PASSWORD` | `${{Postgres.PGPASSWORD}}` |
+| `PORT` | `8080` (the backend also reads `PORT` by default, so this matches the public domain's port) |
+| `JWT_SECRET` | a long random string, at least 32 characters (secret) |
+| `JWT_COOKIE_SECURE` | `true` |
+| `JWT_EXPIRATION` | `1h` |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | the first admin, created on the first start; the email must be an inbox you can open because the sign-in code is emailed there (the password is secret, 10+ characters) |
+| `MAIL_USERNAME`, `MAIL_PASSWORD` | the Gmail address that sends the codes and its app password (secret); see [Email on staging](#email-on-staging) |
+| `SCHOOL_LATITUDE`, `SCHOOL_LONGITUDE` | where every route ends (`33.896`, `35.484`) |
+| `CORS_ALLOWED_ORIGINS`, `FRONTEND_BASE_URL` | the address people open the app at, once the frontend is deployed (see [One site for the app and its API](#one-site-for-the-app-and-its-api)) |
+| `ORS_API_KEY` (optional) | OpenRouteService key for road times; without it straight-line times are used |
+| `DEMO_DATA_ENABLED`, `DEMO_PASSWORD`, `DEMO_EMAIL_BASE` (optional) | the demo school, see [Demo data](#demo-data) |
+
+Changing a variable redeploys the service. Changing `ADMIN_EMAIL` or `ADMIN_PASSWORD` later does not change an admin that already exists.
+
 ## Logs
 
 The staging stack collects every container's logs into one place (Loki), searchable in Grafana.
