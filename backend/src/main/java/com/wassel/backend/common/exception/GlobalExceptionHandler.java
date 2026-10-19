@@ -35,6 +35,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -68,6 +69,14 @@ public class GlobalExceptionHandler {
 	public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Malformed request body");
+	}
+
+	// A path or query value of the wrong type, e.g. an id that is not a UUID. Without this the
+	// catch-all below would turn a client mistake into a 500. The bad value is not echoed back.
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ProblemDetail handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid value for '%s'.".formatted(ex.getName()));
 	}
 
 	// Same "errors" shape as bean validation so clients can render it against the field.
