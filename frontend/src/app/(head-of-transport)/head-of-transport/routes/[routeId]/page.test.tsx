@@ -249,7 +249,7 @@ it("shows the backend's 409 as the same alert as the Add button", async () => {
 
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent("This vehicle is already full.");
-  expect(alert).toHaveFocus();
+  await waitFor(() => expect(alert).toHaveFocus());
   expect(within(list("Not on a route")).getByText("Omar Nasser")).toBeInTheDocument();
   expect(screen.getByText("1 of 3 seats")).toBeInTheDocument();
 });
@@ -427,7 +427,7 @@ it("shows the backend's over-capacity 409 as a focused alert and resyncs the cou
 
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent(message);
-  expect(alert).toHaveFocus();
+  await waitFor(() => expect(alert).toHaveFocus());
   expect(await screen.findByText("3 of 3 seats")).toBeInTheDocument();
   expect(screen.getByText(/This vehicle is full/)).toBeInTheDocument();
   expect(within(row("Not on a route", "Omar Nasser")).getByRole("button", { name: "Add" })).toBeDisabled();
@@ -446,7 +446,7 @@ it("shows the field message when the student was made inactive elsewhere, and dr
 
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent("Only an active student can be put on a route.");
-  expect(alert).toHaveFocus();
+  await waitFor(() => expect(alert).toHaveFocus());
   await waitFor(() => expect(screen.queryByText("Omar Nasser")).not.toBeInTheDocument());
   expect(screen.getByText("1 of 3 seats")).toBeInTheDocument();
 });

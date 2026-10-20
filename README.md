@@ -231,6 +231,23 @@ The backend and its PostgreSQL database run on [Railway](https://railway.com), i
 
 Changing a variable redeploys the service. Changing `ADMIN_EMAIL` or `ADMIN_PASSWORD` later does not change an admin that already exists.
 
+## Hosted frontend (Vercel)
+
+The frontend runs on [Vercel](https://vercel.com).
+
+- **URL:** https://wassel-sooty.vercel.app (the landing page and `/login`).
+- **How it deploys:** the Vercel project `wassel` is connected to this repo with the root directory `frontend`. Every push to the production branch creates a production deployment, and every other branch and pull request gets a preview deployment. The production branch is `develop` while Sprint 2 is in progress and switches to `main` at the release, because `main` is still the Sprint 1 code. Change it under Project Settings, Environments, Production, "Branch Tracking".
+- **Settings live in Vercel, never in git** (Project Settings, Environment Variables, for Production and Preview). They are read when the app is built, so changing one needs a redeploy:
+
+| Variable | Value |
+| -------- | ----- |
+| `NEXT_PUBLIC_API_BASE_URL` | empty (set, not missing), so the browser calls the app's own origin. If it were stored as unset, the app would fall back to `http://localhost:8080` and every API call from the browser would fail while `/` and `/login` still answer 200 |
+| `BACKEND_URL` | the hosted backend, https://wassel-production.up.railway.app (see [Hosted backend (Railway)](#hosted-backend-railway)) |
+
+- **Both halves must know each other's address.** On Railway, `CORS_ALLOWED_ORIGINS=https://wassel-sooty.vercel.app` and `FRONTEND_BASE_URL=https://wassel-sooty.vercel.app` (`https`, no trailing slash). The backend compares origins exactly, so a trailing `/` or `http://` makes every POST, sign-in included, fail with a 403. If the Vercel address ever changes (a custom domain, say), update both there; see [One site for the app and its API](#one-site-for-the-app-and-its-api).
+- **Check a new build reaches the backend through the proxy.** Open https://wassel-sooty.vercel.app/login with the browser's DevTools, Network tab, try a sign-in, and confirm the request goes to `wassel-sooty.vercel.app/api/auth/login` and not to `localhost:8080`.
+- Preview deployments get their own address, which the backend does not allow, so sign-in only works on the production URL.
+
 ## Logs
 
 The staging stack collects every container's logs into one place (Loki), searchable in Grafana.
