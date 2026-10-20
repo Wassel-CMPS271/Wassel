@@ -242,7 +242,7 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 
 ## Known limits
 
-- **Morning run only.** Afternoon (dismissal) routes and depot legs are out of scope.
+- **Morning run only.** Afternoon (dismissal) routes and depot legs are out of scope. The daily runs ([`runs.md`](runs.md)) drive each route in the afternoon too, as the morning order reversed with no times.
 - **No boarding time.** A stop takes zero minutes, so real pickup windows are a little longer than shown.
 - **The school's location is a configuration value**, not an admin setting, because the MVP serves one school. The `school` object has the final shape, so moving it to a school setting later changes nothing for consumers. The first story that reads it adds the property, and the app should refuse to start without it.
 - **Straight-line times when the road provider is unavailable** (see [Arrival times](#arrival-times)). While the provider is unavailable, a route whose stops changed shows straight-line times for every leg (never a mix of road and straight-line legs), and goes back to road times once the provider answers; a route whose points were all seen before keeps its road times. A change to a route's stops costs one provider request for its whole set of points.
