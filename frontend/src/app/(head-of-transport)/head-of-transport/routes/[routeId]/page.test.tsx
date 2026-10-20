@@ -240,7 +240,7 @@ it("shows the backend's 409 as the same alert as the Add button", async () => {
 
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent("This vehicle is already full.");
-  expect(alert).toHaveFocus();
+  await waitFor(() => expect(alert).toHaveFocus());
   expect(within(list("Not on a route")).getByText("Omar Nasser")).toBeInTheDocument();
   expect(screen.getByText("1 of 3 seats")).toBeInTheDocument();
 });
