@@ -1,0 +1,31 @@
+[
+  {
+    "studentId": "40000000-0000-4000-8000-000000000012",
+    "firstName": "Layla",
+    "lastName": "Mansour",
+    "route": null,
+    "driver": null,
+    "vehicle": null,
+    "expectedPickupTime": null
+  },
+  {
+    "studentId": "40000000-0000-4000-8000-000000000003",
+    "firstName": "Tarek",
+    "lastName": "Mansour",
+    "route": {
+      "id": "10000000-0000-4000-8000-000000000001",
+      "name": "Hamra morning run"
+    },
+    "driver": {
+      "id": "30000000-0000-4000-8000-000000000001",
+      "firstName": "Karim",
+      "lastName": "Haddad",
+      "phone": "+961 3 100 101"
+    },
+    "vehicle": {
+      "id": "20000000-0000-4000-8000-000000000001",
+      "plateNumber": "A 123456"
+    },
+    "expectedPickupTime": "07:21"
+  }
+]
