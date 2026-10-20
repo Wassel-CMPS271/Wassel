@@ -9,12 +9,19 @@
 //   POST   /api/head-of-transport/routes/{routeId}/students  { studentId } -> Route (SCRUM-209)
 //   DELETE /api/head-of-transport/routes/{routeId}/students/{studentId} -> Route (SCRUM-209)
 //   PUT    /api/head-of-transport/routes/{routeId}/stops  { studentIds } -> Route (SCRUM-210)
+//   POST   /api/head-of-transport/routes/{routeId}/optimization                        -> Proposal (201, SCRUM-203)
+//   POST   /api/head-of-transport/routes/{routeId}/optimization/{proposalId}/apply     -> Route (200, SCRUM-203)
+//   DELETE /api/head-of-transport/routes/{routeId}/optimization/{proposalId}           -> 204 (SCRUM-203)
+//   POST   /api/head-of-transport/routes/generation                        -> FleetProposal (201, SCRUM-207)
+//   POST   /api/head-of-transport/routes/generation/{proposalId}/apply     -> RouteSummary[] (200, SCRUM-207)
+//   DELETE /api/head-of-transport/routes/generation/{proposalId}           -> 204 (SCRUM-207)
 //
 // Adding a student who is already on another route moves them; it is not an
 // error.
 //
 // WORKAROUND: the contract has no endpoint for the students who are on no
-// route, so listUnassignedStudents() works it out on the client.
+// route, or for which route a student is on, so listUnassignedStudents() and
+// getRouteAssignments() work it out on the client (SCRUM-66).
 
 import { request } from "./client";
 import { getStudents, type Student } from "./students";
@@ -95,6 +102,71 @@ export interface RouteInput {
   driverId: string;
 }
 
+// A student on a route today who will not be on it once the proposal is applied.
+export interface LeavingStudent {
+  studentId: string;
+  firstName: string;
+  lastName: string;
+}
+
+// One route of a FleetProposal: one per vehicle that got students, plus one
+// with empty stops for each planned vehicle whose existing route gets none of
+// its students.
+export interface PlannedRoute {
+  existingRouteId: string | null; // null means applying creates it
+  name: string;
+  vehicle: RouteVehicle;
+  driver: RouteDriver;
+  drivingMinutes: number; // 0 when stops is empty
+  stops: Stop[]; // in position order, with arrival times. Can be empty.
+  leaving: LeavingStudent[];
+}
+
+// More codes may be added: show `message` for a code you don't know.
+export interface UnplacedReason {
+  code: "CAPACITY_EXCEEDED" | "ARRIVAL_TIME_UNREACHABLE" | "NO_PIN" | (string & {});
+  message: string;
+}
+
+// An active student the proposal puts on no route, and why.
+export interface UnplacedStudent {
+  studentId: string;
+  firstName: string;
+  lastName: string;
+  address: string | null;
+  reason: UnplacedReason;
+}
+
+// An active vehicle that was not planned because no active driver is free for it.
+export interface ExcludedVehicle {
+  vehicle: RouteVehicle;
+  message: string;
+}
+
+// What generating all routes suggests for the whole school (SCRUM-207).
+// Making one never changes a route or a student.
+export interface FleetProposal {
+  id: string | null; // the handle for apply and discard. Null when routes is empty.
+  routes: PlannedRoute[];
+  unplaced: UnplacedStudent[];
+  excludedVehicles: ExcludedVehicle[];
+  school: RouteSchool; // same as Route.school, so the map needs no second request
+}
+
+// Where a student who is a stop on some route is riding.
+export interface RouteAssignment {
+  routeId: string;
+  routeName: string;
+}
+
+// Every route (in the order list() returns them) and, for each student who is
+// a stop on one, which route that is. A student missing from byStudent is on
+// no route.
+export interface RouteAssignments {
+  routes: { id: string; name: string }[];
+  byStudent: Map<string, RouteAssignment>;
+}
+
 interface RoutesApi {
   list(): Promise<RouteSummary[]>;
   get(routeId: string): Promise<Route>;
@@ -104,7 +176,14 @@ interface RoutesApi {
   addStudent(routeId: string, studentId: string): Promise<Route>;
   removeStudent(routeId: string, studentId: string): Promise<Route>;
   reorderStops(routeId: string, studentIds: string[]): Promise<Route>;
+  proposeOptimization(routeId: string): Promise<Proposal>;
+  applyProposal(routeId: string, proposalId: string): Promise<Route>;
+  discardProposal(routeId: string, proposalId: string): Promise<void>;
+  generateRoutes(): Promise<FleetProposal>;
+  applyGeneration(proposalId: string): Promise<RouteSummary[]>;
+  discardGeneration(proposalId: string): Promise<void>;
   unassignedStudents(): Promise<Student[]>;
+  routeAssignments(): Promise<RouteAssignments>;
 }
 
 const ROUTES_PATH = "/api/head-of-transport/routes";
@@ -118,11 +197,40 @@ function studentPath(routeId: string, studentId?: string): string {
   return studentId === undefined ? base : `${base}/${encodeURIComponent(studentId)}`;
 }
 
+function optimizationPath(routeId: string, proposalId?: string): string {
+  const base = `${routePath(routeId)}/optimization`;
+  return proposalId === undefined ? base : `${base}/${encodeURIComponent(proposalId)}`;
+}
+
+const GENERATION_PATH = `${ROUTES_PATH}/generation`;
+
+function generationPath(proposalId?: string): string {
+  return proposalId === undefined ? GENERATION_PATH : `${GENERATION_PATH}/${encodeURIComponent(proposalId)}`;
+}
+
 // The active students who are not a stop on any of `routes`. An inactive
 // student can't ride, so they're never offered for a route.
 function subtractAssigned(students: Student[], routes: Route[]): Student[] {
   const assigned = new Set(routes.flatMap((route) => route.stops.map((stop) => stop.studentId)));
   return students.filter((student) => student.status === "active" && !assigned.has(student.id));
+}
+
+// Every route, with its stops: one GET per route, fine at MVP size. Shared by
+// unassignedStudents and routeAssignments below.
+async function listRoutesWithStops(): Promise<Route[]> {
+  const summaries = await httpRoutes.list();
+  return Promise.all(summaries.map((summary) => httpRoutes.get(summary.id)));
+}
+
+// Every student who is a stop on some route, and which one.
+function buildRouteAssignments(routes: Route[]): RouteAssignments {
+  const byStudent = new Map<string, RouteAssignment>();
+  for (const route of routes) {
+    for (const stop of route.stops) {
+      byStudent.set(stop.studentId, { routeId: route.id, routeName: route.name });
+    }
+  }
+  return { routes: routes.map(({ id, name }) => ({ id, name })), byStudent };
 }
 
 export const httpRoutes: RoutesApi = {
@@ -138,6 +246,17 @@ export const httpRoutes: RoutesApi = {
   // The full new order: exactly the route's current stops, each once.
   reorderStops: (routeId, studentIds) =>
     request<Route>(`${routePath(routeId)}/stops`, { method: "PUT", body: { studentIds } }),
+  // A 201 even when infeasible: feasible, id and proposed say so, never a thrown error.
+  proposeOptimization: (routeId) => request<Proposal>(optimizationPath(routeId), { method: "POST" }),
+  applyProposal: (routeId, proposalId) =>
+    request<Route>(`${optimizationPath(routeId, proposalId)}/apply`, { method: "POST" }),
+  discardProposal: (routeId, proposalId) =>
+    request(optimizationPath(routeId, proposalId), { method: "DELETE" }),
+  // Generating can take 10 to 20 seconds for a large school; the caller shows progress.
+  generateRoutes: () => request<FleetProposal>(GENERATION_PATH, { method: "POST" }),
+  applyGeneration: (proposalId) =>
+    request<RouteSummary[]>(`${generationPath(proposalId)}/apply`, { method: "POST" }),
+  discardGeneration: (proposalId) => request(generationPath(proposalId), { method: "DELETE" }),
 
   // WORKAROUND: the backend has no endpoint for this. The real students minus
   // every route's stops. The list has no stops, so this gets every route: one
@@ -145,9 +264,17 @@ export const httpRoutes: RoutesApi = {
   // text column, not the assignment, so it can't be used instead. Replace this
   // with the endpoint if one is added.
   async unassignedStudents() {
-    const [students, summaries] = await Promise.all([getStudents(), httpRoutes.list()]);
-    const routes = await Promise.all(summaries.map((summary) => httpRoutes.get(summary.id)));
+    const [students, routes] = await Promise.all([getStudents(), listRoutesWithStops()]);
     return subtractAssigned(students, routes);
+  },
+
+  // WORKAROUND: same reason as unassignedStudents above, and the same cost:
+  // one request per route. The students list's `route` filter reads the old
+  // text column too, so the students screen filters by route in memory from
+  // this instead. Replace it with a backend filter by route id when one exists.
+  async routeAssignments() {
+    const routes = await listRoutesWithStops();
+    return buildRouteAssignments(routes);
   },
 };
 
@@ -185,7 +312,37 @@ export function reorderStops(routeId: string, studentIds: string[]): Promise<Rou
   return api.reorderStops(routeId, studentIds);
 }
 
+export function proposeOptimization(routeId: string): Promise<Proposal> {
+  return api.proposeOptimization(routeId);
+}
+
+export function applyProposal(routeId: string, proposalId: string): Promise<Route> {
+  return api.applyProposal(routeId, proposalId);
+}
+
+export function discardProposal(routeId: string, proposalId: string): Promise<void> {
+  return api.discardProposal(routeId, proposalId);
+}
+
+export function generateRoutes(): Promise<FleetProposal> {
+  return api.generateRoutes();
+}
+
+export function applyGeneration(proposalId: string): Promise<RouteSummary[]> {
+  return api.applyGeneration(proposalId);
+}
+
+export function discardGeneration(proposalId: string): Promise<void> {
+  return api.discardGeneration(proposalId);
+}
+
 // WORKAROUND: see unassignedStudents above; the backend has no endpoint.
 export function listUnassignedStudents(): Promise<Student[]> {
   return api.unassignedStudents();
+}
+
+// WORKAROUND: see unassignedStudents above; the backend has no endpoint for
+// a student's route assignment either.
+export function getRouteAssignments(): Promise<RouteAssignments> {
+  return api.routeAssignments();
 }

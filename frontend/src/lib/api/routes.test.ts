@@ -2,7 +2,12 @@
 // calls are checked against the contract's paths, methods and bodies with fetch mocked.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Route, RouteSummary } from "./routes";
+import type { FleetProposal, Proposal, Route, RouteSummary } from "./routes";
+import fleetProposalFixture from "./__fixtures__/routing/fleet-proposal.json";
+import fleetProposalNothingFixture from "./__fixtures__/routing/fleet-proposal-nothing.json";
+
+const FLEET_PROPOSAL = fleetProposalFixture as FleetProposal;
+const FLEET_PROPOSAL_NOTHING = fleetProposalNothingFixture as FleetProposal;
 
 function student(id: string, firstName: string, pin: boolean, status: "active" | "inactive" = "active") {
   return {
@@ -35,6 +40,7 @@ vi.mock("./students", () => ({
 const HAMRA_ID = "10000000-0000-4000-8000-000000000001";
 const VERDUN_ID = "10000000-0000-4000-8000-000000000003";
 const ROUTES_URL = "http://localhost:8080/api/head-of-transport/routes";
+const GENERATION_URL = `${ROUTES_URL}/generation`;
 
 const SUMMARIES: RouteSummary[] = [
   {
@@ -72,10 +78,45 @@ const ROUTE: Route = {
   ],
 };
 
+const PROPOSAL_ID = "50000000-0000-4000-8000-000000000001";
+
+const FEASIBLE_PROPOSAL: Proposal = {
+  id: PROPOSAL_ID,
+  feasible: true,
+  current: { drivingMinutes: 22, stops: ROUTE.stops },
+  proposed: { drivingMinutes: 13, stops: ROUTE.stops },
+  reasons: [],
+};
+
+const INFEASIBLE_PROPOSAL: Proposal = {
+  id: null,
+  feasible: false,
+  current: { drivingMinutes: 15, stops: ROUTE.stops },
+  proposed: null,
+  reasons: [{ code: "CAPACITY_EXCEEDED", message: "The route has 4 students but the vehicle seats 3." }],
+};
+
 // A fresh copy of the module for each test.
 async function loadRoutes() {
   vi.resetModules();
   return import("./routes");
+}
+
+// loadRoutes() resets the module registry, so an ApiError imported statically
+// at the top of this file would be a different class than the one routes.ts
+// actually throws. Import it from the same fresh registry instead.
+async function loadErrors() {
+  return import("./errors");
+}
+
+function mockFetchError(status: number, detail: string) {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: false,
+    status,
+    json: () => Promise.resolve({ detail }),
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
 }
 
 describe("httpRoutes", () => {
@@ -217,6 +258,339 @@ describe("httpRoutes", () => {
 
     await expect(httpRoutes.unassignedStudents()).resolves.toEqual([student("s-free", "Lara", true)]);
   });
+
+  it("maps no student to a route when there are no routes", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(200, []); // list() returns no summaries, so get() is never called
+
+    await expect(httpRoutes.routeAssignments()).resolves.toEqual({ routes: [], byStudent: new Map() });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps every stop on every route to its route, by getting each route", async () => {
+    const { httpRoutes } = await loadRoutes();
+    const stopsById: Record<string, unknown[]> = {
+      [HAMRA_ID]: [{ ...ROUTE.stops[0], studentId: "s-a" }],
+      [VERDUN_ID]: [{ ...ROUTE.stops[0], studentId: "s-b" }],
+    };
+    fetchMock = vi.fn((url: string) => {
+      const id = url.slice(ROUTES_URL.length + 1);
+      const body = id ? { ...ROUTE, id, name: `route-${id}`, stops: stopsById[id] } : SUMMARIES;
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const assignments = await httpRoutes.routeAssignments();
+
+    expect(assignments).toEqual({
+      routes: [
+        { id: HAMRA_ID, name: `route-${HAMRA_ID}` },
+        { id: VERDUN_ID, name: `route-${VERDUN_ID}` },
+      ],
+      byStudent: new Map([
+        ["s-a", { routeId: HAMRA_ID, routeName: `route-${HAMRA_ID}` }],
+        ["s-b", { routeId: VERDUN_ID, routeName: `route-${VERDUN_ID}` }],
+      ]),
+    });
+    // One list, then one get per route.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("maps a student on exactly one route to that route", async () => {
+    const { httpRoutes } = await loadRoutes();
+    const stopsById: Record<string, unknown[]> = {
+      [HAMRA_ID]: [{ ...ROUTE.stops[0], studentId: ON_ROUTE_STUDENT_ID }],
+      [VERDUN_ID]: [],
+    };
+    fetchMock = vi.fn((url: string) => {
+      const id = url.slice(ROUTES_URL.length + 1);
+      const body = id ? { ...ROUTE, id, stops: stopsById[id] } : SUMMARIES;
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const assignments = await httpRoutes.routeAssignments();
+
+    expect(assignments.byStudent.get(ON_ROUTE_STUDENT_ID)).toEqual({ routeId: HAMRA_ID, routeName: ROUTE.name });
+    expect(assignments.byStudent.size).toBe(1);
+  });
+
+  it("propagates an error from getting one of the routes", async () => {
+    const { httpRoutes } = await loadRoutes();
+    fetchMock = vi.fn((url: string) => {
+      if (url === ROUTES_URL) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(SUMMARIES) });
+      }
+      if (url === `${ROUTES_URL}/${VERDUN_ID}`) {
+        return Promise.reject(new Error("network down"));
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(ROUTE) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(httpRoutes.routeAssignments()).rejects.toThrow("network down");
+  });
+});
+
+describe("optimization", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  function mockFetchOnce(status: number, body?: unknown) {
+    fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status,
+      json: () => Promise.resolve(body),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("proposes an optimization with a POST to the route's optimization path", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(201, FEASIBLE_PROPOSAL);
+
+    await expect(httpRoutes.proposeOptimization(HAMRA_ID)).resolves.toEqual(FEASIBLE_PROPOSAL);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${ROUTES_URL}/${HAMRA_ID}/optimization`,
+      expect.objectContaining({ method: "POST", body: undefined }),
+    );
+  });
+
+  it("resolves a 201 with feasible: false, id: null and proposed: null when the route can't be planned", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(201, INFEASIBLE_PROPOSAL);
+
+    await expect(httpRoutes.proposeOptimization(HAMRA_ID)).resolves.toEqual(INFEASIBLE_PROPOSAL);
+  });
+
+  it.each([
+    "the route has no stops",
+    "the school's arrival time is not set",
+    "some stops have no pin",
+    "another propose for this route is already in flight",
+  ])("rejects proposing with a 409 when %s", async (detail) => {
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+    mockFetchError(409, detail);
+
+    try {
+      await httpRoutes.proposeOptimization(HAMRA_ID);
+      expect.unreachable("expected proposeOptimization to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(409);
+      expect((error as InstanceType<typeof ApiError>).message).toBe(detail);
+    }
+  });
+
+  it("applies a proposal with a POST to its apply path, encoding both ids", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(200, ROUTE);
+
+    await expect(httpRoutes.applyProposal("a/b", "p/1")).resolves.toEqual(ROUTE);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${ROUTES_URL}/a%2Fb/optimization/p%2F1/apply`,
+      expect.objectContaining({ method: "POST", body: undefined }),
+    );
+  });
+
+  it("rejects applying with a 404 when the proposal is gone, replaced or unknown", async () => {
+    mockFetchError(404, "Proposal not found");
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+
+    try {
+      await httpRoutes.applyProposal(HAMRA_ID, PROPOSAL_ID);
+      expect.unreachable("expected applyProposal to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(404);
+    }
+  });
+
+  it("rejects applying with a 409 when the route's stops changed since the proposal", async () => {
+    mockFetchError(409, "The route has changed since this proposal was made");
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+
+    try {
+      await httpRoutes.applyProposal(HAMRA_ID, PROPOSAL_ID);
+      expect.unreachable("expected applyProposal to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(409);
+    }
+  });
+
+  it("discards a proposal with a DELETE to its path, resolving with undefined on a 204", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(204);
+
+    await expect(httpRoutes.discardProposal("a/b", "p/1")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${ROUTES_URL}/a%2Fb/optimization/p%2F1`,
+      expect.objectContaining({ method: "DELETE", body: undefined }),
+    );
+  });
+
+  it("rejects discarding with a 404 when the proposal is already gone", async () => {
+    mockFetchError(404, "Proposal not found");
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+
+    try {
+      await httpRoutes.discardProposal(HAMRA_ID, PROPOSAL_ID);
+      expect.unreachable("expected discardProposal to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(404);
+    }
+  });
+});
+
+describe("generation", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  function mockFetchOnce(status: number, body?: unknown) {
+    fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status,
+      json: () => Promise.resolve(body),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("generates a fleet proposal with a POST to the generation path", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(201, FLEET_PROPOSAL);
+
+    await expect(httpRoutes.generateRoutes()).resolves.toEqual(FLEET_PROPOSAL);
+    expect(fetchMock).toHaveBeenCalledWith(
+      GENERATION_URL,
+      expect.objectContaining({ method: "POST", body: undefined }),
+    );
+  });
+
+  it("resolves a proposal with an emptied route (no stops) among its routes", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(201, FLEET_PROPOSAL);
+
+    const proposal = await httpRoutes.generateRoutes();
+
+    const emptied = proposal.routes.find((route) => route.stops.length === 0);
+    expect(emptied).toBeDefined();
+    expect(emptied?.leaving).not.toHaveLength(0);
+  });
+
+  it("resolves a proposal with nothing to apply: id null and no routes", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(201, FLEET_PROPOSAL_NOTHING);
+
+    await expect(httpRoutes.generateRoutes()).resolves.toEqual(FLEET_PROPOSAL_NOTHING);
+    const proposal = await httpRoutes.generateRoutes();
+    expect(proposal.id).toBeNull();
+    expect(proposal.routes).toEqual([]);
+  });
+
+  it("rejects generating with a 409 when a generation is already running for the school", async () => {
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+    mockFetchError(409, "A generation is already running for this school");
+
+    try {
+      await httpRoutes.generateRoutes();
+      expect.unreachable("expected generateRoutes to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(409);
+    }
+  });
+
+  it("applies a generated proposal with a POST to its apply path, resolving with RouteSummary[]", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(200, SUMMARIES);
+
+    await expect(httpRoutes.applyGeneration(FLEET_PROPOSAL.id as string)).resolves.toEqual(SUMMARIES);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${GENERATION_URL}/${FLEET_PROPOSAL.id}/apply`,
+      expect.objectContaining({ method: "POST", body: undefined }),
+    );
+  });
+
+  it("encodes the proposal id when applying", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(200, SUMMARIES);
+
+    await httpRoutes.applyGeneration("p/1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${GENERATION_URL}/p%2F1/apply`,
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("rejects applying with a 409 when the data changed since the proposal was made", async () => {
+    mockFetchError(409, "A vehicle's capacity changed since this proposal was made");
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+
+    try {
+      await httpRoutes.applyGeneration(FLEET_PROPOSAL.id as string);
+      expect.unreachable("expected applyGeneration to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(409);
+      expect((error as InstanceType<typeof ApiError>).message).toBe(
+        "A vehicle's capacity changed since this proposal was made",
+      );
+    }
+  });
+
+  it("rejects applying with a 404 when the proposal is gone, discarded or replaced", async () => {
+    mockFetchError(404, "Proposal not found");
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+
+    try {
+      await httpRoutes.applyGeneration(FLEET_PROPOSAL.id as string);
+      expect.unreachable("expected applyGeneration to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(404);
+    }
+  });
+
+  it("discards a generated proposal with a DELETE to its path, resolving with undefined on a 204", async () => {
+    const { httpRoutes } = await loadRoutes();
+    mockFetchOnce(204);
+
+    await expect(httpRoutes.discardGeneration("p/1")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${GENERATION_URL}/p%2F1`,
+      expect.objectContaining({ method: "DELETE", body: undefined }),
+    );
+  });
+
+  it("rejects discarding with a 404 when the proposal is already gone", async () => {
+    mockFetchError(404, "Proposal not found");
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+
+    try {
+      await httpRoutes.discardGeneration(FLEET_PROPOSAL.id as string);
+      expect.unreachable("expected discardGeneration to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(404);
+    }
+  });
 });
 
 describe("exported functions", () => {
@@ -232,6 +606,24 @@ describe("exported functions", () => {
       (r: Awaited<ReturnType<typeof loadRoutes>>) => r.reorderStops(HAMRA_ID, ["s-1"]),
       "PUT",
       `${ROUTES_URL}/${HAMRA_ID}/stops`,
+    ],
+    [
+      "generateRoutes",
+      (r: Awaited<ReturnType<typeof loadRoutes>>) => r.generateRoutes(),
+      "POST",
+      GENERATION_URL,
+    ],
+    [
+      "applyGeneration",
+      (r: Awaited<ReturnType<typeof loadRoutes>>) => r.applyGeneration(PROPOSAL_ID),
+      "POST",
+      `${GENERATION_URL}/${PROPOSAL_ID}/apply`,
+    ],
+    [
+      "discardGeneration",
+      (r: Awaited<ReturnType<typeof loadRoutes>>) => r.discardGeneration(PROPOSAL_ID),
+      "DELETE",
+      `${GENERATION_URL}/${PROPOSAL_ID}`,
     ],
   ])("%s calls the backend", async (_name, call, method, url) => {
     const routes = await loadRoutes();

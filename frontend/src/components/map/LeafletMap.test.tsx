@@ -50,8 +50,8 @@ vi.mock("react-leaflet", () => ({
   TileLayer: ({ url, attribution }: { url: string; attribution: string }) => (
     <div data-testid="tiles" data-url={url} data-attribution={attribution} />
   ),
-  Polyline: ({ positions }: { positions: unknown }) => (
-    <div data-testid="polyline" data-positions={JSON.stringify(positions)} />
+  Polyline: ({ positions, pathOptions }: { positions: unknown; pathOptions?: { color?: string } }) => (
+    <div data-testid="polyline" data-positions={JSON.stringify(positions)} data-color={pathOptions?.color} />
   ),
   Popup: ({ children }: { children: ReactNode }) => <div data-testid="popup">{children}</div>,
   Marker: function MockMarker({
@@ -338,6 +338,128 @@ it("leaves out a school without coordinates and ends the line at the last stop",
       [33.892, 35.49],
     ]),
   );
+});
+
+// SCRUM-224: several routes on one map, each with its own markers and line.
+const ROUTE_A = {
+  id: "route-a",
+  label: "Route A 101101",
+  color: mapTheme.routeColors[1],
+  markers: [
+    {
+      id: "a-1",
+      label: "Route A 101101, stop 1: Hadi Rizk",
+      number: 1,
+      latitude: 33.886,
+      longitude: 35.485,
+    },
+  ],
+  path: [
+    { latitude: 33.886, longitude: 35.485 },
+    school,
+  ],
+};
+const ROUTE_B = {
+  id: "route-b",
+  label: "Route B 202202",
+  color: mapTheme.routeColors[2],
+  markers: [
+    {
+      id: "b-1",
+      label: "Route B 202202, stop 1: Jad Salameh",
+      number: 1,
+      latitude: 33.892,
+      longitude: 35.49,
+    },
+  ],
+  path: [
+    { latitude: 33.892, longitude: 35.49 },
+    school,
+  ],
+};
+const EMPTY_ROUTE = { id: "route-c", label: "Route C 303303", color: mapTheme.routeColors[3] };
+
+it("draws each route's markers in its own color, with the route named in the accessible name", () => {
+  render(<LeafletMap routes={[ROUTE_A, ROUTE_B]} school={school} />);
+
+  const hadi = screen.getByRole("button", { name: "Route A 101101, stop 1: Hadi Rizk" });
+  const jad = screen.getByRole("button", { name: "Route B 202202, stop 1: Jad Salameh" });
+  expect(hadi.getAttribute("data-html")).toContain(mapTheme.routeColors[1]);
+  expect(jad.getAttribute("data-html")).toContain(mapTheme.routeColors[2]);
+});
+
+it("draws each route's own line, ending at the shared school, in the route's color", () => {
+  render(<LeafletMap routes={[ROUTE_A, ROUTE_B]} school={school} />);
+
+  const lines = screen.getAllByTestId("polyline");
+  expect(lines).toHaveLength(2);
+  const colors = lines.map((line) => line.getAttribute("data-color"));
+  expect(colors).toEqual(expect.arrayContaining([mapTheme.routeColors[1], mapTheme.routeColors[2]]));
+  for (const line of lines) {
+    const positions = JSON.parse(line.getAttribute("data-positions")!);
+    expect(positions[positions.length - 1]).toEqual([school.latitude, school.longitude]);
+  }
+});
+
+it("draws nothing for a route with no stops", () => {
+  render(<LeafletMap routes={[ROUTE_A, EMPTY_ROUTE]} school={school} />);
+
+  expect(screen.getAllByTestId("marker-stop")).toHaveLength(1);
+  expect(screen.getAllByTestId("polyline")).toHaveLength(1);
+  expect(screen.queryByText("Route C 303303")).toBeInTheDocument(); // still named in the legend
+});
+
+it("shows a legend naming each route beside its color swatch", () => {
+  render(<LeafletMap routes={[ROUTE_A, ROUTE_B]} school={school} />);
+
+  const legend = screen.getByRole("list", { name: "Routes on the map" });
+  const items = within(legend).getAllByRole("listitem");
+  expect(items.map((item) => item.textContent)).toEqual(["Route A 101101", "Route B 202202"]);
+});
+
+it("shows no legend without routes", () => {
+  render(<LeafletMap markers={markers} school={school} />);
+
+  expect(screen.queryByRole("list", { name: "Routes on the map" })).not.toBeInTheDocument();
+});
+
+it("fits every route's points, along with the school", () => {
+  render(<LeafletMap routes={[ROUTE_A, ROUTE_B]} school={school} />);
+
+  const bounds = JSON.parse(screen.getByTestId("map").getAttribute("data-bounds")!);
+  expect(bounds).toEqual(
+    expect.arrayContaining([
+      [33.886, 35.485],
+      [33.892, 35.49],
+      [33.896, 35.484],
+    ]),
+  );
+});
+
+it("still draws a single route's markers, line and school as before when `routes` isn't passed", () => {
+  render(<LeafletMap markers={markers} school={school} path={[...stops, school]} />);
+
+  expect(screen.getAllByTestId("marker-stop")).toHaveLength(2);
+  expect(screen.getByTestId("marker-school")).toBeInTheDocument();
+  expect(screen.getByTestId("polyline")).toHaveAttribute("data-color", mapTheme.line);
+  expect(screen.queryByRole("list", { name: "Routes on the map" })).not.toBeInTheDocument();
+  // No legend row either: the map box sits right inside the wrapper, as before.
+  const box = screen.getByTestId("map").parentElement;
+  expect(box?.parentElement).toHaveClass("wassel-map");
+  expect(box).not.toHaveClass("min-w-0");
+});
+
+it("puts the legend in a row beside the map only when `routes` is passed", () => {
+  render(
+    <LeafletMap
+      school={school}
+      routes={[{ id: "v-1", label: "Route A 101101", color: mapTheme.routeColors[0], markers: [markers[0]] }]}
+    />,
+  );
+
+  const row = screen.getByTestId("map").parentElement?.parentElement;
+  expect(row).not.toHaveClass("wassel-map");
+  expect(row).toContainElement(screen.getByRole("list", { name: "Routes on the map" }));
 });
 
 it("moves a stop's own marker when it changes place, leaving no stale one behind", () => {

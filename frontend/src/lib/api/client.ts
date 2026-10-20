@@ -44,5 +44,11 @@ export async function request<T = void>(
   if (problem?.errors && typeof problem.errors === "object") {
     throw new ApiValidationError(problem.errors);
   }
-  throw new ApiError(response.status, problem?.detail);
+  throw new ApiError(response.status, problem?.detail, studentIdsOf(problem));
+}
+
+// Only a list of strings counts; anything else is dropped.
+function studentIdsOf(problem: { studentIds?: unknown } | undefined): string[] | undefined {
+  const ids = problem?.studentIds;
+  return Array.isArray(ids) && ids.every((id) => typeof id === "string") ? ids : undefined;
 }

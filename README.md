@@ -100,6 +100,23 @@ To stop the stack: `docker compose -f docker-compose.staging.yml down` (add `-v`
 also delete the staging database's data). Rebuild after code changes with the same
 `up -d --build` command.
 
+### Email through Brevo (hosts that block SMTP)
+
+Some hosts block outbound SMTP, so Gmail can't be used there: Railway allows it only on its Pro plan. For those, the
+backend can send through [Brevo](https://www.brevo.com)'s HTTPS API instead. It is chosen by a setting, and the
+default stays SMTP, so local and staging are unchanged.
+
+| Variable | Value |
+| -------- | ----- |
+| `MAIL_PROVIDER` | `brevo` (the default is `smtp`) |
+| `BREVO_API_KEY` | a Brevo API key (secret; create one under SMTP & API in your Brevo account) |
+| `BREVO_SENDER_EMAIL` | the sender address, which must be verified in Brevo (Senders, Domains & Dedicated IPs); Brevo refuses any other |
+| `BREVO_SENDER_NAME` (optional) | the name recipients see, default `Wassel` |
+
+With `brevo`, `MAIL_USERNAME` and `MAIL_PASSWORD` are not used. Missing the key or the sender stops the backend at
+startup. Never put the key in git, in a chat or in a screenshot; set it only where the backend runs (Railway's
+Variables tab). If a key was ever pasted somewhere shared, delete it in Brevo and create a new one.
+
 ### Email on staging
 
 Staging sends real email (login codes, set-password and reset links) through Gmail. Nothing is
@@ -182,6 +199,37 @@ children), and school times of 08:00 arrival and 14:30 dismissal.
   staging it is really emailed, so set `DEMO_EMAIL_BASE` to a mailbox you can open that supports `+tags`
   (Gmail does, for example `you@gmail.com` makes `you+head@gmail.com`), and every demo account's code
   arrives there. The admin account is the one from `ADMIN_EMAIL` as before.
+
+## Hosted backend (Railway)
+
+The backend and its PostgreSQL database run on [Railway](https://railway.com), in one project with two services.
+
+- **URL:** https://wassel-production.up.railway.app (for example `GET /api/auth/me` answers `401` when signed out).
+- **How it deploys:** the Railway service builds `backend/Dockerfile` (root directory `/backend`) from the connected branch on every push to it. It follows `develop` while Sprint 2 is in progress and switches to `main` at the release, because `main` is still the Sprint 1 code. Change the branch under the service's Settings, "Branch connected to production".
+- **Never edit a migration that has reached `develop`.** Every migration merged to `develop` is applied to the hosted database for good, and Flyway checks each one's checksum at startup. Editing or renumbering one that already ran there (say, amending `V12__x.sql`) makes the service crash-loop on every deploy; add a new `V<n>` file instead. Before switching the branch to `main` at the release, decide what happens to the database: either reset it, or switch only once `main` has caught up with `develop`, because older code must not run against a newer schema.
+- **Profile:** the hosted backend deliberately runs the default Spring profile (`SPRING_PROFILES_ACTIVE` is not set), while the local staging stack runs `staging`. `application-staging.yml` is empty today, so nothing differs. If staging-only settings are ever added there, copy any the hosted backend also needs into Railway variables.
+- **Logs:** open the service in Railway, then Deployments, then "View logs". The Grafana setup under [Logs](#logs) only covers the local staging stack, so look here first when something fails on the hosted backend.
+- **Outbound email needs Railway's Pro plan.** Every sign-in emails a code through Gmail SMTP, and Railway only allows outbound SMTP on the Pro plan and above (see [Railway's networking docs](https://docs.railway.com/networking/outbound-networking)). On the Free, Trial or Hobby plans the connection times out after 5 seconds and sign-in, including the admin's, answers 500 and stays unusable. The `401` from `/api/auth/me` does not send email, so it can't show this problem; only a real sign-in does. After upgrading, redeploy the service so SMTP opens.
+- **Database:** a Railway PostgreSQL service in the same project. The backend reads it through variable references, so no database password is stored in git or typed anywhere. Flyway builds the schema on the first start.
+- **Settings live on Railway, never in git** (service "Wassel", Variables tab):
+
+| Variable | Value |
+| -------- | ----- |
+| `DB_URL` | `jdbc:postgresql://${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}` |
+| `DB_USERNAME` | `${{Postgres.PGUSER}}` |
+| `DB_PASSWORD` | `${{Postgres.PGPASSWORD}}` |
+| `SERVER_PORT` | `8080`, and it must equal the target port of the service's public domain (Settings, Networking). Spring Boot reads it natively. If the two differ the public URL answers 502 |
+| `JWT_SECRET` | a long random string, at least 32 characters (secret) |
+| `JWT_COOKIE_SECURE` | `true` (the default, shown for clarity) |
+| `JWT_EXPIRATION` | `1h` |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | the first admin, created on the first start; the email must be an inbox you can open because the sign-in code is emailed there (the password is secret, 10+ characters) |
+| `MAIL_USERNAME`, `MAIL_PASSWORD` | the Gmail address that sends the codes and its app password (secret); see [Email on staging](#email-on-staging) |
+| `SCHOOL_LATITUDE`, `SCHOOL_LONGITUDE` | where every route ends (`33.896`, `35.484`) |
+| `CORS_ALLOWED_ORIGINS`, `FRONTEND_BASE_URL` | both `https://wassel-sooty.vercel.app`, with no trailing slash (`https`, not `http`: the backend compares the scheme and host of the origin, so a different one gives a 403 on every POST, sign-in included). See [One site for the app and its API](#one-site-for-the-app-and-its-api) |
+| `ORS_API_KEY` | OpenRouteService key for road times (secret). Required, as in `docker-compose.staging.yml`: without it the hosted demo quietly shows straight-line times |
+| `DEMO_DATA_ENABLED`, `DEMO_PASSWORD`, `DEMO_EMAIL_BASE` (optional) | the demo school, see [Demo data](#demo-data) |
+
+Changing a variable redeploys the service. Changing `ADMIN_EMAIL` or `ADMIN_PASSWORD` later does not change an admin that already exists.
 
 ## Hosted frontend (Vercel)
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, MotionConfig } from "framer-motion";
-import { Button } from "@/components/ui/Button";
+import { Button, ButtonLink } from "@/components/ui/Button";
 import { RouteIcon } from "@/components/ui/icons";
 import { ToastViewport, useToastQueue } from "@/components/ui/Toast";
 import { createRoute, listRoutes, updateRoute, type RouteInput, type RouteSummary } from "@/lib/api/routes";
@@ -61,7 +61,12 @@ export default function RoutesPage() {
               See every morning pickup route, its vehicle, driver and seats left.
             </p>
           </div>
-          <AddRouteForm onAdd={handleCreate} disabled={isLoading || !!loadError} />
+          <div className="flex flex-wrap items-center" style={{ gap: spacing.sm }}>
+            <ButtonLink variant="secondary" href="/head-of-transport/routes/generate">
+              Generate routes
+            </ButtonLink>
+            <AddRouteForm onAdd={handleCreate} disabled={isLoading || !!loadError} />
+          </div>
         </header>
 
         <section aria-labelledby="route-list-heading">

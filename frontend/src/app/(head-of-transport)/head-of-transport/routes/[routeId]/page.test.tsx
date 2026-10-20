@@ -7,6 +7,7 @@ import {
   getRoute,
   listUnassignedStudents,
   removeStudentFromRoute,
+  reorderStops,
   type Route,
   type Stop,
 } from "@/lib/api/routes";
@@ -39,6 +40,10 @@ vi.mock("@/lib/api/routes", () => ({
   listUnassignedStudents: vi.fn(),
   addStudentToRoute: vi.fn(),
   removeStudentFromRoute: vi.fn(),
+  reorderStops: vi.fn(),
+  proposeOptimization: vi.fn(),
+  applyProposal: vi.fn(),
+  discardProposal: vi.fn(),
 }));
 
 // Leaflet needs a real browser; the stand-in draws one button per pinned
@@ -158,6 +163,7 @@ beforeEach(() => {
   vi.mocked(listUnassignedStudents).mockReset().mockResolvedValue([OMAR, RAMI]);
   vi.mocked(addStudentToRoute).mockReset();
   vi.mocked(removeStudentFromRoute).mockReset();
+  vi.mocked(reorderStops).mockReset();
 });
 
 afterEach(() => {
@@ -197,10 +203,13 @@ it("does nothing when a card is dropped back on its own list or outside both", a
 
   drop(OMAR_DRAG, "unassigned");
   drop(OMAR_DRAG, null);
+  // Lina dropped on "on-route" lands on the list's own empty area, not on
+  // another stop, so this isn't a reorder either.
   drop(LINA_DRAG, "on-route");
 
   expect(addStudentToRoute).not.toHaveBeenCalled();
   expect(removeStudentFromRoute).not.toHaveBeenCalled();
+  expect(reorderStops).not.toHaveBeenCalled();
 });
 
 it("refuses a drop on the route list when the vehicle is full, with the full warning", async () => {
@@ -418,7 +427,7 @@ it("shows the backend's over-capacity 409 as a focused alert and resyncs the cou
 
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent(message);
-  expect(alert).toHaveFocus();
+  await waitFor(() => expect(alert).toHaveFocus());
   expect(await screen.findByText("3 of 3 seats")).toBeInTheDocument();
   expect(screen.getByText(/This vehicle is full/)).toBeInTheDocument();
   expect(within(row("Not on a route", "Omar Nasser")).getByRole("button", { name: "Add" })).toBeDisabled();
@@ -437,7 +446,7 @@ it("shows the field message when the student was made inactive elsewhere, and dr
 
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent("Only an active student can be put on a route.");
-  expect(alert).toHaveFocus();
+  await waitFor(() => expect(alert).toHaveFocus());
   await waitFor(() => expect(screen.queryByText("Omar Nasser")).not.toBeInTheDocument());
   expect(screen.getByText("1 of 3 seats")).toBeInTheDocument();
 });
@@ -713,4 +722,205 @@ it("puts the map before the student lists, so a phone shows it first", async () 
     const heading = screen.getByRole("heading", { name });
     expect(map.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   }
+});
+
+// Manual reordering on "On this route" (SCRUM-221/SCRUM-73).
+
+function routeListTexts() {
+  return within(list("On this route")).getAllByRole("listitem").map((item) => item.textContent);
+}
+
+function dragOnto(activeStudentId: string, overStudentId: string, stop: Stop) {
+  const data: StudentDragData = { from: "on-route", name: `${stop.firstName} ${stop.lastName}`, stop };
+  act(() => {
+    dnd.props?.onDragEnd?.({
+      active: { id: `student-${activeStudentId}`, data: { current: data } },
+      over: { id: `student-${overStudentId}` },
+    } as unknown as DragEndEvent);
+  });
+}
+
+it("reorders by dragging one stop onto another, calling reorderStops with the full new order", async () => {
+  const MAYA = stop("s-8", "Maya", "Haddad", 2);
+  const HADI = stop("s-9", "Hadi", "Aoun", 3);
+  vi.mocked(getRoute).mockResolvedValue(route([LINA, MAYA, HADI], 5));
+  vi.mocked(reorderStops).mockResolvedValue(
+    route([stop("s-8", "Maya", "Haddad", 1), stop("s-1", "Lina", "Saad", 2), HADI], 5),
+  );
+  await renderPage();
+
+  dragOnto("s-1", "s-8", LINA);
+
+  expect(reorderStops).toHaveBeenCalledWith("r-1", ["s-8", "s-1", "s-9"]);
+  await waitFor(() =>
+    expect(routeListTexts()).toEqual(["1Maya HaddadRemove", "2Lina SaadRemove", "3Hadi AounRemove"]),
+  );
+  expect(mapMarkers()).toEqual(["Stop 1: Maya Haddad", "Stop 2: Lina Saad", "Stop 3: Hadi Aoun"]);
+  expect(screen.getByText("3 of 5 seats")).toBeInTheDocument();
+  expect(screen.getByText("Lina Saad moved to stop 2 of 3.")).toBeInTheDocument();
+});
+
+it("keeps the order and shows the backend's error when a reorder fails", async () => {
+  const MAYA = stop("s-8", "Maya", "Haddad", 2);
+  vi.mocked(getRoute).mockResolvedValue(route([LINA, MAYA], 5));
+  vi.mocked(reorderStops).mockRejectedValue(
+    new ApiValidationError({ studentIds: "The list must contain exactly this route's current stops." }),
+  );
+  await renderPage();
+  const before = routeListTexts();
+
+  dragOnto("s-1", "s-8", LINA);
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("The list must contain exactly this route's current stops.");
+  expect(routeListTexts()).toEqual(before);
+});
+
+it("has no Move up on the first stop and no Move down on the last", async () => {
+  const MAYA = stop("s-8", "Maya", "Haddad", 2);
+  vi.mocked(getRoute).mockResolvedValue(route([LINA, MAYA], 5));
+  await renderPage();
+
+  expect(
+    within(row("On this route", "Lina Saad")).queryByRole("button", { name: "Move Lina Saad up" }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(row("On this route", "Lina Saad")).getByRole("button", { name: "Move Lina Saad down" }),
+  ).toBeInTheDocument();
+  expect(
+    within(row("On this route", "Maya Haddad")).getByRole("button", { name: "Move Maya Haddad up" }),
+  ).toBeInTheDocument();
+  expect(
+    within(row("On this route", "Maya Haddad")).queryByRole("button", { name: "Move Maya Haddad down" }),
+  ).not.toBeInTheDocument();
+});
+
+it("moves a stop down with its Move down button, calling reorderStops with the new order", async () => {
+  const MAYA = stop("s-8", "Maya", "Haddad", 2);
+  const HADI = stop("s-9", "Hadi", "Aoun", 3);
+  vi.mocked(getRoute).mockResolvedValue(route([LINA, MAYA, HADI], 5));
+  vi.mocked(reorderStops).mockResolvedValue(
+    route([stop("s-8", "Maya", "Haddad", 1), stop("s-1", "Lina", "Saad", 2), HADI], 5),
+  );
+  await renderPage();
+
+  fireEvent.click(
+    within(row("On this route", "Lina Saad")).getByRole("button", { name: "Move Lina Saad down" }),
+  );
+
+  expect(reorderStops).toHaveBeenCalledWith("r-1", ["s-8", "s-1", "s-9"]);
+  await waitFor(() =>
+    expect(routeListTexts()).toEqual(["1Maya HaddadRemove", "2Lina SaadRemove", "3Hadi AounRemove"]),
+  );
+  expect(screen.getByText("Lina Saad moved to stop 2 of 3.")).toBeInTheDocument();
+  // The button was disabled during the request; focus comes back to it.
+  await waitFor(() =>
+    expect(within(row("On this route", "Lina Saad")).getByRole("button", { name: "Move Lina Saad down" })).toHaveFocus(),
+  );
+});
+
+it("moves focus to Move up when a stop reaches the bottom and its Move down is gone", async () => {
+  const MAYA = stop("s-8", "Maya", "Haddad", 2);
+  const HADI = stop("s-9", "Hadi", "Aoun", 3);
+  vi.mocked(getRoute).mockResolvedValue(route([LINA, MAYA, HADI], 5));
+  vi.mocked(reorderStops).mockResolvedValue(
+    route([LINA, stop("s-9", "Hadi", "Aoun", 2), stop("s-8", "Maya", "Haddad", 3)], 5),
+  );
+  await renderPage();
+
+  fireEvent.click(
+    within(row("On this route", "Maya Haddad")).getByRole("button", { name: "Move Maya Haddad down" }),
+  );
+
+  await waitFor(() =>
+    expect(within(row("On this route", "Maya Haddad")).getByRole("button", { name: "Move Maya Haddad up" })).toHaveFocus(),
+  );
+  expect(
+    within(row("On this route", "Maya Haddad")).queryByRole("button", { name: "Move Maya Haddad down" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByText("Maya Haddad moved to stop 3 of 3.")).toBeInTheDocument();
+});
+
+it("focuses the alert when a Move button's reorder fails", async () => {
+  const MAYA = stop("s-8", "Maya", "Haddad", 2);
+  vi.mocked(getRoute).mockResolvedValue(route([LINA, MAYA], 5));
+  vi.mocked(reorderStops).mockRejectedValue(new TypeError("Failed to fetch"));
+  await renderPage();
+  const before = routeListTexts();
+
+  fireEvent.click(
+    within(row("On this route", "Lina Saad")).getByRole("button", { name: "Move Lina Saad down" }),
+  );
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Something went wrong. Please try again.");
+  await waitFor(() => expect(alert).toHaveFocus());
+  expect(routeListTexts()).toEqual(before);
+});
+
+it("sends one reorder for a double click on Move down", async () => {
+  const MAYA = stop("s-8", "Maya", "Haddad", 2);
+  vi.mocked(getRoute).mockResolvedValue(route([LINA, MAYA], 5));
+  let resolveReorder: (value: Route) => void = () => {};
+  vi.mocked(reorderStops).mockReturnValue(new Promise((resolve) => (resolveReorder = resolve)));
+  await renderPage();
+  const moveDown = within(row("On this route", "Lina Saad")).getByRole("button", { name: "Move Lina Saad down" });
+
+  act(() => {
+    fireEvent.click(moveDown);
+    fireEvent.click(moveDown);
+  });
+
+  expect(reorderStops).toHaveBeenCalledTimes(1);
+  expect(moveDown).toBeDisabled();
+  await act(async () => resolveReorder(route([stop("s-8", "Maya", "Haddad", 1), stop("s-1", "Lina", "Saad", 2)], 5)));
+});
+
+it("moves a stop up with its Move up button, calling reorderStops with the new order", async () => {
+  const MAYA = stop("s-8", "Maya", "Haddad", 2);
+  const HADI = stop("s-9", "Hadi", "Aoun", 3);
+  vi.mocked(getRoute).mockResolvedValue(route([LINA, MAYA, HADI], 5));
+  vi.mocked(reorderStops).mockResolvedValue(
+    route([stop("s-9", "Hadi", "Aoun", 1), stop("s-1", "Lina", "Saad", 2), stop("s-8", "Maya", "Haddad", 3)], 5),
+  );
+  await renderPage();
+
+  fireEvent.click(
+    within(row("On this route", "Hadi Aoun")).getByRole("button", { name: "Move Hadi Aoun up" }),
+  );
+
+  expect(reorderStops).toHaveBeenCalledWith("r-1", ["s-1", "s-9", "s-8"]);
+  await waitFor(() =>
+    expect(routeListTexts()).toEqual(["1Hadi AounRemove", "2Lina SaadRemove", "3Maya HaddadRemove"]),
+  );
+});
+
+it("still adds a student dropped on the route list when it already has several stops", async () => {
+  const MAYA = stop("s-8", "Maya", "Haddad", 2);
+  vi.mocked(getRoute).mockResolvedValue(route([LINA, MAYA], 5));
+  vi.mocked(addStudentToRoute).mockResolvedValue(
+    route([LINA, MAYA, stop("s-2", "Omar", "Nasser", 3)], 5),
+  );
+  await renderPage();
+
+  drop(OMAR_DRAG, "on-route");
+
+  expect(addStudentToRoute).toHaveBeenCalledWith("r-1", "s-2");
+  expect(reorderStops).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect(within(list("On this route")).getByText("Omar Nasser")).toBeInTheDocument(),
+  );
+});
+
+it("still removes a student dropped on the unassigned list when the route has several stops", async () => {
+  const MAYA = stop("s-8", "Maya", "Haddad", 2);
+  vi.mocked(getRoute).mockResolvedValue(route([LINA, MAYA], 5));
+  vi.mocked(removeStudentFromRoute).mockResolvedValue(route([MAYA], 5));
+  await renderPage();
+
+  drop(LINA_DRAG, "unassigned");
+
+  expect(removeStudentFromRoute).toHaveBeenCalledWith("r-1", "s-1");
+  expect(reorderStops).not.toHaveBeenCalled();
+  expect(await screen.findByText("1 of 5 seats")).toBeInTheDocument();
 });

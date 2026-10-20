@@ -46,6 +46,16 @@ cors:
 
 wassel:
   frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
+  # How sign-in codes and links are emailed outside local and test: "smtp" (the spring.mail settings above,
+  # the default) or "brevo" (Brevo's HTTPS API, for hosts that block outbound SMTP, such as Railway's
+  # non-Pro plans). Brevo needs BREVO_API_KEY and BREVO_SENDER_EMAIL (an address verified in the Brevo
+  # account); with "brevo", MAIL_USERNAME and MAIL_PASSWORD are not used.
+  mail:
+    provider: ${MAIL_PROVIDER:smtp}
+    brevo:
+      api-key: ${BREVO_API_KEY:}
+      sender-email: ${BREVO_SENDER_EMAIL:}
+      sender-name: ${BREVO_SENDER_NAME:Wassel}
   seed-admin:
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}

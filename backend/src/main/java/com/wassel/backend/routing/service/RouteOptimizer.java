@@ -46,7 +46,9 @@ public interface RouteOptimizer {
 	/** Why a route is not feasible. The names are the codes in the contract. */
 	enum Code {
 		CAPACITY_EXCEEDED,
-		ARRIVAL_TIME_UNREACHABLE
+		ARRIVAL_TIME_UNREACHABLE,
+		/** Only in a generate-all proposal (SCRUM-207): an active student with no map pin. The optimizers never produce it. */
+		NO_PIN
 	}
 
 	/** One reason: {@code code} is stable and for programs, {@code message} is for people. */

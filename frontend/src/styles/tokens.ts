@@ -276,6 +276,30 @@ export const mapTheme = {
   stopSize: 28,
   schoolSize: 36,
   pinSize: 32,
+  // Route palette (SCRUM-224): one color per route when a map draws several
+  // at once (the "Generate routes" proposal), so routes can be told apart on
+  // sight. Color is never the only signal — pair it with the legend and with
+  // a marker label that names the route. Each shade keeps markerText
+  // (#f5f5f7) at or above 4.5:1, the same bar as stopFill (~6.9:1), so a
+  // route's numbered badges stay readable; shades are spread across hues so
+  // no two are mistaken for one another. On the dark page every shade is
+  // under 3:1, so a swatch off the map keeps the markers' markerRing. Routes
+  // beyond the list wrap back to the start (route 11 shares route 1's color);
+  // the legend, the marker popups and labels still name each route. The
+  // first entry matches stopFill, so a single-route map and a one-route
+  // proposal look the same.
+  routeColors: [
+    colors.primary[600], // blue, ~6.9:1 (same as stopFill)
+    "#b91c1c", // red, ~5.9:1
+    "#166534", // green, ~6.7:1
+    "#9a3412", // orange, ~6.8:1
+    "#7e22ce", // purple, ~6.5:1
+    "#115e59", // teal, ~7.1:1
+    "#be185d", // pink, ~5.6:1
+    colors.accent[800], // brown, ~6.5:1
+    "#3f6212", // lime, ~6.6:1
+    "#155e75", // cyan, ~6.8:1
+  ],
 } as const;
 
 /** Minimum hit area for any link or button (WCAG 2.5.5 target size). */

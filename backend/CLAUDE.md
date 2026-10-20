@@ -57,6 +57,15 @@ that's the structure this codebase moved away from.
   timeouts; they are per network step, so they bound a hang, not the whole send. A missing
   `MAIL_USERNAME` stops startup, but a missing `MAIL_PASSWORD` does not (Boot binds it as the literal
   text), so `docker-compose.staging.yml` is what refuses to start without it.
+  Brevo (SCRUM-197): `BrevoMailer` sends through Brevo's HTTPS API (`POST /v3/smtp/email`, key in the `api-key`
+  header) for hosts that block outbound SMTP, such as Railway outside its Pro plan. `wassel.mail.provider`
+  (`MAIL_PROVIDER`, default `smtp`) picks `SmtpMailer` or `BrevoMailer`; both are also limited to the
+  `!local & !test` profiles, so there is still exactly one `Mailer` in every setup (`MailerProfileTests`) and a
+  deployed environment never prints a code. `brevo` needs `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` (an address
+  verified in the Brevo account, since Brevo only sends from a verified sender); a blank one stops startup, and
+  `MAIL_USERNAME`/`MAIL_PASSWORD` are then unused. Same failure rule as SMTP: a rejected or timed-out send
+  (5 s) throws, so the caller's transaction rolls back and the user retries. The exception carries only its
+  type: never the key or the response body, which can echo the recipient. Local and staging keep SMTP.
   Known limits: a password change does not revoke existing sessions (tokens are stateless); the
   fix is a "tokens valid from" timestamp on `User` checked by `JwtAuthenticationFilter`. And
   anyone who knows an email can call forgot-password once a minute; each new link voids the
@@ -199,6 +208,39 @@ that's the structure this codebase moved away from.
   apply's comparison and its write is overwritten; closing it needs a route-row lock that every
   stop-changing method also takes. The solve runs inside the propose transaction (at most 2 s, plus up to the road provider's 3 s timeout when the
   matrix is not cached).
+  Generate all (SCRUM-207): `RouteGenerationController` under `/api/head-of-transport/routes/generation` (generate, apply,
+  discard) and `RouteGenerationService`, mirroring SCRUM-203 with one proposal per school (`entity/FleetProposal`, table
+  `fleet_proposals`, unique `school_id`; its planned routes are `FleetProposalRoute` rows; migration V5). `collect` reads the
+  school once (active students, routes with their members, vehicles, drivers, arrival time) and both generate and apply use it.
+  A vehicle is planned when it is active and its driver is ACTIVE: the driver of the route it is already on, or else its
+  assigned driver, who must not be on another route. Other active vehicles are `excludedVehicles` with a message, so an INVITED
+  driver is excluded here although `RouteService` accepts one. `generate` is not transactional: it reads and saves in two
+  `TransactionTemplate` transactions around `FleetPlanner.plan`, and a `ConcurrentHashMap` set allows one generation per school
+  at a time (409, this process only). The proposal keeps a fingerprint, four SHA-256 prefixes (students with pins, planned
+  vehicles with capacity and driver, routes with members in order, arrival time). `apply` claims the proposal (a second apply is
+  a 404), recollects, and answers 409 naming the parts that differ (the claim rolls back, so the proposal stays); a student who
+  is gone or inactive by the time they are placed gets the same 409, not the student module's 404. Generate's save deletes the
+  proposal row before its route rows, the order apply and discard use: the other order deadlocked against an apply on PostgreSQL
+  (reproduced by replaying both transactions in two sessions). It updates the
+  route of a planned vehicle (name and driver kept) or creates one (`<plate> morning run`, the vehicle's assigned driver) with
+  `routeRepository.saveAndFlush`, not `RouteService.createRoute`, because that swallows `DataIntegrityViolationException` and a
+  failed flush would poison the surrounding transaction. Then `StudentService.placeOnRoutes` replaces each written route's students
+  (releases them, then positions 1..n, moving a student off any other route) and the answer is `RouteService.listRoutes`. Routes of
+  vehicles that are not planned are left alone. Active students without a pin are `unplaced` with `NO_PIN`, a `RouteOptimizer.Code`
+  only this endpoint produces. There is no undo: apply logs the previous studentId:routeId:position map at INFO. Known limits: a
+  manual edit that commits between apply's comparison and its writes is overwritten (as in 203); single-route proposals are not
+  cleared by an apply (a stale one answers 409 on its own); generating 150 students on 10 vehicles took 13.5 s on straight-line
+  times and applying 0.26 s, and each generate can spend road-provider requests (about one for the fleet, none above 58 students,
+  plus one per route, when uncached). Not checked: the deployed proxy's timeout for a request that long. A planned vehicle
+  that the solver gives no students but whose route has students is listed with no stops and those students in `leaving`, and
+  apply empties that route (`placeOnRoutes` with an empty list). Still not shown: a route of an excluded vehicle that a moved
+  student leaves (the contract's known limit). Independent tests (SCRUM-216, by Moustafa):
+  `RouteGenerationCriteriaTests`, written from the ticket, not from `RouteGenerationControllerTests` or
+  `FleetPlannerTests` (the author's own suites for this and SCRUM-206). Besides re-checking the AC's four rules through
+  a fresh set of scenarios, it adds coverage neither existing suite had: two `generate` calls for the same school at
+  once, which the service already guards against (a `ConcurrentHashMap` key per school) but nothing exercised — the
+  second now reliably gets 409 while the first is still solving a 60-student fleet, and the guard releases correctly
+  once it finishes.
 - `routing` — the contracts the route features code against (SCRUM-201) and the solver behind them
   (SCRUM-202). `service/RouteOptimizer` orders one route's stops and `service/TravelTimes` gives a
   driving-time matrix between points, so the road provider client (SCRUM-204) plugs in without its
@@ -252,7 +294,7 @@ that's the structure this codebase moved away from.
   `ortools-java`: the natives are extracted at runtime, and a container that mounts `/tmp` as
   `noexec` fails to load them.
   Fleet planning (SCRUM-206): `FleetPlanner.plan` splits students across vehicles and orders each route; it only
-  proposes (saving is SCRUM-207). One OR-Tools model over one matrix assigns students within each vehicle's seats and a
+  proposes (the `routes` module's `RouteGenerationService` saves it, SCRUM-207). One OR-Tools model over one matrix assigns students within each vehicle's seats and a
   driving time of at most arrival − 06:00, with every student droppable at a penalty larger than any driving, then each
   route goes back through `RouteOptimizer` on its own matrix. Above 58 students the whole-fleet matrix is straight-line
   (the road client refuses more than 59 points without spending a request) but each route still gets road times; a route

@@ -4,7 +4,9 @@
 // to the school, and the school. Drawn only from `route`, so the page redraws
 // it from the Route every add, remove and drop answers with. The same
 // information is listed as text under the map, and the stops with no pin are
-// listed apart, because the map can't show them.
+// listed apart, because the map can't show them. While an optimization
+// proposal is open (SCRUM-221) a radio group switches all of it between the
+// current and the proposed order.
 
 import type { ReactNode } from "react";
 import Link from "next/link";
@@ -26,7 +28,7 @@ export function formatArrival(time: string | null): string {
   return time ? time.slice(0, 5) : NOT_SET;
 }
 
-function arrivalText(time: string | null): string {
+export function arrivalText(time: string | null): string {
   return time ? `Arrives ${formatArrival(time)}` : NOT_SET;
 }
 
@@ -83,7 +85,16 @@ function GroupPopup({ stops }: { stops: Stop[] }) {
 }
 
 // The same look as the marker on the map: a numbered stop, or the school.
-function Badge({ children, school = false }: { children: ReactNode; school?: boolean }) {
+// `fill` is a route's own color on the multi-route proposal (SCRUM-224).
+export function Badge({
+  children,
+  school = false,
+  fill = mapTheme.stopFill,
+}: {
+  children: ReactNode;
+  school?: boolean;
+  fill?: string;
+}) {
   return (
     <span
       aria-hidden="true"
@@ -92,7 +103,7 @@ function Badge({ children, school = false }: { children: ReactNode; school?: boo
         width: mapTheme.stopSize,
         height: mapTheme.stopSize,
         borderRadius: radius.full,
-        backgroundColor: school ? mapTheme.schoolFill : mapTheme.stopFill,
+        backgroundColor: school ? mapTheme.schoolFill : fill,
         color: school ? mapTheme.schoolInk : mapTheme.markerText,
       }}
     >
@@ -173,19 +184,66 @@ function buildMarkers(stops: Stop[]): MapMarker[] {
   return markers;
 }
 
-export function RouteMap({ route }: { route: Route }) {
-  const pinned = route.stops.filter(isValidCoordinates);
-  const unpinned = route.stops.filter((stop) => !isValidCoordinates(stop));
+export type MapOrder = "current" | "proposed";
+
+// While an optimization proposal is open (SCRUM-221) the map can show either
+// order. The page owns `view`, so each new proposal starts on "proposed".
+export interface MapComparison {
+  proposedStops: Stop[];
+  view: MapOrder;
+  onViewChange: (view: MapOrder) => void;
+}
+
+const ORDER_OPTIONS: { value: MapOrder; label: string }[] = [
+  { value: "current", label: "Current order" },
+  { value: "proposed", label: "Proposed order" },
+];
+
+// Native radios, so arrow keys move between them and the group is announced
+// with its legend. minHeight keeps each option a full tap target.
+function OrderSwitch({ view, onViewChange }: Omit<MapComparison, "proposedStops">) {
+  return (
+    <fieldset className="flex flex-wrap items-center" style={{ gap: spacing.md, border: 0, padding: 0, margin: 0 }}>
+      <legend className="text-sm font-medium" style={{ color: darkTheme.text.secondary, marginBottom: spacing.xs }}>
+        Map shows
+      </legend>
+      {ORDER_OPTIONS.map((option) => (
+        <label
+          key={option.value}
+          className="inline-flex items-center text-sm font-medium cursor-pointer"
+          style={{ gap: spacing.sm, minHeight: sizing.tapTarget, color: darkTheme.text.primary }}
+        >
+          <input
+            type="radio"
+            name="route-map-order"
+            value={option.value}
+            checked={view === option.value}
+            onChange={() => onViewChange(option.value)}
+            className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+            style={{ accentColor: colors.primary[400], outlineColor: colors.primary[400] }}
+          />
+          {option.label}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+export function RouteMap({ route, comparison }: { route: Route; comparison?: MapComparison }) {
+  const shownOrder = comparison?.view;
+  const stops = comparison?.view === "proposed" ? comparison.proposedStops : route.stops;
+  const pinned = stops.filter(isValidCoordinates);
+  const unpinned = stops.filter((stop) => !isValidCoordinates(stop));
   const hasPinned = pinned.length > 0;
   const schoolOnMap = isValidCoordinates(route.school);
   const schoolArrival = route.school.arrivalTime
     ? `Arrival ${formatArrival(route.school.arrivalTime)}`
     : NOT_SET;
 
-  const markers: MapMarker[] = buildMarkers(route.stops);
+  const markers: MapMarker[] = buildMarkers(stops);
 
   const emptyMessage =
-    route.stops.length === 0
+    stops.length === 0
       ? "No students on this route yet. Add a student to see the route on the map."
       : "None of the students on this route has a pin yet, so there is nothing to draw. Add pins on the Students page.";
 
@@ -195,6 +253,7 @@ export function RouteMap({ route }: { route: Route }) {
         <h2 id="route-map-heading" className="text-lg font-semibold" style={{ color: darkTheme.text.primary }}>
           Route map
         </h2>
+        {comparison && <OrderSwitch view={comparison.view} onViewChange={comparison.onViewChange} />}
         {hasPinned && (
           <a href="#route-stop-list" className={linkClass} style={linkStyle}>
             Skip to the stops as a list
@@ -208,7 +267,7 @@ export function RouteMap({ route }: { route: Route }) {
         // With no pinned stop the map shows its empty state, not the school alone.
         school={hasPinned ? { ...route.school, label: "School", popup: <Popup title="School" detail={schoolArrival} /> } : null}
         // Points without coordinates are skipped, so a school with none just ends the line at the last stop.
-        path={hasPinned ? [...route.stops, route.school] : undefined}
+        path={hasPinned ? [...stops, route.school] : undefined}
         emptyMessage={emptyMessage}
       />
 
@@ -226,7 +285,7 @@ export function RouteMap({ route }: { route: Route }) {
             className="text-base font-semibold"
             style={{ color: darkTheme.text.primary }}
           >
-            Stops in order
+            {shownOrder ? `Stops in ${shownOrder} order` : "Stops in order"}
           </h3>
           <ol className="flex flex-col" style={{ gap: spacing.sm, padding: 0, margin: 0 }}>
             {pinned.map((stop) => (

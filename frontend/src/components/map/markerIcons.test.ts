@@ -37,6 +37,17 @@ it("draws no badge for a single stop", () => {
   expect(htmlOf(stopIcon(1, 0))).not.toContain("+");
 });
 
+it("uses a route's own color instead of the default stop fill", () => {
+  const icon = stopIcon(2, undefined, mapTheme.routeColors[1]);
+  expect(htmlOf(icon)).toContain(mapTheme.routeColors[1]);
+  expect(htmlOf(icon)).not.toContain(mapTheme.stopFill);
+});
+
+it("carries the route color into the count badge too", () => {
+  const icon = stopIcon(1, 1, mapTheme.routeColors[2]);
+  expect(htmlOf(icon)).toContain(`color:${mapTheme.routeColors[2]}`);
+});
+
 it("draws the school apart from the stops", () => {
   const icon = schoolIcon();
   expect(icon.options.className).toContain("wassel-map-school");

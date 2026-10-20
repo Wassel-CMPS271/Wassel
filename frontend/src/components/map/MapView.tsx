@@ -11,7 +11,7 @@ import { darkTheme, mapTheme, radius, sizing, spacing } from "@/styles/tokens";
 import { isValidCoordinates } from "./geo";
 import type { MapViewProps } from "./types";
 
-export type { Coordinates, MapMarker, MapSchool, MapViewProps, MaybeCoordinates } from "./types";
+export type { Coordinates, MapMarker, MapRoute, MapSchool, MapViewProps, MaybeCoordinates } from "./types";
 
 function MapSkeleton({ height }: { height: string }) {
   return (
@@ -67,6 +67,9 @@ export function MapView({ label, emptyMessage = "No locations to show yet.", ...
   const pinMode = props.onPinChange !== undefined;
   const hasSomethingToShow =
     (props.markers ?? []).some(isValidCoordinates) ||
+    (props.routes ?? []).some(
+      (route) => (route.markers ?? []).some(isValidCoordinates) || (route.path ?? []).some(isValidCoordinates),
+    ) ||
     isValidCoordinates(props.school) ||
     (props.path ?? []).some(isValidCoordinates) ||
     (pinMode && isValidCoordinates(props.pin)) ||

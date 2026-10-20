@@ -30,6 +30,18 @@ export interface MapSchool extends MaybeCoordinates {
   popup?: ReactNode;
 }
 
+// One route on a multi-route map (SCRUM-224, e.g. the "Generate routes"
+// proposal): its own numbered markers, its own line ending at the shared
+// `school`, and its own color from `mapTheme.routeColors`. A route with no
+// stops (empty `markers` and `path`) draws nothing.
+export interface MapRoute {
+  id: string; // React key, e.g. the route's vehicle id
+  label: string; // route name or plate, shown in the legend
+  color: string; // from mapTheme.routeColors
+  markers?: MapMarker[]; // this route's stops; markers without coordinates are skipped
+  path?: MaybeCoordinates[]; // this route's line, e.g. [...route.stops, school]
+}
+
 export interface MapViewProps {
   label: string; // the map region's accessible name
   markers?: MapMarker[]; // markers without coordinates are skipped
@@ -37,6 +49,11 @@ export interface MapViewProps {
   // Ordered points joined by a line, e.g. [...route.stops, route.school].
   // Points without coordinates are skipped, as in the contract's leg rule.
   path?: MaybeCoordinates[];
+  // Several routes on one map, each with its own markers, line and color.
+  // A legend naming each route is drawn beside the map. Use this instead of
+  // (or alongside) `markers`/`path` for a multi-route map; existing callers
+  // that only pass `markers`/`path` are unaffected.
+  routes?: MapRoute[];
   // A fixed view. Without it the map fits itself to all the points.
   center?: Coordinates;
   zoom?: number;
