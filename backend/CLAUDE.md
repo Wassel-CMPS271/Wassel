@@ -57,6 +57,15 @@ that's the structure this codebase moved away from.
   timeouts; they are per network step, so they bound a hang, not the whole send. A missing
   `MAIL_USERNAME` stops startup, but a missing `MAIL_PASSWORD` does not (Boot binds it as the literal
   text), so `docker-compose.staging.yml` is what refuses to start without it.
+  Brevo (SCRUM-197): `BrevoMailer` sends through Brevo's HTTPS API (`POST /v3/smtp/email`, key in the `api-key`
+  header) for hosts that block outbound SMTP, such as Railway outside its Pro plan. `wassel.mail.provider`
+  (`MAIL_PROVIDER`, default `smtp`) picks `SmtpMailer` or `BrevoMailer`; both are also limited to the
+  `!local & !test` profiles, so there is still exactly one `Mailer` in every setup (`MailerProfileTests`) and a
+  deployed environment never prints a code. `brevo` needs `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` (an address
+  verified in the Brevo account, since Brevo only sends from a verified sender); a blank one stops startup, and
+  `MAIL_USERNAME`/`MAIL_PASSWORD` are then unused. Same failure rule as SMTP: a rejected or timed-out send
+  (5 s) throws, so the caller's transaction rolls back and the user retries. The exception carries only its
+  type: never the key or the response body, which can echo the recipient. Local and staging keep SMTP.
   Known limits: a password change does not revoke existing sessions (tokens are stateless); the
   fix is a "tokens valid from" timestamp on `User` checked by `JwtAuthenticationFilter`. And
   anyone who knows an email can call forgot-password once a minute; each new link voids the

@@ -100,6 +100,23 @@ To stop the stack: `docker compose -f docker-compose.staging.yml down` (add `-v`
 also delete the staging database's data). Rebuild after code changes with the same
 `up -d --build` command.
 
+### Email through Brevo (hosts that block SMTP)
+
+Some hosts block outbound SMTP, so Gmail can't be used there: Railway allows it only on its Pro plan. For those, the
+backend can send through [Brevo](https://www.brevo.com)'s HTTPS API instead. It is chosen by a setting, and the
+default stays SMTP, so local and staging are unchanged.
+
+| Variable | Value |
+| -------- | ----- |
+| `MAIL_PROVIDER` | `brevo` (the default is `smtp`) |
+| `BREVO_API_KEY` | a Brevo API key (secret; create one under SMTP & API in your Brevo account) |
+| `BREVO_SENDER_EMAIL` | the sender address, which must be verified in Brevo (Senders, Domains & Dedicated IPs); Brevo refuses any other |
+| `BREVO_SENDER_NAME` (optional) | the name recipients see, default `Wassel` |
+
+With `brevo`, `MAIL_USERNAME` and `MAIL_PASSWORD` are not used. Missing the key or the sender stops the backend at
+startup. Never put the key in git, in a chat or in a screenshot; set it only where the backend runs (Railway's
+Variables tab). If a key was ever pasted somewhere shared, delete it in Brevo and create a new one.
+
 ### Email on staging
 
 Staging sends real email (login codes, set-password and reset links) through Gmail. Nothing is
