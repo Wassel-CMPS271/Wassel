@@ -302,13 +302,13 @@ it("picks a card up with Space on its handle and cancels with Escape", async () 
   await renderPage();
   const handle = screen.getByRole("button", { name: "Move Omar Nasser" });
 
+  const listener = vi.spyOn(document, "addEventListener");
   fireEvent.keyDown(handle, { code: "Space" });
   expect(await screen.findByText("Picked up Omar Nasser from Not on a route.")).toBeInTheDocument();
 
-  // The keyboard sensor listens on the document from the next tick.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
+  // Wait for the sensor to register its listener rather than guessing a timer delay.
+  await waitFor(() => expect(listener.mock.calls.some(([type]) => type === "keydown")).toBe(true));
+  listener.mockRestore();
   fireEvent.keyDown(document, { code: "Escape" });
   expect(
     await screen.findByText("Moving Omar Nasser was cancelled. They stay in Not on a route."),
