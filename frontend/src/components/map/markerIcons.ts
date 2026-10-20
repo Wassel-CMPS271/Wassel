@@ -15,27 +15,30 @@ function box(size: number, extra: string): string {
 
 // A small "+N" badge for a marker standing in for several stops at one
 // spot, sized off the stop badge so it needs no token of its own. Colors
-// are the stop badge's own two tokens, swapped (contrast is symmetric).
-function countBadge(stopSize: number, extra: number): string {
+// are the stop badge's own two tokens, swapped (contrast is symmetric), or
+// the route's own color on a multi-route map (SCRUM-224).
+function countBadge(stopSize: number, extra: number, fill: string): string {
   const size = Math.round(stopSize * 0.55);
   return `<div aria-hidden="true" style="position:absolute;top:-2px;right:-2px;${box(
     size,
-    `display:flex;align-items:center;justify-content:center;border-radius:${radius.full};border:${RING};background:${mapTheme.markerRing};color:${mapTheme.stopFill};font-size:${Math.round(size * 0.65)}px;line-height:1;font-weight:${typography.fontWeight.semibold};`,
+    `display:flex;align-items:center;justify-content:center;border-radius:${radius.full};border:${RING};background:${mapTheme.markerRing};color:${fill};font-size:${Math.round(size * 0.65)}px;line-height:1;font-weight:${typography.fontWeight.semibold};`,
   )}">+${extra}</div>`;
 }
 
-export function stopIcon(number?: number, count?: number): DivIcon {
+// `fill` defaults to the single-route stop color; a multi-route map passes
+// the route's own color from `mapTheme.routeColors` instead.
+export function stopIcon(number?: number, count?: number, fill: string = mapTheme.stopFill): DivIcon {
   const size = mapTheme.stopSize;
   const text =
     number === undefined || !Number.isFinite(number) ? "" : String(Math.trunc(number));
   const circle = `<div aria-hidden="true" style="${box(
     size,
-    `display:flex;align-items:center;justify-content:center;border-radius:${radius.full};border:${RING};background:${mapTheme.stopFill};color:${mapTheme.markerText};font-size:${typography.fontSize.xs.size};line-height:1;font-weight:${typography.fontWeight.semibold};`,
+    `display:flex;align-items:center;justify-content:center;border-radius:${radius.full};border:${RING};background:${fill};color:${mapTheme.markerText};font-size:${typography.fontSize.xs.size};line-height:1;font-weight:${typography.fontWeight.semibold};`,
   )}">${text}</div>`;
   const extra = count !== undefined && Number.isFinite(count) ? Math.trunc(count) : 0;
   const html =
     extra > 0
-      ? `<div aria-hidden="true" style="position:relative;width:${size}px;height:${size}px;">${circle}${countBadge(size, extra)}</div>`
+      ? `<div aria-hidden="true" style="position:relative;width:${size}px;height:${size}px;">${circle}${countBadge(size, extra, fill)}</div>`
       : circle;
   return divIcon({
     className: "wassel-map-marker wassel-map-stop",

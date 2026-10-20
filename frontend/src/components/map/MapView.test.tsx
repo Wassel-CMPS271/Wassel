@@ -84,3 +84,51 @@ it("treats a school without coordinates as nothing to show", () => {
   expect(screen.getByText("No locations to show yet.")).toBeInTheDocument();
   expect(screen.queryByTestId("leaflet-map")).not.toBeInTheDocument();
 });
+
+it("shows the map when a route has pinned markers", () => {
+  render(
+    <MapView
+      label="Proposal map"
+      routes={[
+        {
+          id: "r-1",
+          label: "Route A",
+          color: "#b91c1c",
+          markers: [{ id: "s-1", label: "Route A, stop 1: Hadi Rizk", latitude: 33.886, longitude: 35.485 }],
+        },
+      ]}
+    />,
+  );
+
+  expect(screen.getByTestId("leaflet-map")).toBeInTheDocument();
+});
+
+it("shows the empty state when every route has no stops", () => {
+  render(
+    <MapView
+      label="Proposal map"
+      routes={[{ id: "r-1", label: "Route A", color: "#b91c1c", markers: [], path: [] }]}
+    />,
+  );
+
+  expect(screen.getByText("No locations to show yet.")).toBeInTheDocument();
+  expect(screen.queryByTestId("leaflet-map")).not.toBeInTheDocument();
+});
+
+it("shows the map from a route's own line even without markers", () => {
+  render(
+    <MapView
+      label="Proposal map"
+      routes={[
+        {
+          id: "r-1",
+          label: "Route A",
+          color: "#b91c1c",
+          path: [{ latitude: 33.886, longitude: 35.485 }, { latitude: 33.896, longitude: 35.484 }],
+        },
+      ]}
+    />,
+  );
+
+  expect(screen.getByTestId("leaflet-map")).toBeInTheDocument();
+});

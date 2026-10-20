@@ -85,7 +85,16 @@ function GroupPopup({ stops }: { stops: Stop[] }) {
 }
 
 // The same look as the marker on the map: a numbered stop, or the school.
-export function Badge({ children, school = false }: { children: ReactNode; school?: boolean }) {
+// `fill` is a route's own color on the multi-route proposal (SCRUM-224).
+export function Badge({
+  children,
+  school = false,
+  fill = mapTheme.stopFill,
+}: {
+  children: ReactNode;
+  school?: boolean;
+  fill?: string;
+}) {
   return (
     <span
       aria-hidden="true"
@@ -94,7 +103,7 @@ export function Badge({ children, school = false }: { children: ReactNode; schoo
         width: mapTheme.stopSize,
         height: mapTheme.stopSize,
         borderRadius: radius.full,
-        backgroundColor: school ? mapTheme.schoolFill : mapTheme.stopFill,
+        backgroundColor: school ? mapTheme.schoolFill : fill,
         color: school ? mapTheme.schoolInk : mapTheme.markerText,
       }}
     >
