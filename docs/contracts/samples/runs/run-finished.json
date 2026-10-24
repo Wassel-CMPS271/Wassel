@@ -1,0 +1,83 @@
+{
+  "id": "50000000-0000-4000-8000-000000000003",
+  "date": "2026-10-21",
+  "direction": "MORNING",
+  "state": "FINISHED",
+  "schoolTime": "07:30",
+  "startedAt": "2026-10-21T04:15:00Z",
+  "endedAt": "2026-10-21T04:31:00Z",
+  "route": {
+    "id": "10000000-0000-4000-8000-000000000003",
+    "name": "Verdun morning run"
+  },
+  "vehicle": {
+    "id": "20000000-0000-4000-8000-000000000003",
+    "plateNumber": "C 345678",
+    "capacity": 14
+  },
+  "driver": {
+    "id": "30000000-0000-4000-8000-000000000003",
+    "firstName": "Walid",
+    "lastName": "Barakat"
+  },
+  "counts": {
+    "students": 3,
+    "absent": 0,
+    "pickedUp": 2,
+    "droppedOff": 2,
+    "notPresent": 1
+  },
+  "stops": [
+    {
+      "studentId": "40000000-0000-4000-8000-000000000009",
+      "position": 1,
+      "firstName": "Hadi",
+      "lastName": "Rizk",
+      "address": "Verdun Street, Beirut",
+      "latitude": 33.886,
+      "longitude": 35.485,
+      "arrivalTime": "07:26",
+      "guardianName": "Samir Rizk",
+      "guardianPhone": "+961 3 411 009",
+      "absent": false,
+      "confirmation": {
+        "status": "DROPPED_OFF",
+        "at": "2026-10-21T04:29:00Z"
+      }
+    },
+    {
+      "studentId": "40000000-0000-4000-8000-000000000010",
+      "position": 2,
+      "firstName": "Lina",
+      "lastName": "Daher",
+      "address": "Rue Sourati, Beirut",
+      "latitude": null,
+      "longitude": null,
+      "arrivalTime": null,
+      "guardianName": "Rima Daher",
+      "guardianPhone": "+961 70 411 010",
+      "absent": false,
+      "confirmation": {
+        "status": "DROPPED_OFF",
+        "at": "2026-10-21T04:30:00Z"
+      }
+    },
+    {
+      "studentId": "40000000-0000-4000-8000-000000000011",
+      "position": 3,
+      "firstName": "Jad",
+      "lastName": "Salameh",
+      "address": "Madame Curie Street, Beirut",
+      "latitude": 33.892,
+      "longitude": 35.49,
+      "arrivalTime": "07:28",
+      "guardianName": "Hala Salameh",
+      "guardianPhone": "+961 71 411 011",
+      "absent": false,
+      "confirmation": {
+        "status": "NOT_PRESENT",
+        "at": "2026-10-21T04:28:00Z"
+      }
+    }
+  ]
+}

@@ -1,0 +1,188 @@
+{
+  "date": "2026-10-21",
+  "dayType": "SCHOOL_DAY",
+  "runs": [
+    {
+      "id": "50000000-0000-4000-8000-000000000001",
+      "date": "2026-10-21",
+      "direction": "MORNING",
+      "state": "IN_PROGRESS",
+      "schoolTime": "07:30",
+      "startedAt": "2026-10-21T03:58:00Z",
+      "endedAt": null,
+      "route": {
+        "id": "10000000-0000-4000-8000-000000000001",
+        "name": "Hamra morning run"
+      },
+      "vehicle": {
+        "id": "20000000-0000-4000-8000-000000000001",
+        "plateNumber": "A 123456",
+        "capacity": 14
+      },
+      "driver": {
+        "id": "30000000-0000-4000-8000-000000000001",
+        "firstName": "Karim",
+        "lastName": "Haddad"
+      },
+      "counts": {
+        "students": 4,
+        "absent": 1,
+        "pickedUp": 1,
+        "droppedOff": 0,
+        "notPresent": 1
+      },
+      "stops": [
+        {
+          "studentId": "40000000-0000-4000-8000-000000000001",
+          "position": 1,
+          "firstName": "Rami",
+          "lastName": "Nasr",
+          "address": "Rue Hamra, Beirut",
+          "latitude": 33.8995,
+          "longitude": 35.521,
+          "arrivalTime": "07:08",
+          "guardianName": "Maya Nasr",
+          "guardianPhone": "+961 3 411 001",
+          "absent": false,
+          "confirmation": {
+            "status": "PICKED_UP",
+            "at": "2026-10-21T04:08:00Z"
+          }
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000002",
+          "position": 2,
+          "firstName": "Salma",
+          "lastName": "Khoury",
+          "address": "Clemenceau Street, Beirut",
+          "latitude": 33.887,
+          "longitude": 35.488,
+          "arrivalTime": "07:15",
+          "guardianName": "Fadi Khoury",
+          "guardianPhone": "+961 70 411 002",
+          "absent": false,
+          "confirmation": {
+            "status": "NOT_PRESENT",
+            "at": "2026-10-21T04:16:00Z"
+          }
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000003",
+          "position": 3,
+          "firstName": "Tarek",
+          "lastName": "Mansour",
+          "address": "Bliss Street, Beirut",
+          "latitude": 33.905,
+          "longitude": 35.51,
+          "arrivalTime": "07:21",
+          "guardianName": "Nadia Mansour",
+          "guardianPhone": "+961 71 411 003",
+          "absent": true,
+          "confirmation": null
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000004",
+          "position": 4,
+          "firstName": "Dana",
+          "lastName": "Fares",
+          "address": "Jeanne d'Arc Street, Beirut",
+          "latitude": 33.891,
+          "longitude": 35.48,
+          "arrivalTime": "07:28",
+          "guardianName": "Ghada Fares",
+          "guardianPhone": "+961 3 411 004",
+          "absent": false,
+          "confirmation": null
+        }
+      ]
+    },
+    {
+      "id": "50000000-0000-4000-8000-000000000002",
+      "date": "2026-10-21",
+      "direction": "AFTERNOON",
+      "state": "NOT_STARTED",
+      "schoolTime": "14:30",
+      "startedAt": null,
+      "endedAt": null,
+      "route": {
+        "id": "10000000-0000-4000-8000-000000000001",
+        "name": "Hamra morning run"
+      },
+      "vehicle": {
+        "id": "20000000-0000-4000-8000-000000000001",
+        "plateNumber": "A 123456",
+        "capacity": 14
+      },
+      "driver": {
+        "id": "30000000-0000-4000-8000-000000000001",
+        "firstName": "Karim",
+        "lastName": "Haddad"
+      },
+      "counts": {
+        "students": 4,
+        "absent": 1,
+        "pickedUp": 0,
+        "droppedOff": 0,
+        "notPresent": 0
+      },
+      "stops": [
+        {
+          "studentId": "40000000-0000-4000-8000-000000000004",
+          "position": 1,
+          "firstName": "Dana",
+          "lastName": "Fares",
+          "address": "Jeanne d'Arc Street, Beirut",
+          "latitude": 33.891,
+          "longitude": 35.48,
+          "arrivalTime": null,
+          "guardianName": "Ghada Fares",
+          "guardianPhone": "+961 3 411 004",
+          "absent": false,
+          "confirmation": null
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000003",
+          "position": 2,
+          "firstName": "Tarek",
+          "lastName": "Mansour",
+          "address": "Bliss Street, Beirut",
+          "latitude": 33.905,
+          "longitude": 35.51,
+          "arrivalTime": null,
+          "guardianName": "Nadia Mansour",
+          "guardianPhone": "+961 71 411 003",
+          "absent": true,
+          "confirmation": null
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000002",
+          "position": 3,
+          "firstName": "Salma",
+          "lastName": "Khoury",
+          "address": "Clemenceau Street, Beirut",
+          "latitude": 33.887,
+          "longitude": 35.488,
+          "arrivalTime": null,
+          "guardianName": "Fadi Khoury",
+          "guardianPhone": "+961 70 411 002",
+          "absent": false,
+          "confirmation": null
+        },
+        {
+          "studentId": "40000000-0000-4000-8000-000000000001",
+          "position": 4,
+          "firstName": "Rami",
+          "lastName": "Nasr",
+          "address": "Rue Hamra, Beirut",
+          "latitude": 33.8995,
+          "longitude": 35.521,
+          "arrivalTime": null,
+          "guardianName": "Maya Nasr",
+          "guardianPhone": "+961 3 411 001",
+          "absent": false,
+          "confirmation": null
+        }
+      ]
+    }
+  ]
+}
