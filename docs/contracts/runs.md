@@ -37,7 +37,7 @@ One route, one direction, one date.
 | `state` | `NOT_STARTED`, `IN_PROGRESS` or `FINISHED` | see [Run states](#run-states) |
 | `schoolTime` | `"HH:mm"` or null | the school's arrival time for a morning run, its dismissal time for an afternoon run. **Null** when the school has not set it, and **null for an afternoon run on a half-day** (there is no half-day dismissal time, and a wrong time is worse than none) |
 | `startedAt`, `endedAt` | moment or null | null until the run starts / ends |
-| `route` | `{ id, name }` | |
+| `route` | `{ id, name }` | the route's name, the same for both directions (often "… morning run"), so screens label a run by `direction` |
 | `vehicle`, `driver` | as in `RouteSummary` | the route's, read each time, never stored: a past run shows the route's current vehicle and driver |
 | `counts` | `Counts` | |
 | `stops` | `RunStop[]` | in `position` order. Only in the driver's responses; a `RunSummary` is a `Run` without `stops` |
@@ -59,12 +59,12 @@ One student on one run. **A stop is a student**, as in the routing contract: two
 | Field | Meaning |
 |---|---|
 | `students` | stops on the run, **absent ones included** |
-| `absent` | stops with `absent: true` |
+| `absent` | stops with `absent: true` and no `confirmation` (the same as skippable). A child reported absent who is confirmed counts under that status instead; the stop keeps `absent: true` |
 | `pickedUp` | students whose latest status is `PICKED_UP` **or** `DROPPED_OFF` (someone dropped off was picked up). "Picked up out of total" is `pickedUp` of `students` |
 | `droppedOff` | latest status `DROPPED_OFF` |
 | `notPresent` | latest status `NOT_PRESENT` |
 
-Counts are computed on every response, never stored. Children on the bus at any moment are `pickedUp - droppedOff`.
+`absent`, `pickedUp`, `notPresent` and the students still waiting add up to `students`. Counts are computed on every response, never stored. Children on the bus at any moment are `pickedUp - droppedOff`.
 
 ### DriverDay and RunsDay
 
@@ -115,7 +115,7 @@ An absence seen from the school's side, for the date asked: `absenceId`, `studen
 | PUT | `/api/driver/runs/{runId}/students/{studentId}/confirmation` | DRIVER | `{ status }` | 200 `Run` | Hashem, SCRUM-235 |
 | GET | `/api/parent/children` | PARENT | | 200 `Child[]` | Moustafa, SCRUM-240 |
 | GET | `/api/parent/children/{studentId}/absences` | PARENT | | 200 `Absence[]`, upcoming only | Moustafa, SCRUM-238 |
-| POST | `/api/parent/children/{studentId}/absences` | PARENT | `{ fromDate, toDate? }` | 201 `Absence` | Moustafa, SCRUM-238 |
+| POST | `/api/parent/children/{studentId}/absences` | PARENT | `{ fromDate, toDate? }` | 201 `Absence`; 200 with the existing one on an exact repeat | Moustafa, SCRUM-238 |
 | DELETE | `/api/parent/children/{studentId}/absences/{absenceId}` | PARENT | | 204 | Moustafa, SCRUM-238 |
 | GET | `/api/head-of-transport/runs?date=` | HEAD_OF_TRANSPORT | | 200 `RunsDay` for `date` (today when omitted) | Hashem, SCRUM-233 (counts: SCRUM-235) |
 | GET | `/api/head-of-transport/absences?date=` | HEAD_OF_TRANSPORT | | 200 `AbsentStudent[]` for `date` (today when omitted) | Moustafa, SCRUM-238 / SCRUM-239 |
@@ -172,7 +172,8 @@ So that the screens and their tests agree, these are defined here and not sent b
 - An absence is whole **days**, for one child, and covers the morning and the afternoon run. `toDate` is optional and defaults to `fromDate`.
 - `fromDate` must be **today or later**, and `toDate` must not be before `fromDate` (400). Date pickers may grey out past days using today in `Asia/Beirut`; the server still decides.
 - Any of the parent's children can be reported absent, with or without a route.
-- **Overlapping** an absence the child already has is **rejected** (409), not merged. Absences that only touch (one ends 10 Nov, the next starts 11 Nov) are fine. A cancelled absence is gone and overlaps nothing. A POST retried after a lost answer therefore gets a 409 for overlapping itself; the screen reloads the list.
+- Reporting exactly the same `fromDate` and `toDate` (after `toDate` defaults to `fromDate`) as an absence **this child** already has returns that absence with **200** and changes nothing, so a POST retried after a lost answer is harmless, like start, end and confirm.
+- Any other **overlap** with an absence the child already has is **rejected** (409), not merged. Absences that only touch (one ends 10 Nov, the next starts 11 Nov) are fine. A cancelled absence is gone and overlaps nothing.
 - The list returns absences whose `toDate` is today or later, ordered by `fromDate`.
 - **Cancel** deletes an absence whose `fromDate` is **today or later**. One that started **before today** is cut to end **yesterday**, so the days gone by stay recorded. Cancelling one that ended before today is 409.
 - An absence is read each time a run is fetched: one reported or cancelled after a run started shows on its next fetch, and never changes a confirmation already made.
@@ -198,7 +199,7 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 | Start a `FINISHED` run, or end a run that has not started | 409 | `detail`, including the run's state |
 | Confirm while the run is not `IN_PROGRESS` | 409 | `detail`, including the run's state |
 | A confirmation move the table above refuses | 409 | `detail`, including the current status |
-| Report an absence that overlaps another | 409 | `errors: { fromDate: message }`, naming the absence it overlaps |
+| Report an absence that overlaps another (not an exact repeat) | 409 | `errors: { fromDate: message }`, naming the absence it overlaps |
 | Cancel an absence that ended before today | 409 | `detail` |
 | Absence `fromDate` in the past, or `toDate` before `fromDate` | 400 | `errors: { fromDate: message }` or `{ toDate: message }` |
 | Missing `status` or `fromDate` | 400 | `errors: { status: message }` or `{ fromDate: message }` |
@@ -208,7 +209,7 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 ## Known limits
 
 - **No weekends.** There is no weekend rule: runs are made for any date that is not a holiday, so a Saturday or Sunday gets runs unless it is entered as a holiday.
-- **No half-day times.** A half-day has no dismissal time of its own, so a half-day afternoon run has `schoolTime: null`. Adding one later is a new nullable field.
+- **No half-day times.** A half-day has no dismissal time of its own, so a half-day afternoon run has `schoolTime: null`. Adding one later is a new nullable field. Half-days are **planned only** in Sprint 3: a same-day early dismissal is not supported (no time, no notice, and a half-day cannot be removed). A dismissal time and a delete are a separate ticket.
 - **Afternoon has no schedule.** There are no afternoon stop times, no "expected pickup" for it and no stops-left count; the afternoon is the morning's students in reverse order.
 - **A live roster.** A student moved off a route mid-day leaves that day's run, and their confirmation is no longer shown on it. The same goes for a route deleted mid-day (its runs are no longer listed) and a driver or vehicle swapped mid-day (the run shows the new one, past runs included). A signed-in driver not linked to a driver record is a driver with no route.
 - **No undo.** A wrong confirmation can only be moved on the way the table allows; it cannot be taken back.

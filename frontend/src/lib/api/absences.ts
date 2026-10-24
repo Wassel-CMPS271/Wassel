@@ -8,7 +8,8 @@
 //   DELETE /api/parent/children/{studentId}/absences/{absenceId}    -> 204
 //
 // An overlap answers 409 with errors.fromDate, which request() throws as
-// ApiValidationError. A retried POST can overlap itself, so reload the list then.
+// ApiValidationError. A POST repeating the same dates returns the existing absence
+// (200), so a retry is harmless.
 // Cancel deletes an absence starting today or later, and cuts one that started
 // earlier to end yesterday.
 
