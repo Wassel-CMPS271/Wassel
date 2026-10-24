@@ -1,0 +1,13 @@
+# Only on the test classpath; the launcher supplies an isolated datasource.
+spring:
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: ${E2E_DDL_AUTO:create-drop}
+  flyway:
+    enabled: ${E2E_FLYWAY_ENABLED:false}
+    baseline-on-migrate: false
+logging:
+  level:
+    org.springframework.security: WARN
+    com.wassel.backend: INFO
