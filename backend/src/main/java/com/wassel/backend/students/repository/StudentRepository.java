@@ -42,8 +42,9 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
 	// compared directly against a typed entity attribute and so get their type from there, :query
 	// only ever appears inside CONCAT(...)/LOWER(...), which gives Hibernate no typed attribute to
 	// infer from. A null :query then goes to PostgreSQL untyped, and the PG JDBC driver guesses
-	// bytea, so LOWER(bytea) fails with "function lower(bytea) does not exist" (H2 doesn't care,
-	// so this only shows up against Postgres). The CAST forces the string type regardless of value.
+	// bytea, so LOWER(bytea) fails with "function lower(bytea) does not exist" (an in-memory test
+	// database didn't care, which is why this only showed up on a real PostgreSQL). The CAST forces
+	// the string type regardless of value.
 	@Query("""
 			SELECT s FROM Student s
 			WHERE s.schoolId = :schoolId

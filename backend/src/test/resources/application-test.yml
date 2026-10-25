@@ -1,15 +1,13 @@
-# Test profile: in-memory H2 (PostgreSQL mode) so the build doesn't need a running database.
+# Test profile (SCRUM-252): a real PostgreSQL in a Testcontainers container, with the real Flyway
+# migrations and ddl-auto=validate, the same as production. The "tc" JDBC URL starts one container
+# the first time it is used and every Spring test context in the run shares it, so the schema is
+# migrated once. Docker must be running (CI's Ubuntu runners already have it); see backend/CLAUDE.md.
 spring:
   datasource:
-    url: jdbc:h2:mem:wassel;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
-    username: sa
-    password:
-  jpa:
-    hibernate:
-      ddl-auto: create-drop
-  # Tests build the schema from the entities on H2; the migrations are PostgreSQL SQL.
-  flyway:
-    enabled: false
+    url: jdbc:tc:postgresql:16:///wassel
+    username: wassel
+    password: wassel
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
 
 jwt:
   secret: test-secret-test-secret-test-secret-test-secret
