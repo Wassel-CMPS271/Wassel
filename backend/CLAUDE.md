@@ -202,8 +202,8 @@ that's the structure this codebase moved away from.
   as a `RouteVersion` (`route_versions`) and calls `StudentService.reorderRoute`. Discarding an unknown or
   already-gone proposal is a 404, like apply. Versions are only stored: nothing lists or restores them
   yet, and a manual reorder (SCRUM-210) doesn't make one. Orders are comma-joined ids in a `text` column
-  (`UuidListConverter`), not a join table or `uuid[]`, so the schema H2 builds in the tests can't differ
-  from the Flyway one. Deleting a route deletes its proposal and versions in `RouteService.deleteRoute`
+  (`UuidListConverter`), not a join table or `uuid[]`, so the column stays a plain type that Hibernate and the
+  Flyway migrations describe the same way. Deleting a route deletes its proposal and versions in `RouteService.deleteRoute`
   (there are no foreign keys). Known limit: a manual reorder or student change that commits between
   apply's comparison and its write is overwritten; closing it needs a route-row lock that every
   stop-changing method also takes. The solve runs inside the propose transaction (at most 2 s, plus up to the road provider's 3 s timeout when the
@@ -324,9 +324,9 @@ that's the structure this codebase moved away from.
   migration that has been merged: Flyway checksums them, so an edit stops every database that already ran it.
 - `ddl-auto` is `validate` in every profile that runs on PostgreSQL (local, staging, production): Hibernate only checks
   that the entities match the schema, so a forgotten migration stops startup with a clear error instead of reaching users.
-- Tests are the exception: the `test` profile runs on H2, turns Flyway off and lets Hibernate build the schema from the
-  entities. So a green test run does not prove the migrations are right; start the app against an empty PostgreSQL
-  (`docker compose up postgres`, then `spring-boot:run` with the `local` profile) after adding one.
+- Tests use the same setup (SCRUM-252): the `test` profile runs on a real PostgreSQL 16 in a Testcontainers
+  container, Flyway runs every migration, and Hibernate validates the schema against them. So a green test run
+  does prove the migrations are right, and a PostgreSQL-only bug fails CI instead of the deployed app.
 - A local database made before Flyway existed is adopted as V1 automatically (`baseline-on-migrate` in `application-local.yml`).
 
 ## Exceptions
@@ -386,6 +386,15 @@ DTOs live at the API boundary. Controllers must never return entities directly
   free-text that needs parsing.
 
 ## Tests
+
+**Running them needs Docker running** (Docker Desktop on Windows or Mac): the tests start a PostgreSQL container
+(`postgres:16`, pulled the first time). Then `./mvnw test` (or `mvnw.cmd test` on Windows) works as before; without
+Docker the Spring tests fail at startup with "Could not find a valid Docker environment". CI's Ubuntu runners
+already have Docker, so the backend job still just runs `mvn -B verify`. `application-test.yml` uses the
+Testcontainers JDBC URL `jdbc:tc:postgresql:16:///wassel`, which starts one container on first use and shares it
+with every test context in the run, so the schema is migrated once. All tests share that one database, so a test
+that needs its own data should use its own school id or unique values, as the existing ones do. There is no H2
+anymore: don't add it back, and don't add a test that depends on a table or column no migration creates.
 
 Tests mirror the main package structure: a test for
 `main/java/com/wassel/backend/schools/controller/SchoolSettingsController.java`
