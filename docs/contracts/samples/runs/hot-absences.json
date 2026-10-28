@@ -1,0 +1,25 @@
+[
+  {
+    "absenceId": "60000000-0000-4000-8000-000000000001",
+    "studentId": "40000000-0000-4000-8000-000000000003",
+    "firstName": "Tarek",
+    "lastName": "Mansour",
+    "fromDate": "2026-10-21",
+    "toDate": "2026-10-23",
+    "route": {
+      "id": "10000000-0000-4000-8000-000000000001",
+      "name": "Hamra morning run"
+    },
+    "position": 3
+  },
+  {
+    "absenceId": "60000000-0000-4000-8000-000000000003",
+    "studentId": "40000000-0000-4000-8000-000000000014",
+    "firstName": "Layla",
+    "lastName": "Mansour",
+    "fromDate": "2026-10-22",
+    "toDate": "2026-10-22",
+    "route": null,
+    "position": null
+  }
+]
