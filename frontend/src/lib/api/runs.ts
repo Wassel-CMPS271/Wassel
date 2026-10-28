@@ -89,6 +89,7 @@ export interface DriverDay {
 }
 
 // Grouped by route in GET /routes order, each route's morning before its afternoon.
+// Empty runs on a SCHOOL_DAY or HALF_DAY only means no runs were made for that date.
 export interface RunsDay {
   date: string;
   dayType: DayType;

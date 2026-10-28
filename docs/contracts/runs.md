@@ -66,6 +66,8 @@ One student on one run. **A stop is a student**, as in the routing contract: two
 
 `absent`, `pickedUp`, `notPresent` and the students still waiting add up to `students`. Counts are computed on every response, never stored. Children on the bus at any moment are `pickedUp - droppedOff`.
 
+Progress, as the screens show it: on a morning run `pickedUp` of `students - absent`; on an afternoon run `droppedOff` of `students - absent`, because everyone is `PICKED_UP` at the gate and `pickedUp` says nothing about progress.
+
 ### DriverDay and RunsDay
 
 Both are `{ date, dayType, runs }`.
@@ -73,7 +75,7 @@ Both are `{ date, dayType, runs }`.
 | Field | Type | Notes |
 |---|---|---|
 | `date` | `"YYYY-MM-DD"` | the date the answer is for |
-| `dayType` | `SCHOOL_DAY`, `HALF_DAY` or `HOLIDAY` | a holiday is a **200** with `HOLIDAY` and `runs: []`, not an error |
+| `dayType` | `SCHOOL_DAY`, `HALF_DAY` or `HOLIDAY` | a holiday is a **200** with `HOLIDAY` and `runs: []`, not an error. **Saturday and Sunday are `HOLIDAY` too**, whether or not they are in the holiday calendar |
 | `runs` | `Run[]` in a `DriverDay`, `RunSummary[]` in a `RunsDay` | grouped by route, routes in the order of `GET /routes` (oldest first), each route's morning run before its afternoon run. **Empty** on a holiday, for a driver with no route, and for a date with no runs yet |
 
 The driver's Today screen tells "holiday" from "no run today" by `dayType`: `HOLIDAY` means the school is closed; `SCHOOL_DAY` or `HALF_DAY` with no runs means this driver has no route. For the head of transportation on another date, empty runs on a school day only mean none were made that day.
@@ -126,7 +128,7 @@ The head of transportation's absence list is one endpoint for SCRUM-238 and SCRU
 
 ### Creating runs
 
-- Every route gets **one morning and one afternoon run** per date, except on a holiday. A run is identified by route, date and direction; the same one is never created twice, however many people ask at once.
+- Every route gets **one morning and one afternoon run** per date, except on a holiday or a weekend. A run is identified by route, date and direction; the same one is never created twice, however many people ask at once.
 - Runs are created when **today's** runs are asked for, by the driver or by the head of transportation. Asking for any other date only reads runs that already exist, so a past date shows what happened and a future date shows no runs. Nothing else creates a run.
 - The stops are the route's stops in the routing contract, in its **current** order, read each time. A student the head of transportation adds, removes or moves during the day changes the run at once.
 - A route deleted during the day takes its runs with it: they are no longer listed, for that day or any other (see [Known limits](#known-limits)).
@@ -208,7 +210,7 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 
 ## Known limits
 
-- **No weekends.** There is no weekend rule: runs are made for any date that is not a holiday, so a Saturday or Sunday gets runs unless it is entered as a holiday.
+- **The school week is fixed.** The school runs Monday to Friday; Saturday and Sunday (by the date in `Asia/Beirut`) are `HOLIDAY` with no runs, and no one enters them in the calendar. The week is not a school setting; a different school week would be a new setting.
 - **No half-day times.** A half-day has no dismissal time of its own, so a half-day afternoon run has `schoolTime: null`. Adding one later is a new nullable field. Half-days are **planned only** in Sprint 3: a same-day early dismissal is not supported (no time, no notice, and a half-day cannot be removed). A dismissal time and a delete are a separate ticket.
 - **Afternoon has no schedule.** There are no afternoon stop times, no "expected pickup" for it and no stops-left count; the afternoon is the morning's students in reverse order.
 - **A live roster.** A student moved off a route mid-day leaves that day's run, and their confirmation is no longer shown on it. The same goes for a route deleted mid-day (its runs are no longer listed) and a driver or vehicle swapped mid-day (the run shows the new one, past runs included). A signed-in driver not linked to a driver record is a driver with no route.
