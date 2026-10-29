@@ -109,6 +109,13 @@ public class RouteService {
 		return toResponse(schoolId, findOwned(schoolId, routeId));
 	}
 
+	/** For the runs module: the route a driver is on, if any. A driver is on at most one route. */
+	@Transactional(readOnly = true)
+	public Optional<RouteResponse> findRouteOfDriver(UUID schoolId, UUID driverId) {
+		return routeRepository.findBySchoolIdAndDriverId(schoolId, driverId)
+				.map(route -> toResponse(schoolId, route));
+	}
+
 	@Transactional
 	public RouteResponse createRoute(UUID schoolId, RouteRequest request) {
 		VehicleResponse vehicle = requireActiveVehicle(schoolId, request.vehicleId());

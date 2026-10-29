@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -183,6 +184,14 @@ public class DriverService {
 		Driver driver = findOwned(schoolId, driverId);
 		driver.setAssignedVehicleId(null);
 		return toResponse(driver);
+	}
+
+	/** For the runs module: the id of the signed-in user's driver record, if they have one in this school. */
+	@Transactional(readOnly = true)
+	public Optional<UUID> findDriverIdForUser(UUID schoolId, UUID userId) {
+		return driverRepository.findByUserId(userId)
+				.filter(driver -> driver.getSchoolId().equals(schoolId))
+				.map(Driver::getId);
 	}
 
 	/** For other modules (e.g. routes, putting a driver on a route) to look up one driver. */
