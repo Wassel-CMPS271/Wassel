@@ -404,6 +404,11 @@ with every test context in the run, so the schema is migrated once. All tests sh
 that needs its own data should use its own school id or unique values, as the existing ones do. There is no H2
 anymore: don't add it back, and don't add a test that depends on a table or column no migration creates.
 
+**Coverage (SCRUM-151).** JaCoCo (`jacoco-maven-plugin` in `pom.xml`) records coverage during the tests and writes an
+HTML report to `backend/target/site/jacoco/index.html` at the `verify` phase, so `./mvnw verify` produces it (plain
+`test` does not). CI uploads the folder as the `backend-coverage` artifact. It is a report only: there are no
+thresholds, so a low number never fails the build.
+
 Tests mirror the main package structure: a test for
 `main/java/com/wassel/backend/schools/controller/SchoolSettingsController.java`
 lives at `test/java/com/wassel/backend/schools/controller/SchoolSettingsControllerTests.java`.
