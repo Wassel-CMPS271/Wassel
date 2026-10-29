@@ -13,6 +13,7 @@
 // Dates are "YYYY-MM-DD" and times of day "HH:mm", both school-local (Asia/Beirut).
 // Moments (startedAt, endedAt, confirmation.at) are ISO-8601 UTC with a "Z".
 
+import { request } from "./client";
 import type { RouteDriver, RouteVehicle, Stop } from "./routes";
 
 export type RunDirection = "MORNING" | "AFTERNOON";
@@ -106,4 +107,27 @@ export interface AbsentStudent {
   toDate: string;
   route: RunRoute | null;
   position: number | null;
+}
+
+export function getDriverToday(): Promise<DriverDay> {
+  return request<DriverDay>("/api/driver/runs/today");
+}
+
+export function startRun(runId: string): Promise<Run> {
+  return request<Run>(`/api/driver/runs/${runId}/start`, { method: "POST" });
+}
+
+export function endRun(runId: string): Promise<Run> {
+  return request<Run>(`/api/driver/runs/${runId}/end`, { method: "POST" });
+}
+
+export function confirmStudent(
+  runId: string,
+  studentId: string,
+  status: ConfirmationStatus,
+): Promise<Run> {
+  return request<Run>(`/api/driver/runs/${runId}/students/${studentId}/confirmation`, {
+    method: "PUT",
+    body: { status },
+  });
 }
