@@ -28,7 +28,7 @@ export default defineConfig({
       reporter: ["text-summary", "html"],
       reportsDirectory: "coverage",
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/test-support/**"],
     },
   },
 });
