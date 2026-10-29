@@ -132,6 +132,7 @@ The head of transportation's absence list is one endpoint for SCRUM-238 and SCRU
 - Runs are created when **today's** runs are asked for, by the driver or by the head of transportation. Asking for any other date only reads runs that already exist, so a past date shows what happened and a future date shows no runs. Nothing else creates a run.
 - The stops are the route's stops in the routing contract, in its **current** order, read each time. A student the head of transportation adds, removes or moves during the day changes the run at once.
 - A route deleted during the day takes its runs with it: they are no longer listed, for that day or any other (see [Known limits](#known-limits)).
+- The kind of day is decided when the runs are asked for, not when they were made. A holiday added for a date that already has runs, even a past date, hides them: a holiday always answers `runs: []`. Removing the holiday shows the same runs again, unchanged.
 - **Morning:** the order and `arrivalTime`s of the routing contract. **Afternoon:** the same students reversed, no times (see [Known limits](#known-limits)).
 
 ### Run states
