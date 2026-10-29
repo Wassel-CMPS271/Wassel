@@ -14,6 +14,9 @@ import com.wassel.backend.runs.dto.RunStopResponse;
 import com.wassel.backend.runs.dto.RunsDayResponse;
 import com.wassel.backend.runs.entity.Run;
 import com.wassel.backend.runs.entity.RunDirection;
+import com.wassel.backend.runs.entity.RunState;
+import com.wassel.backend.runs.exception.RunNotFoundException;
+import com.wassel.backend.runs.exception.RunStateConflictException;
 import com.wassel.backend.runs.repository.RunRepository;
 import com.wassel.backend.schools.dto.SchoolTimesResponse;
 import com.wassel.backend.schools.service.HalfDayService;
@@ -28,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -74,9 +78,7 @@ public class RunService {
 		UUID schoolId = driver.getSchoolId();
 		LocalDate today = LocalDate.now(clock);
 		DayType dayType = dayTypeOf(schoolId, today);
-		Optional<RouteResponse> found = dayType == DayType.HOLIDAY ? Optional.empty()
-				: driverService.findDriverIdForUser(schoolId, driver.getId())
-						.flatMap(driverId -> routeService.findRouteOfDriver(schoolId, driverId));
+		Optional<RouteResponse> found = routeOf(driver, dayType);
 		if (found.isEmpty()) {
 			return new RunsDayResponse(today, dayType, List.of());
 		}
@@ -91,9 +93,70 @@ public class RunService {
 		return new RunsDayResponse(today, dayType, result);
 	}
 
+	/** Starts the driver's run: {@code NOT_STARTED} to {@code IN_PROGRESS}, a repeat changes nothing (SCRUM-234). */
+	@Transactional
+	public RunResponse start(User driver, UUID runId) {
+		return move(driver, runId, RunState.IN_PROGRESS);
+	}
+
+	/** Ends the driver's run: {@code IN_PROGRESS} to {@code FINISHED}, a repeat changes nothing (SCRUM-234). */
+	@Transactional
+	public RunResponse end(User driver, UUID runId) {
+		return move(driver, runId, RunState.FINISHED);
+	}
+
 	/**
-	 * One run with its stops, as the driver sees it. Today's runs use it, and so should start, end and confirm
-	 * (SCRUM-234/235), which answer with the whole run: one place to fill in absences and confirmations.
+	 * A driver may act on a run only if it is in their list right now: one of today's runs on their own route,
+	 * on a day that is not a holiday. Anything else (another driver's, another school's, unknown, yesterday's,
+	 * hidden by a holiday) is the same 404. The move is one conditional update, so simultaneous requests keep
+	 * the first time; the run is then re-read, which tells a repeat (already in the target state, 200) from a
+	 * conflict (409), and gives the answer the times as stored.
+	 */
+	private RunResponse move(User driver, UUID runId, RunState target) {
+		UUID schoolId = driver.getSchoolId();
+		LocalDate today = LocalDate.now(clock);
+		DayType dayType = dayTypeOf(schoolId, today);
+		RouteResponse route = routeOf(driver, dayType).orElseThrow(RunService::runNotFound);
+		todaysRun(schoolId, today, route.id(), runId).orElseThrow(RunService::runNotFound);
+		Instant now = Instant.now(clock);
+		if (target == RunState.IN_PROGRESS) {
+			runRepository.markStarted(schoolId, runId, now);
+		} else {
+			runRepository.markEnded(schoolId, runId, now);
+		}
+		Run run = todaysRun(schoolId, today, route.id(), runId).orElseThrow(RunService::runNotFound);
+		if (run.getState() != target) {
+			throw new RunStateConflictException("Run is " + run.getState() + ", so it cannot be "
+					+ (target == RunState.IN_PROGRESS ? "started" : "ended"));
+		}
+		return driverRun(run, route, morningStops(schoolId, route), dayType,
+				schoolSettingsService.getTimes(schoolId));
+	}
+
+	/** The run, if it is one of the route's runs on that day in that school. */
+	private Optional<Run> todaysRun(UUID schoolId, LocalDate today, UUID routeId, UUID runId) {
+		return runRepository.findBySchoolIdAndRunDateAndRouteIdIn(schoolId, today, List.of(routeId)).stream()
+				.filter(run -> run.getId().equals(runId))
+				.findAny();
+	}
+
+	private static RunNotFoundException runNotFound() {
+		return new RunNotFoundException("Run not found");
+	}
+
+	/** The route the driver is on, if any; none on a holiday, when they have no runs to see. */
+	private Optional<RouteResponse> routeOf(User driver, DayType dayType) {
+		if (dayType == DayType.HOLIDAY) {
+			return Optional.empty();
+		}
+		UUID schoolId = driver.getSchoolId();
+		return driverService.findDriverIdForUser(schoolId, driver.getId())
+				.flatMap(driverId -> routeService.findRouteOfDriver(schoolId, driverId));
+	}
+
+	/**
+	 * One run with its stops, as the driver sees it. Today's runs, start and end use it, and so should confirm
+	 * (SCRUM-235), which answers with the whole run: one place to fill in absences and confirmations.
 	 */
 	private RunResponse driverRun(Run run, RouteResponse route, List<RunStopResponse> morning, DayType dayType,
 			SchoolTimesResponse times) {
