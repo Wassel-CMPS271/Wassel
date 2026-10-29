@@ -321,12 +321,24 @@ that's the structure this codebase moved away from.
   `StudentService.listOnRoute` (order, guardian), each with the arrival time from `RouteService.findRouteOfDriver`'s
   stops, so a student moved between the two reads is never dropped (at worst one has no time until the next fetch);
   the afternoon is that list reversed with no times and no confirmations. `RunService.driverRun` builds one whole run
-  with stops, which start, end and confirm should answer with. `runs` reads other modules through
+  with stops, which start and end answer with and confirm should. `runs` reads other modules through
   `RouteService.findRouteOfDriver` and `listRoutes`, `StudentService.listOnRoute`, `DriverService.findDriverIdForUser`,
   `HolidayService.isHoliday`, `HalfDayService.isHalfDay` and `SchoolSettingsService.getTimes`. A half-day afternoon run has `schoolTime: null` (no half-day dismissal time
   exists). Confirmations and absences are SCRUM-235 and SCRUM-239: until then every stop is `absent: false` with
-  `confirmation: null` and the counts other than `students` are 0. Start and end (SCRUM-234) add to
-  `DriverRunController` and use the `started_at`/`ended_at` columns that are already there.
+  `confirmation: null` and the counts other than `students` are 0.
+  Start and end (SCRUM-234): `POST /api/driver/runs/{runId}/start` and `/end` (`DriverRunController`, `RunService.start`/`end`
+  over one `move`), no migration (`started_at`/`ended_at` were in V6). The move is `RunRepository.markStarted`/`markEnded`,
+  a conditional `UPDATE ... WHERE school AND state = <expected>` (the `LoginCode` pattern, no `@Version` or lock), so
+  simultaneous requests keep the first time; `move` then re-reads the run (the update clears the persistence context):
+  already in the target state is a 200 that changes nothing, any other state is
+  `RunStateConflictException` (409, the detail names the state). The answer is built from that re-read, so the times are the
+  stored ones, and is `driverRun`, the whole run with stops. **A driver may act only on a run they could see in their
+  today's list right now**: one of today's runs on their own route, on a day that is not a holiday. Anything else (another
+  driver's or school's, unknown, yesterday's, hidden by a holiday added later) is one `RunNotFoundException` (404), so
+  nothing reveals which (written into `docs/contracts/runs.md`, Run states and Errors). The cost is known and accepted: a run started and not ended before midnight in Beirut, or on a day that
+  becomes a holiday, can no longer be ended by the driver and stays `IN_PROGRESS` (the contract's "stays that way"), and a
+  repeated end that arrives after midnight is a 404, not the usual 200. A start racing an end on the same run can get a 409
+  `FINISHED`. SCRUM-235 should find its run the same way (`routeOf` then `todaysRun`), so confirmations follow the same rule.
 
 ## Where things go
 
