@@ -10,6 +10,8 @@ import com.wassel.backend.routes.entity.Route;
 import com.wassel.backend.routes.repository.RouteProposalRepository;
 import com.wassel.backend.routes.repository.RouteRepository;
 import com.wassel.backend.routes.repository.RouteVersionRepository;
+import com.wassel.backend.runs.entity.Run;
+import com.wassel.backend.runs.entity.RunState;
 import com.wassel.backend.runs.repository.RunRepository;
 import com.wassel.backend.schools.entity.HalfDay;
 import com.wassel.backend.schools.entity.Holiday;
@@ -28,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -40,6 +43,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.math.BigDecimal;
@@ -58,12 +62,16 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -782,5 +790,373 @@ class RunControllerTests {
 					.andExpect(status().isForbidden())
 					.andExpect(jsonPath("$.detail").value("Access denied"));
 		}
+	}
+
+	// ---- SCRUM-234: start and end a run ----
+
+	private static final String RUN_URL = "/api/driver/runs/";
+
+	private String runId(String day, int index) {
+		return JsonPath.read(day, "$.runs[" + index + "].id");
+	}
+
+	private ResultActions act(String action, String runId, UUID schoolId,
+			UUID userId) throws Exception {
+		return mockMvc.perform(post(RUN_URL + runId + "/" + action).with(loggedInAs(Role.DRIVER, schoolId, userId)));
+	}
+
+	private Run stored(String runId) {
+		return runRepository.findById(UUID.fromString(runId)).orElseThrow();
+	}
+
+	@Test
+	void startingARunSavesTheTimeAndAnswersWithTheWholeRun() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String day = driverToday(schoolA, f.userId());
+
+		act("start", runId(day, 0), schoolA, f.userId())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(runId(day, 0)))
+				.andExpect(jsonPath("$.state").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.startedAt").value("2026-10-28T08:00:00Z"))
+				.andExpect(jsonPath("$.endedAt").value(nullValue()))
+				.andExpect(jsonPath("$.direction").value("MORNING"))
+				.andExpect(jsonPath("$.counts.students").value(3))
+				.andExpect(jsonPath("$.stops.length()").value(3))
+				.andExpect(jsonPath("$.stops[0].firstName").value("Rami"));
+
+		Run run = stored(runId(day, 0));
+		assertEquals(RunState.IN_PROGRESS, run.getState());
+		assertEquals(WEDNESDAY, run.getStartedAt());
+		assertEquals(RunState.NOT_STARTED, stored(runId(day, 1)).getState());
+	}
+
+	@Test
+	void endingARunInProgressSavesTheTime() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		Fixture walid = driverWithRoute(schoolA, "Verdun morning run");
+		String day = driverToday(schoolA, f.userId());
+		String id = runId(day, 0);
+		String walidRun = runId(driverToday(schoolA, walid.userId()), 0);
+		act("start", id, schoolA, f.userId()).andExpect(status().isOk());
+		act("start", runId(day, 1), schoolA, f.userId()).andExpect(status().isOk());
+		act("start", walidRun, schoolA, walid.userId()).andExpect(status().isOk());
+		clock.set(WEDNESDAY.plusSeconds(20 * 60));
+
+		act("end", id, schoolA, f.userId())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.state").value("FINISHED"))
+				.andExpect(jsonPath("$.startedAt").value("2026-10-28T08:00:00Z"))
+				.andExpect(jsonPath("$.endedAt").value("2026-10-28T08:20:00Z"))
+				.andExpect(jsonPath("$.stops.length()").value(3));
+
+		assertEquals(RunState.FINISHED, stored(id).getState());
+		assertEquals(WEDNESDAY.plusSeconds(20 * 60), stored(id).getEndedAt());
+		// Only that run: the driver's other run and another driver's run are still in progress.
+		for (String other : List.of(runId(day, 1), walidRun)) {
+			assertEquals(RunState.IN_PROGRESS, stored(other).getState());
+			assertNull(stored(other).getEndedAt());
+		}
+	}
+
+	@Test
+	void aRepeatedStartAnswers200AndKeepsTheFirstTime() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String id = runId(driverToday(schoolA, f.userId()), 0);
+		act("start", id, schoolA, f.userId()).andExpect(status().isOk());
+		clock.set(WEDNESDAY.plusSeconds(300));
+
+		act("start", id, schoolA, f.userId())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.state").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.startedAt").value("2026-10-28T08:00:00Z"));
+		assertEquals(WEDNESDAY, stored(id).getStartedAt());
+	}
+
+	@Test
+	void aRepeatedEndAnswers200AndKeepsTheFirstTime() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String id = runId(driverToday(schoolA, f.userId()), 0);
+		act("start", id, schoolA, f.userId()).andExpect(status().isOk());
+		clock.set(WEDNESDAY.plusSeconds(600));
+		act("end", id, schoolA, f.userId()).andExpect(status().isOk());
+		clock.set(WEDNESDAY.plusSeconds(900));
+
+		act("end", id, schoolA, f.userId())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.state").value("FINISHED"))
+				.andExpect(jsonPath("$.endedAt").value("2026-10-28T08:10:00Z"));
+		assertEquals(WEDNESDAY.plusSeconds(600), stored(id).getEndedAt());
+	}
+
+	@Test
+	void startingAFinishedRunIs409AndNothingChanges() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String id = runId(driverToday(schoolA, f.userId()), 0);
+		act("start", id, schoolA, f.userId()).andExpect(status().isOk());
+		act("end", id, schoolA, f.userId()).andExpect(status().isOk());
+		clock.set(WEDNESDAY.plusSeconds(60));
+
+		act("start", id, schoolA, f.userId())
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(containsString("FINISHED")));
+		assertEquals(RunState.FINISHED, stored(id).getState());
+		assertEquals(WEDNESDAY, stored(id).getStartedAt());
+	}
+
+	@Test
+	void endingARunThatHasNotStartedIs409AndNothingChanges() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String id = runId(driverToday(schoolA, f.userId()), 0);
+
+		act("end", id, schoolA, f.userId())
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(containsString("NOT_STARTED")));
+		assertEquals(RunState.NOT_STARTED, stored(id).getState());
+		assertNull(stored(id).getEndedAt());
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "start", "end" })
+	void anotherDriversRunAnAnotherSchoolsRunAndAnUnknownRunAre404(String action) throws Exception {
+		Fixture karim = driverWithRoute(schoolA, "Hamra morning run");
+		Fixture walid = driverWithRoute(schoolA, "Verdun morning run");
+		Fixture otherSchool = driverWithRoute(schoolB, "Elsewhere morning run");
+		String walidRun = runId(driverToday(schoolA, walid.userId()), 0);
+		String otherSchoolRun = runId(driverToday(schoolB, otherSchool.userId()), 0);
+		act("start", walidRun, schoolA, walid.userId()).andExpect(status().isOk());
+		act("start", otherSchoolRun, schoolB, otherSchool.userId()).andExpect(status().isOk());
+		clock.set(WEDNESDAY.plusSeconds(60));
+
+		act(action, walidRun, schoolA, karim.userId()).andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.detail").exists());
+		act(action, otherSchoolRun, schoolA, karim.userId()).andExpect(status().isNotFound());
+		act(action, UUID.randomUUID().toString(), schoolA, karim.userId()).andExpect(status().isNotFound());
+		for (String victim : List.of(walidRun, otherSchoolRun)) {
+			assertEquals(RunState.IN_PROGRESS, stored(victim).getState());
+			assertEquals(WEDNESDAY, stored(victim).getStartedAt());
+			assertNull(stored(victim).getEndedAt());
+		}
+	}
+
+	@Test
+	void aDriverWithoutARouteOrWithoutADriverRecordGets404() throws Exception {
+		Fixture karim = driverWithRoute(schoolA, "Hamra morning run");
+		String id = runId(driverToday(schoolA, karim.userId()), 0);
+		UUID noRoute = UUID.randomUUID();
+		aDriver(schoolA, noRoute, "Nadia");
+
+		act("start", id, schoolA, noRoute).andExpect(status().isNotFound());
+		act("start", id, schoolA, UUID.randomUUID()).andExpect(status().isNotFound());
+		assertEquals(RunState.NOT_STARTED, stored(id).getState());
+	}
+
+	@Test
+	void aRunOfYesterdayCannotBeStartedOrEnded() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String day = driverToday(schoolA, f.userId());
+		String notStarted = runId(day, 0);
+		String started = runId(day, 1);
+		act("start", started, schoolA, f.userId()).andExpect(status().isOk());
+		// Thursday in Beirut: a stale screen still holds Wednesday's ids.
+		clock.set(Instant.parse("2026-10-29T08:00:00Z"));
+
+		act("start", notStarted, schoolA, f.userId()).andExpect(status().isNotFound());
+		act("end", started, schoolA, f.userId()).andExpect(status().isNotFound());
+		assertEquals(RunState.NOT_STARTED, stored(notStarted).getState());
+		assertEquals(RunState.IN_PROGRESS, stored(started).getState());
+		assertNull(stored(started).getEndedAt());
+	}
+
+	@Test
+	void aHolidayAddedAfterTheRunsExistHidesThemFromStartAndEndToo() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String day = driverToday(schoolA, f.userId());
+		String id = runId(day, 0);
+		String started = runId(day, 1);
+		act("start", started, schoolA, f.userId()).andExpect(status().isOk());
+		Holiday holiday = holidayRepository.save(Holiday.builder().schoolId(schoolA)
+				.date(LocalDate.parse(WEDNESDAY_DATE)).name("Snow day").build());
+
+		act("start", id, schoolA, f.userId()).andExpect(status().isNotFound());
+		act("end", started, schoolA, f.userId()).andExpect(status().isNotFound());
+		assertEquals(RunState.NOT_STARTED, stored(id).getState());
+		assertEquals(RunState.IN_PROGRESS, stored(started).getState());
+		holidayRepository.delete(holiday);
+
+		act("start", id, schoolA, f.userId()).andExpect(status().isOk());
+	}
+
+	@Test
+	void startAndEndUseTodayInBeirutNotInUtc() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		// 22:30 UTC on Wednesday is already Thursday in Beirut: Thursday's runs are today's.
+		clock.set(Instant.parse("2026-10-28T22:30:00Z"));
+		String id = runId(driverToday(schoolA, f.userId()), 0);
+
+		act("start", id, schoolA, f.userId())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.date").value("2026-10-29"))
+				.andExpect(jsonPath("$.startedAt").value("2026-10-28T22:30:00Z"));
+		act("end", id, schoolA, f.userId()).andExpect(status().isOk());
+	}
+
+	@Test
+	void theAfternoonRunCanStartBeforeTheMorningRun() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String day = driverToday(schoolA, f.userId());
+
+		act("start", runId(day, 1), schoolA, f.userId())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.direction").value("AFTERNOON"))
+				.andExpect(jsonPath("$.state").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.stops[0].firstName").value("Tarek"));
+		assertEquals(RunState.NOT_STARTED, stored(runId(day, 0)).getState());
+	}
+
+	@Test
+	void aHalfDayDoesNotStopARunStartingOrEnding() throws Exception {
+		schoolTimes(schoolA, "07:30", "14:30");
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		halfDayRepository.save(HalfDay.builder().schoolId(schoolA).date(LocalDate.parse(WEDNESDAY_DATE)).build());
+		String day = driverToday(schoolA, f.userId());
+
+		act("start", runId(day, 1), schoolA, f.userId())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.schoolTime").doesNotExist());
+		act("end", runId(day, 1), schoolA, f.userId()).andExpect(status().isOk())
+				.andExpect(jsonPath("$.state").value("FINISHED"));
+		act("start", runId(day, 0), schoolA, f.userId()).andExpect(status().isOk())
+				.andExpect(jsonPath("$.schoolTime").value("07:30"));
+	}
+
+	@Test
+	void aDriverSwappedOntoTheRouteCanEndTheRunTheOldDriverStarted() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String id = runId(driverToday(schoolA, f.userId()), 0);
+		act("start", id, schoolA, f.userId()).andExpect(status().isOk());
+		UUID otherUser = UUID.randomUUID();
+		Driver other = aDriver(schoolA, otherUser, "Nadia");
+		f.route().setDriverId(other.getId());
+		routeRepository.save(f.route());
+
+		act("end", id, schoolA, f.userId()).andExpect(status().isNotFound());
+		act("end", id, schoolA, otherUser).andExpect(status().isOk())
+				.andExpect(jsonPath("$.state").value("FINISHED"))
+				.andExpect(jsonPath("$.driver.firstName").value("Nadia"));
+	}
+
+	@Test
+	void theHeadOfTransportationSeesTheStateAndTheTimesOfEachRun() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String id = runId(driverToday(schoolA, f.userId()), 0);
+
+		act("start", id, schoolA, f.userId()).andExpect(status().isOk());
+		mockMvc.perform(get(HEAD_URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.runs[0].id").value(id))
+				.andExpect(jsonPath("$.runs[0].state").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.runs[0].startedAt").value("2026-10-28T08:00:00Z"))
+				.andExpect(jsonPath("$.runs[1].state").value("NOT_STARTED"));
+		clock.set(WEDNESDAY.plusSeconds(1800));
+		act("end", id, schoolA, f.userId()).andExpect(status().isOk());
+		mockMvc.perform(get(HEAD_URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.runs[0].state").value("FINISHED"))
+				.andExpect(jsonPath("$.runs[0].endedAt").value("2026-10-28T08:30:00Z"));
+	}
+
+	@Test
+	void theDriversNextFetchShowsTheNewState() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String id = runId(driverToday(schoolA, f.userId()), 0);
+		act("start", id, schoolA, f.userId()).andExpect(status().isOk());
+
+		mockMvc.perform(get(DRIVER_URL).with(loggedInAs(Role.DRIVER, schoolA, f.userId())))
+				.andExpect(jsonPath("$.runs[0].state").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.runs[0].startedAt").value("2026-10-28T08:00:00Z"))
+				.andExpect(jsonPath("$.runs[1].state").value("NOT_STARTED"));
+	}
+
+	@Test
+	void theStartAndEndAnswersHaveExactlyTheFieldsOfTheFinishedRunSample() throws Exception {
+		schoolTimes(schoolA, "07:30", "14:30");
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String id = runId(driverToday(schoolA, f.userId()), 0);
+		String sample = Files.readString(Path.of("../docs/contracts/samples/runs/run-finished.json"));
+
+		String started = act("start", id, schoolA, f.userId()).andReturn().getResponse().getContentAsString();
+		String ended = act("end", id, schoolA, f.userId()).andReturn().getResponse().getContentAsString();
+
+		for (String answer : List.of(started, ended)) {
+			for (String path : List.of("$", "$.route", "$.vehicle", "$.driver", "$.counts", "$.stops[0]")) {
+				assertEquals(keys(sample, path), keys(answer, path), path);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "start", "end" })
+	void startAndEndNeedASessionTheDriverRoleAndAValidId(String action) throws Exception {
+		String path = RUN_URL + UUID.randomUUID() + "/" + action;
+		mockMvc.perform(post(path)).andExpect(status().isUnauthorized());
+		for (Role role : List.of(Role.HEAD_OF_TRANSPORT, Role.PARENT, Role.ADMIN)) {
+			mockMvc.perform(post(path).with(loggedInAs(role, schoolA)))
+					.andExpect(status().isForbidden())
+					.andExpect(jsonPath("$.detail").value("Access denied"));
+		}
+		mockMvc.perform(post(RUN_URL + "not-a-uuid/" + action).with(loggedInAs(Role.DRIVER, schoolA)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.detail").value("Invalid request parameter"));
+	}
+
+	/**
+	 * Twelve drivers' taps at once, with the clock ticking so a request that overwrote the first time would
+	 * show a different one. Every answer must be 200 with the same time, and the row keeps it.
+	 */
+	@ParameterizedTest
+	@ValueSource(strings = { "start", "end" })
+	void simultaneousStartsOrEndsAnswer200AndKeepTheFirstTime(String action) throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String id = runId(driverToday(schoolA, f.userId()), 0);
+		if (action.equals("end")) {
+			act("start", id, schoolA, f.userId()).andExpect(status().isOk());
+		}
+		int requests = 12;
+		CountDownLatch go = new CountDownLatch(1);
+		AtomicBoolean done = new AtomicBoolean();
+		ExecutorService pool = Executors.newFixedThreadPool(requests + 1);
+		pool.submit(() -> {
+			for (long tick = 1; !done.get(); tick++) {
+				clock.set(WEDNESDAY.plusMillis(tick * 7));
+				Thread.sleep(1);
+			}
+			return null;
+		});
+		List<Future<String>> results = new ArrayList<>();
+		try {
+			for (int i = 0; i < requests; i++) {
+				results.add(pool.submit(() -> {
+					go.await();
+					var response = mockMvc.perform(post(RUN_URL + id + "/" + action)
+									.with(loggedInAs(Role.DRIVER, schoolA, f.userId())))
+							.andReturn().getResponse();
+					assertEquals(200, response.getStatus(), response.getContentAsString());
+					return JsonPath.read(response.getContentAsString(), action.equals("start")
+							? "$.startedAt" : "$.endedAt");
+				}));
+			}
+			go.countDown();
+			Set<String> times = new HashSet<>();
+			for (Future<String> result : results) {
+				times.add(result.get());
+			}
+			assertEquals(1, times.size(), times.toString());
+			Run run = stored(id);
+			Instant saved = action.equals("start") ? run.getStartedAt() : run.getEndedAt();
+			assertEquals(times.iterator().next(), saved.toString());
+		} finally {
+			done.set(true);
+			pool.shutdownNow();
+		}
+		assertEquals(action.equals("start") ? RunState.IN_PROGRESS : RunState.FINISHED, stored(id).getState());
 	}
 }
