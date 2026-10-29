@@ -13,6 +13,7 @@ import com.wassel.backend.routes.dto.RouteSchoolResponse;
 import com.wassel.backend.routes.dto.RouteSummaryResponse;
 import com.wassel.backend.routes.dto.RouteVehicleSummary;
 import com.wassel.backend.routes.dto.StopResponse;
+import com.wassel.backend.routes.dto.StudentRouteResponse;
 import com.wassel.backend.routes.entity.Route;
 import com.wassel.backend.routes.entity.RouteProposal;
 import com.wassel.backend.routes.entity.RouteVersion;
@@ -308,6 +309,31 @@ public class RouteService {
 		if (proposalRepository.claim(schoolId, routeId, proposalId) == 0) {
 			throw new ProposalNotFoundException(PROPOSAL_NOT_FOUND_MESSAGE);
 		}
+	}
+
+	/**
+	 * This student's current route and display position (SCRUM-238/239), or empty if they're not
+	 * on a route, or their route vanished between the lookup and this call (treated the same as
+	 * "no route" rather than a 404 that names a route the caller never asked about). The route id
+	 * itself comes from {@link StudentService#getRouteId}, since {@code routeId} is a column on
+	 * {@code Student}, not on {@code Route}; position is this student's rank in
+	 * {@link StudentService#listOnRoute}'s order, matching how every other response numbers stops.
+	 */
+	@Transactional(readOnly = true)
+	public Optional<StudentRouteResponse> findStudentRoute(UUID schoolId, UUID studentId) {
+		UUID routeId = studentService.getRouteId(schoolId, studentId);
+		if (routeId == null) {
+			return Optional.empty();
+		}
+		return routeRepository.findBySchoolIdAndId(schoolId, routeId).flatMap(route -> {
+			List<StudentResponse> stops = studentService.listOnRoute(schoolId, routeId);
+			for (int i = 0; i < stops.size(); i++) {
+				if (stops.get(i).id().equals(studentId)) {
+					return Optional.of(new StudentRouteResponse(route.getId(), route.getName(), i + 1));
+				}
+			}
+			return Optional.empty();
+		});
 	}
 
 	private VehicleResponse requireActiveVehicle(UUID schoolId, UUID vehicleId) {

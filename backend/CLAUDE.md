@@ -157,7 +157,13 @@ that's the structure this codebase moved away from.
   never from its raw value. `StudentService.assignToRoute`/`removeFromRoute`/`countOnRoute`/
   `listOnRoute`/`isOnRoute`/`clearRoute`/`reorderRoute` are for the `routes` module to call; this
   module never imports `routes` (it takes a plain route id, the same way `route` is a plain
-  string). `reorderRoute` (SCRUM-210) replaces a route's whole order at once: unlike
+  string). `getRouteId` (SCRUM-238) is the same idea for one student at a time: `routes` uses it
+  to find which route a student is on without this module exposing `routeId`/`stopPosition` on
+  `StudentResponse` itself. `getStudent` and `findChildOf` (SCRUM-238) are for a module (e.g.
+  `absences`) that needs one student's current fields, or a parent-ownership check on a
+  `studentId` path variable — `findChildOf` returns empty for a wrong school, an unknown id,
+  *and* a student linked to a different parent, on purpose, so a caller can't tell "not yours"
+  from "unknown" apart. `reorderRoute` (SCRUM-210) replaces a route's whole order at once: unlike
   `assignToRoute`'s watermark, it rewrites positions as a clean `1..n`, and rejects (via
   `InvalidStopOrderException`) a list that repeats a student or doesn't contain exactly the
   route's current stops. Setting an address — at creation (SCRUM-213) or via the update endpoint
@@ -188,7 +194,11 @@ that's the structure this codebase moved away from.
   timing, and `schools` (`SchoolSettingsService.getTimes`) plus the
   `schools.config.SchoolLocationProperties` (`wassel.school.latitude`/`longitude`, required — the
   app refuses to start without it) for the `Route.school` block. Response shapes follow
-  `docs/contracts/routing.md`.
+  `docs/contracts/routing.md`. `RouteService.findStudentRoute` (SCRUM-238) is for the `absences`
+  module: a student's route and their 1-based display position among its stops (from
+  `StudentService.listOnRoute`'s order, not the raw `stopPosition` watermark), or empty if
+  they're not on a route — including if their route vanished between the lookup and this call,
+  treated the same as "no route" rather than a 404 naming a route the caller never asked about.
   Optimization (SCRUM-203): `propose` asks `routing.service.RouteOptimizer` for an order and saves it as the
   route's one pending proposal (`entity/RouteProposal`, table `route_proposals`, unique `route_id`; it holds
   the route's order when it was made, `baseOrder`, and the suggestion, `proposedOrder`). Every propose
@@ -307,6 +317,35 @@ that's the structure this codebase moved away from.
   no other module: it takes plain `Coordinate`s and ids so it does not depend on the routes
   entities. The JSON shapes, endpoint table and rules are in `docs/contracts/routing.md`, with
   samples in `docs/contracts/samples/routing/`; change them by pull request that tags the owners.
+- `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
+  of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
+  are in `docs/contracts/runs.md` (owned jointly with the `runs` module, SCRUM-232/239); build
+  against that, not against `runs`' code — this module never reads `runs`. `entity/Absence` never
+  stores `cancelled` by a physical delete: cancelling an absence that hasn't started yet
+  (`fromDate` today or later) sets `cancelled = true`, kept as history the same way a used
+  `PasswordToken` or claimed `RouteProposal` stays a row; one already in progress (`fromDate`
+  before today, `toDate` today or later) has `toDate` shortened to yesterday instead, so the days
+  already gone by stay recorded as a real, un-cancelled absence. Every query filters
+  `cancelled = false` explicitly, so a cancelled absence behaves as "gone" everywhere without
+  being deleted. The overlap rule (an exact repeat of an existing absence is idempotent — 200,
+  nothing written; any other overlap is 409, naming the absence it conflicts with) is checked in
+  `AbsenceService` for the message and the 200-vs-201 decision; the real guarantee that no two
+  overlapping, non-cancelled absences for one student can ever exist — across however many app
+  instances race to insert one — is a PostgreSQL exclusion constraint (`V6__absences.sql`,
+  `EXCLUDE USING gist` over `student_id` and `daterange(from_date, to_date)`, needing the
+  `btree_gist` extension the migration creates), the same backstop role the unique constraints on
+  `routes`/`school_holidays` play for their own check-then-insert races; `AbsenceService` catches
+  the constraint's `DataIntegrityViolationException` and re-resolves, so the losing request
+  answers exactly as if it had seen the winner's row from the start. Depends on `students`
+  (`StudentService.findChildOf` for parent ownership of a `studentId` path variable,
+  `StudentService.getStudent`/`getRouteId` for the head of transportation's list) and `routes`
+  (`RouteService.findStudentRoute`, added for this module: a student's route and their 1-based
+  display position among its stops, from `StudentService.listOnRoute`, not the raw watermarked
+  `stopPosition` column). "Today" is the shared `common.config.ClockConfig` bean
+  (`Asia/Beirut`), also used by `runs`. Known limit: the exclusion constraint has no JPA
+  `@Table(uniqueConstraints=...)` equivalent to declare on the entity (unlike the plain unique
+  constraints elsewhere), so Hibernate's schema `validate` can't catch a dropped or renamed one —
+  only the migration enforces it.
 
 ## Where things go
 
