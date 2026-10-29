@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
-import { CalendarIcon, ClockIcon } from "@/components/ui/icons";
+import { CalendarIcon, ClockIcon, MailIcon } from "@/components/ui/icons";
 import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
 
 interface Feature {
@@ -28,6 +28,14 @@ const FEATURES: Feature[] = [
     href: "/admin/calendar",
     cta: "Open school calendar",
     Icon: CalendarIcon,
+  },
+  {
+    title: "Head of transportation",
+    description:
+      "Invite the person who will manage day-to-day transport: routes, drivers, and vehicles.",
+    href: "/admin/head-of-transport",
+    cta: "Invite head of transportation",
+    Icon: MailIcon,
   },
 ];
 
