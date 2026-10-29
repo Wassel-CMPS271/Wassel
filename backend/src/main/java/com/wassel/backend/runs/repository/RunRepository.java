@@ -6,13 +6,14 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Every read is scoped by school id, so callers can't read across the tenant boundary.
+ * Every read and update is scoped by school id, so callers can't cross the tenant boundary.
  * {@code createMissing} trusts its caller to pass a route of that school.
  */
 public interface RunRepository extends JpaRepository<Run, UUID> {
@@ -35,4 +36,27 @@ public interface RunRepository extends JpaRepository<Run, UUID> {
 			""", nativeQuery = true)
 	void createMissing(@Param("schoolId") UUID schoolId, @Param("routeId") UUID routeId,
 			@Param("date") LocalDate date);
+
+	/**
+	 * Moves a run from {@code NOT_STARTED} to {@code IN_PROGRESS} and saves the time, or changes nothing. A
+	 * conditional update, not read-then-write, so two simultaneous starts leave the first time in place. The
+	 * caller re-reads the run to tell a move from a repeat or a conflict, so the update clears the persistence
+	 * context: that re-read must not be a stale cached entity.
+	 */
+	@Modifying(clearAutomatically = true)
+	@Query("""
+			update Run r set r.state = com.wassel.backend.runs.entity.RunState.IN_PROGRESS, r.startedAt = :now
+			where r.id = :id and r.schoolId = :schoolId
+				and r.state = com.wassel.backend.runs.entity.RunState.NOT_STARTED
+			""")
+	void markStarted(@Param("schoolId") UUID schoolId, @Param("id") UUID id, @Param("now") Instant now);
+
+	/** As {@link #markStarted}, from {@code IN_PROGRESS} to {@code FINISHED}. */
+	@Modifying(clearAutomatically = true)
+	@Query("""
+			update Run r set r.state = com.wassel.backend.runs.entity.RunState.FINISHED, r.endedAt = :now
+			where r.id = :id and r.schoolId = :schoolId
+				and r.state = com.wassel.backend.runs.entity.RunState.IN_PROGRESS
+			""")
+	void markEnded(@Param("schoolId") UUID schoolId, @Param("id") UUID id, @Param("now") Instant now);
 }

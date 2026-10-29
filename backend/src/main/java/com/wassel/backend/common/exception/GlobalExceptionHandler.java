@@ -14,6 +14,8 @@ import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteCapacityExceededException;
 import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.routes.exception.RouteOptimizationConflictException;
+import com.wassel.backend.runs.exception.RunNotFoundException;
+import com.wassel.backend.runs.exception.RunStateConflictException;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.HolidayNotFoundException;
@@ -239,6 +241,19 @@ public class GlobalExceptionHandler {
 			problem.setProperty("studentIds", ex.getStudentIds());
 		}
 		return problem;
+	}
+
+	@ExceptionHandler(RunNotFoundException.class)
+	public ProblemDetail handleRunNotFound(RunNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// A plain detail naming the run's state, as the runs contract has it.
+	@ExceptionHandler(RunStateConflictException.class)
+	public ProblemDetail handleRunStateConflict(RunStateConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
 	}
 
 	@ExceptionHandler(UserNotFoundException.class)
