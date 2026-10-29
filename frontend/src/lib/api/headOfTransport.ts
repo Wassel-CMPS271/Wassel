@@ -7,9 +7,9 @@
 //
 // Requires an authenticated ADMIN; enforced server-side, nothing to check here.
 //
-// Failures throw ApiValidationError (a 400 with an `errors` map, e.g. a blank
-// or malformed email) or ApiError (e.g. a 409 with `detail` "An account with
-// this email already exists." for a duplicate email). See errors.ts and
+// Failures throw ApiValidationError: a 400 with an `errors` map for a blank
+// or malformed email, or a 409 with an `errors.email` map for a duplicate
+// email (EmailAlreadyInUseException always sends one). See errors.ts and
 // client.ts.
 
 import { request } from "./client";

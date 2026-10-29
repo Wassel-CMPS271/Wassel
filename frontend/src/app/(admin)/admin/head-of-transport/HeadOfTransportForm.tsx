@@ -5,7 +5,7 @@ import type { FormEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { ApiError, ApiValidationError } from "@/lib/api/errors";
+import { ApiValidationError } from "@/lib/api/errors";
 import { colors, darkTheme, spacing } from "@/styles/tokens";
 
 // Same pattern as CreateAccountRequest on the backend, so both sides agree.
@@ -50,8 +50,6 @@ export function HeadOfTransportForm({ onInvite }: HeadOfTransportFormProps) {
     } catch (error) {
       if (error instanceof ApiValidationError) {
         setErrors(error.errors);
-      } else if (error instanceof ApiError && error.status === 409) {
-        setErrors({ email: "An account with this email already exists." });
       } else {
         setFormError("Couldn't send the invite. Please try again.");
       }
