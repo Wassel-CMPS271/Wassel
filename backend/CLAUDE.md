@@ -367,6 +367,14 @@ DTOs live at the API boundary. Controllers must never return entities directly
   `isAuthenticated()` for `/me`). The only public routes are `POST /api/auth/login`,
   `/api/auth/2fa/verify`, `/api/auth/2fa/resend`, `/api/auth/logout`, `/api/auth/forgot-password`
   and `/api/auth/password`, listed explicitly in `SecurityConfig`.
+- **A new endpoint goes into the role-access table in the same PR** (SCRUM-254). `security/RoleAccessMatrixTests`
+  has one row per endpoint ("METHOD path" as the controller declares it, and who may call it: public, any signed-in
+  user, or one role) and checks all five callers (admin, head of transportation, driver, parent, signed out): an
+  allowed one must not get 401 or 403, a signed-in one without the role must get 403, a signed-out one 401. It reads
+  every real endpoint from Spring and **fails if one has no row**, and fails for a row that matches no endpoint, so a
+  forgotten access rule is caught by CI. If the endpoint takes a validated body, add a valid one to `VALID_BODIES`:
+  Spring checks the body before the role, so a caller without the role gets 400 instead of 403 when the body is
+  invalid. A mismatch the test finds is raised on the owner's PR or as a bug ticket, not fixed in the test.
 - Auth is a cookie, so CSRF protection relies on `SameSite=Strict` plus the CORS allow-list
   (`CORS_ALLOWED_ORIGINS`). Frontend and backend must be served from the same site, and the
   frontend must call the API with `credentials: "include"`. If the cookie is ever relaxed, turn
