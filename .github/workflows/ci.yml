@@ -40,6 +40,14 @@ jobs:
           name: backend-test-reports
           path: backend/target/surefire-reports/
           if-no-files-found: ignore
+      # JaCoCo writes the HTML report during verify (SCRUM-151). A report only: nothing fails on a low number.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/target/site/jacoco/
+          if-no-files-found: ignore
 
   frontend-build:
     runs-on: ubuntu-latest
@@ -57,9 +65,17 @@ jobs:
       - name: Lint
         run: npm run lint
         working-directory: frontend
+      # Same run as `npm test` (a failing test still fails the job), plus a coverage report (SCRUM-151).
       - name: Test
-        run: npm test
+        run: npm run test:coverage
         working-directory: frontend
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          if-no-files-found: ignore
       - name: Build
         run: npm run build
         working-directory: frontend

@@ -22,5 +22,13 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     globals: true,
+    // Only used by `npm run test:coverage` (SCRUM-151). A report, not a gate: no thresholds.
+    coverage: {
+      provider: "v8",
+      reporter: ["text-summary", "html"],
+      reportsDirectory: "coverage",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}"],
+    },
   },
 });

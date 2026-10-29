@@ -90,6 +90,10 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
   hitting a real backend.
 - `npm test` runs once and exits non-zero on a failure (CI's `frontend-build` job runs this
   and fails the build). `npm run test:watch` re-runs on save during development.
+- `npm run test:coverage` is the same run plus a v8 coverage report (a text summary and an HTML report in
+  `frontend/coverage/`, git-ignored). CI's `frontend-build` job runs it instead of `npm test` and uploads the
+  folder as the `frontend-coverage` artifact. It is a report only: there are no thresholds, so a low number
+  never fails the build.
 - `vitest.setup.ts` loads the jest-dom matchers (`toBeInTheDocument`, etc.) for every test.
 
 ## Route protection

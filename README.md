@@ -269,8 +269,11 @@ or `main`:
 
 | Check            | What it runs                                                                      |
 | ---------------- | --------------------------------------------------------------------------------- |
-| `backend-build`  | `mvn -B verify` in `/backend` (compile + tests + package)                         |
-| `frontend-build` | `npm ci`, `npm run lint`, `npm test --if-present`, `npm run build` in `/frontend` |
+| `backend-build`  | `mvn -B verify` in `/backend` (compile + tests + package), uploads `backend-coverage` |
+| `frontend-build` | `npm ci`, `npm run lint`, `npm run test:coverage`, `npm run build` in `/frontend`, uploads `frontend-coverage` |
+
+Both jobs upload a coverage report as a build artifact (open the run on GitHub, **Artifacts** at the bottom, download
+and open `index.html`). It is a report only: no minimum is enforced.
 
 The same checks can be run locally before pushing:
 
