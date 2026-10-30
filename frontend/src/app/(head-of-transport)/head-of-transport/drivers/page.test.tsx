@@ -5,6 +5,8 @@ import {
   assignDriverToVehicle,
   getDrivers,
   resendInvite,
+  restoreDriver,
+  revokeDriver,
   unassignDriver,
   type Driver,
 } from "@/lib/api/drivers";
@@ -16,6 +18,8 @@ vi.mock("@/lib/api/drivers", () => ({
   getDrivers: vi.fn(),
   addDriver: vi.fn(),
   resendInvite: vi.fn(),
+  revokeDriver: vi.fn(),
+  restoreDriver: vi.fn(),
   assignDriverToVehicle: vi.fn(),
   unassignDriver: vi.fn(),
 }));
@@ -43,6 +47,8 @@ beforeEach(() => {
   vi.mocked(getDrivers).mockReset();
   vi.mocked(addDriver).mockReset();
   vi.mocked(resendInvite).mockReset();
+  vi.mocked(revokeDriver).mockReset();
+  vi.mocked(restoreDriver).mockReset();
   vi.mocked(assignDriverToVehicle).mockReset();
   vi.mocked(unassignDriver).mockReset();
   vi.mocked(getVehicles).mockReset();
@@ -214,19 +220,87 @@ it("unassigns a driver after confirming, and announces it", async () => {
   expect(toast.closest('[role="status"]')).toBeInTheDocument();
 });
 
-// NOT BUILT (SCRUM-223): there is no way to deactivate a driver.
-// Driver["status"] allows "deactivated" (lib/api/drivers.ts), but drivers.ts
-// has no deactivateDriver call, DriverListItem has no Deactivate control, and
-// the backend has no endpoint for it (DriverController only has list, add,
-// resend-invite and assign/unassign vehicle). Un-skip once all three exist.
-it.skip("deactivates a driver after confirming, and announces it", async () => {
+// SCRUM-98: revoking a driver's access. The backend answers with the driver as "deactivated" (and without
+// the vehicle), which the roster shows as "Revoked".
+const ASSIGNED_DRIVER: Driver = { ...ACTIVE_DRIVER, assignedVehicleId: "v-1" };
+
+it("revokes a driver after confirming, shows them as revoked and releases the vehicle", async () => {
+  vi.mocked(getDrivers).mockResolvedValue([ASSIGNED_DRIVER]);
+  vi.mocked(getVehicles).mockResolvedValue([VEHICLE]);
+  vi.mocked(revokeDriver).mockResolvedValue({ ...ASSIGNED_DRIVER, status: "deactivated", assignedVehicleId: null });
+  render(<DriversPage />);
+  await screen.findByText("Ahmad Khalil");
+  expect(screen.getByText(VEHICLE.plateNumber)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Revoke access for Ahmad Khalil" }));
+  expect(revokeDriver).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm revoke access for Ahmad Khalil" }));
+
+  expect(await screen.findByText("Revoked")).toBeInTheDocument();
+  expect(revokeDriver).toHaveBeenCalledWith(ASSIGNED_DRIVER.id);
+  expect(screen.queryByText(VEHICLE.plateNumber)).not.toBeInTheDocument();
+  expect(screen.getByText("Unassigned")).toBeInTheDocument();
+  const toast = await screen.findByText("Ahmad Khalil's access revoked.");
+  expect(toast.closest('[role="status"]')).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Restore access for Ahmad Khalil" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Assign vehicle|Reassign/ })).not.toBeInTheDocument();
+});
+
+it("does not revoke when the confirmation is cancelled", async () => {
   vi.mocked(getDrivers).mockResolvedValue([ACTIVE_DRIVER]);
   vi.mocked(getVehicles).mockResolvedValue([]);
   render(<DriversPage />);
   await screen.findByText("Ahmad Khalil");
 
-  fireEvent.click(screen.getByRole("button", { name: "Deactivate Ahmad Khalil" }));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm deactivate Ahmad Khalil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Revoke access for Ahmad Khalil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-  expect(await screen.findByText("Deactivated")).toBeInTheDocument();
+  expect(revokeDriver).not.toHaveBeenCalled();
+  expect(screen.getByText("Active")).toBeInTheDocument();
+});
+
+it("lets an invited driver be revoked too", async () => {
+  vi.mocked(getDrivers).mockResolvedValue([INVITED_DRIVER]);
+  vi.mocked(getVehicles).mockResolvedValue([]);
+  vi.mocked(revokeDriver).mockResolvedValue({ ...INVITED_DRIVER, status: "deactivated" });
+  render(<DriversPage />);
+  await screen.findByText("Ahmad Khalil");
+
+  fireEvent.click(screen.getByRole("button", { name: "Revoke access for Ahmad Khalil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm revoke access for Ahmad Khalil" }));
+
+  expect(await screen.findByText("Revoked")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Resend invite/ })).not.toBeInTheDocument();
+});
+
+it("restores a revoked driver after confirming", async () => {
+  vi.mocked(getDrivers).mockResolvedValue([{ ...ACTIVE_DRIVER, status: "deactivated" }]);
+  vi.mocked(getVehicles).mockResolvedValue([]);
+  vi.mocked(restoreDriver).mockResolvedValue(ACTIVE_DRIVER);
+  render(<DriversPage />);
+  expect(await screen.findByText("Revoked")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Restore access for Ahmad Khalil" }));
+  expect(restoreDriver).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm restore access for Ahmad Khalil" }));
+
+  expect(await screen.findByText("Active")).toBeInTheDocument();
+  expect(restoreDriver).toHaveBeenCalledWith(ACTIVE_DRIVER.id);
+  expect(await screen.findByText("Ahmad Khalil's access restored.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Revoke access for Ahmad Khalil" })).toBeInTheDocument();
+});
+
+it("tells the user when revoking fails and leaves the driver as they were", async () => {
+  vi.mocked(getDrivers).mockResolvedValue([ACTIVE_DRIVER]);
+  vi.mocked(getVehicles).mockResolvedValue([]);
+  vi.mocked(revokeDriver).mockRejectedValue(new Error("offline"));
+  render(<DriversPage />);
+  await screen.findByText("Ahmad Khalil");
+
+  fireEvent.click(screen.getByRole("button", { name: "Revoke access for Ahmad Khalil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm revoke access for Ahmad Khalil" }));
+
+  expect(await screen.findByText("Couldn't revoke access. Please try again.")).toBeInTheDocument();
+  expect(screen.getByText("Active")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Revoke access for Ahmad Khalil" })).toBeEnabled();
 });

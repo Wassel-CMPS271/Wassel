@@ -32,6 +32,27 @@ public class AccountService {
 		return invite(schoolId, Role.HEAD_OF_TRANSPORT, request);
 	}
 
+	/** Revoking and restoring (SCRUM-98): a revoked account can't sign in, and an open session ends at its next request. */
+	@Transactional
+	public AccountResponse revokeParent(UUID schoolId, UUID actorId, UUID parentId) {
+		return toResponse(userService.setEnabled(schoolId, actorId, parentId, Role.PARENT, false));
+	}
+
+	@Transactional
+	public AccountResponse restoreParent(UUID schoolId, UUID actorId, UUID parentId) {
+		return toResponse(userService.setEnabled(schoolId, actorId, parentId, Role.PARENT, true));
+	}
+
+	@Transactional
+	public AccountResponse revokeHeadOfTransport(UUID schoolId, UUID actorId, UUID headOfTransportId) {
+		return toResponse(userService.setEnabled(schoolId, actorId, headOfTransportId, Role.HEAD_OF_TRANSPORT, false));
+	}
+
+	@Transactional
+	public AccountResponse restoreHeadOfTransport(UUID schoolId, UUID actorId, UUID headOfTransportId) {
+		return toResponse(userService.setEnabled(schoolId, actorId, headOfTransportId, Role.HEAD_OF_TRANSPORT, true));
+	}
+
 	public List<AccountResponse> listParents(UUID schoolId) {
 		return userService.listByRole(schoolId, Role.PARENT).stream().map(this::toResponse).toList();
 	}
@@ -43,7 +64,7 @@ public class AccountService {
 	}
 
 	private AccountResponse toResponse(User user) {
-		return new AccountResponse(user.getId(), user.getEmail(), user.hasPassword() ? "active" : "invited",
-				user.getCreatedAt());
+		String status = !user.isEnabled() ? "revoked" : user.hasPassword() ? "active" : "invited";
+		return new AccountResponse(user.getId(), user.getEmail(), status, user.getCreatedAt());
 	}
 }

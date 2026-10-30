@@ -57,3 +57,64 @@ it("keeps invitation success distinct from a failed refresh", async () => {
   expect(screen.getByText("Invitation sent to parent@example.com.")).toBeInTheDocument();
   await waitFor(() => expect(screen.getByRole("button", { name: "Send invitation" })).toBeEnabled());
 });
+
+// SCRUM-98: revoking and restoring a parent's access.
+const activeParent = { ...parent, status: "active" };
+
+it("revokes a parent after confirming and shows them as revoked", async () => {
+  const fetch = vi.fn().mockResolvedValueOnce(json([activeParent])).mockResolvedValueOnce(json({ ...activeParent, status: "revoked" }));
+  vi.stubGlobal("fetch", fetch);
+  render(<ParentsPage />);
+  await screen.findByText(parent.email);
+
+  fireEvent.click(screen.getByRole("button", { name: `Revoke access for ${parent.email}` }));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: `Confirm revoke access for ${parent.email}` }));
+
+  expect(await screen.findByText("Revoked")).toBeInTheDocument();
+  expect(fetch.mock.calls[1][0]).toMatch(/\/api\/head-of-transport\/parents\/p1\/revoke$/);
+  expect(fetch.mock.calls[1][1]).toMatchObject({ method: "PATCH", credentials: "include" });
+  expect(await screen.findByText(`${parent.email}: access revoked.`)).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: `Restore access for ${parent.email}` })).toHaveFocus();
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it("restores a revoked parent after confirming", async () => {
+  const fetch = vi.fn().mockResolvedValueOnce(json([{ ...parent, status: "revoked" }])).mockResolvedValueOnce(json(activeParent));
+  vi.stubGlobal("fetch", fetch);
+  render(<ParentsPage />);
+  expect(await screen.findByText("Revoked")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: `Restore access for ${parent.email}` }));
+  fireEvent.click(screen.getByRole("button", { name: `Confirm restore access for ${parent.email}` }));
+
+  expect(await screen.findByText("Active")).toBeInTheDocument();
+  expect(fetch.mock.calls[1][0]).toMatch(/\/parents\/p1\/restore$/);
+  expect(await screen.findByText(`${parent.email}: access restored.`)).toBeInTheDocument();
+});
+
+it("cancelling the confirmation sends nothing", async () => {
+  const fetch = vi.fn().mockResolvedValueOnce(json([activeParent]));
+  vi.stubGlobal("fetch", fetch);
+  render(<ParentsPage />);
+  await screen.findByText(parent.email);
+
+  fireEvent.click(screen.getByRole("button", { name: `Revoke access for ${parent.email}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("Active")).toBeInTheDocument();
+});
+
+it("shows the reason when revoking fails and keeps the parent as they were", async () => {
+  const fetch = vi.fn().mockResolvedValueOnce(json([activeParent])).mockResolvedValueOnce(json({ detail: "No parent found with that id in this school." }, 404));
+  vi.stubGlobal("fetch", fetch);
+  render(<ParentsPage />);
+  await screen.findByText(parent.email);
+
+  fireEvent.click(screen.getByRole("button", { name: `Revoke access for ${parent.email}` }));
+  fireEvent.click(screen.getByRole("button", { name: `Confirm revoke access for ${parent.email}` }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("no longer available");
+  expect(screen.getByText("Active")).toBeInTheDocument();
+});

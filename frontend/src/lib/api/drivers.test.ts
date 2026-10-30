@@ -3,7 +3,15 @@
 // methods and bodies with fetch mocked, plus how backend errors surface.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { addDriver, assignDriverToVehicle, getDrivers, resendInvite, unassignDriver } from "./drivers";
+import {
+  addDriver,
+  assignDriverToVehicle,
+  getDrivers,
+  resendInvite,
+  restoreDriver,
+  revokeDriver,
+  unassignDriver,
+} from "./drivers";
 import { ApiValidationError } from "./errors";
 
 const DRIVERS_URL = "http://localhost:8080/api/head-of-transport/drivers";
@@ -63,6 +71,28 @@ describe("httpDrivers", () => {
     await expect(resendInvite("a/b")).resolves.toEqual(DRIVER);
     expect(fetchMock).toHaveBeenCalledWith(
       `${DRIVERS_URL}/a%2Fb/resend-invite`,
+      expect.objectContaining({ method: "PATCH", body: undefined }),
+    );
+  });
+
+  it("revokes a driver's access with a PATCH and no body, encoding the id (SCRUM-98)", async () => {
+    const revoked = { ...DRIVER, status: "deactivated" };
+    const fetchMock = mockFetchOnce(true, 200, revoked);
+
+    await expect(revokeDriver("a/b")).resolves.toEqual(revoked);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DRIVERS_URL}/a%2Fb/revoke`,
+      expect.objectContaining({ method: "PATCH", body: undefined }),
+    );
+  });
+
+  it("restores a driver's access with a PATCH and no body, encoding the id (SCRUM-98)", async () => {
+    const restored = { ...DRIVER, status: "active" };
+    const fetchMock = mockFetchOnce(true, 200, restored);
+
+    await expect(restoreDriver("a/b")).resolves.toEqual(restored);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DRIVERS_URL}/a%2Fb/restore`,
       expect.objectContaining({ method: "PATCH", body: undefined }),
     );
   });

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
+import { RevokeAccessControl } from "@/components/ui/RevokeAccessControl";
 import { LicensePlate } from "@/components/ui/LicensePlate";
 import { AssignVehicleControls, type EligibleVehicle } from "./AssignVehicleControls";
 import type { Driver } from "@/lib/api/drivers";
@@ -13,6 +14,8 @@ interface DriverListItemProps {
   assignedVehiclePlate?: string;
   eligibleVehicles: EligibleVehicle[];
   onResendInvite: (id: string) => Promise<void>;
+  onRevoke: (id: string) => Promise<void>;
+  onRestore: (id: string) => Promise<void>;
   onAssign: (driverId: string, vehicleId: string) => Promise<void>;
   onUnassign: (driverId: string) => Promise<void>;
 }
@@ -25,7 +28,8 @@ const STATUS_CONFIG: Record<Driver["status"], { label: string; dot: string; text
   active: { label: "Active", dot: darkTheme.status.activeDot, text: colors.success[500] },
   invited: { label: "Invited", dot: colors.warning[500], text: colors.warning[500] },
   deactivated: {
-    label: "Deactivated",
+    // The only way into this status is revoking the driver's access (SCRUM-98).
+    label: "Revoked",
     dot: darkTheme.status.inactiveDot,
     text: darkTheme.text.secondary,
   },
@@ -36,6 +40,8 @@ export function DriverListItem({
   assignedVehiclePlate,
   eligibleVehicles,
   onResendInvite,
+  onRevoke,
+  onRestore,
   onAssign,
   onUnassign,
 }: DriverListItemProps) {
@@ -147,6 +153,15 @@ export function DriverListItem({
             onUnassign={onUnassign}
           />
         )}
+
+        <RevokeAccessControl
+          name={`${driver.firstName} ${driver.lastName}`}
+          shortName={driver.firstName}
+          revoked={driver.status === "deactivated"}
+          revokeNote="Their vehicle is released."
+          onRevoke={() => onRevoke(driver.id)}
+          onRestore={() => onRestore(driver.id)}
+        />
       </div>
     </motion.li>
   );

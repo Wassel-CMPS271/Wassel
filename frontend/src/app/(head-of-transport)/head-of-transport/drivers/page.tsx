@@ -6,7 +6,9 @@ import {
   addDriver,
   assignDriverToVehicle,
   getDrivers,
+  restoreDriver,
   resendInvite,
+  revokeDriver,
   unassignDriver,
   type Driver,
   type NewDriver,
@@ -84,6 +86,26 @@ export default function DriversPage() {
       pushToast(`Invite resent to ${updated.firstName} ${updated.lastName}.`);
     } catch (err) {
       pushToast(failureMessage(err, "Couldn't resend the invite. Please try again."));
+    }
+  }
+
+  async function handleRevoke(id: string) {
+    try {
+      const updated = await revokeDriver(id);
+      setDrivers((prev) => prev.map((driver) => (driver.id === id ? updated : driver)));
+      pushToast(`${updated.firstName} ${updated.lastName}'s access revoked.`);
+    } catch (err) {
+      pushToast(failureMessage(err, "Couldn't revoke access. Please try again."));
+    }
+  }
+
+  async function handleRestore(id: string) {
+    try {
+      const updated = await restoreDriver(id);
+      setDrivers((prev) => prev.map((driver) => (driver.id === id ? updated : driver)));
+      pushToast(`${updated.firstName} ${updated.lastName}'s access restored.`);
+    } catch (err) {
+      pushToast(failureMessage(err, "Couldn't restore access. Please try again."));
     }
   }
 
@@ -224,6 +246,8 @@ export default function DriversPage() {
                     }
                     eligibleVehicles={eligibleVehicles}
                     onResendInvite={handleResendInvite}
+                    onRevoke={handleRevoke}
+                    onRestore={handleRestore}
                     onAssign={handleAssign}
                     onUnassign={handleUnassign}
                   />

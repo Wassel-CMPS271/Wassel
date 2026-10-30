@@ -96,6 +96,11 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
   never fails the build.
 - `vitest.setup.ts` loads the jest-dom matchers (`toBeInTheDocument`, etc.) for every test.
 
+## Revoking access
+
+- `RevokeAccessControl` (`components/ui/`) is the Revoke / Restore access button for a person (SCRUM-98): one button, then an inline question with Confirm and Cancel (Escape cancels, focus goes to Confirm and back to the button). Both directions ask first. The caller's `onRevoke`/`onRestore` must report their own failures (a toast or an alert), because the control goes back to the button whatever happened.
+- The drivers roster and the parents list use it. A revoked driver arrives from the API as `status: "deactivated"` and is shown as "Revoked"; a parent as `status: "revoked"`. Update the row from the response instead of reloading the list.
+
 ## Route protection
 
 - There is no middleware. The session token carries no role (the backend reloads the role from the database on every request, so a role change applies at once), so only `GET /api/auth/me` can say who is signed in.

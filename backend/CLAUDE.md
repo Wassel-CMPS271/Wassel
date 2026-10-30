@@ -125,6 +125,18 @@ that's the structure this codebase moved away from.
   school's parents (`/api/head-of-transport/parents`), and the admin invites head of
   transportation accounts into the admin's school (`/api/admin/head-of-transport`). No names yet,
   the `User` only has an email. Depends on `auth` and `users`.
+  Revoking access (SCRUM-98): `PATCH .../{id}/revoke` and `.../{id}/restore` set `User.enabled`, on parents
+  (head of transportation), drivers (head of transportation, in `drivers`) and head of transportation accounts
+  (admin, `/api/admin/head-of-transport`). Nothing new is needed to end sessions: `JwtAuthenticationFilter`
+  reloads the user on every request and drops a disabled one, and login, 2FA, forgot-password and set-password
+  all refuse a disabled account. `UserService.setEnabled(schoolId, actorId, userId, role, enabled)` is the one
+  place: it looks the account up by school **and role** (so a head of transportation can't reach an admin, a
+  head, or anyone in another school: all a 404), and refuses revoking yourself (403, `RevokeNotAllowedException`).
+  Doing it twice is fine. `AccountResponse.status` is `"revoked"` while disabled. A driver's revoke also sets
+  `DriverStatus.DEACTIVATED` and releases the vehicle (so another driver can take it); restore goes back to
+  `ACTIVE`, or `INVITED` if no password was ever set, and does not give the vehicle back. Known limit: the
+  driver's route still names them; the head of transportation reassigns it. There is no admin screen for
+  revoking a head of transportation yet (API only).
 - `geocoding` — turns a free-text address into coordinates via the public Nominatim instance
   (SCRUM-211). `service/Geocoder` is the interface other modules use (`students` is the only
   caller so far); `NominatimGeocoder` is the only implementation, throttled to at most one

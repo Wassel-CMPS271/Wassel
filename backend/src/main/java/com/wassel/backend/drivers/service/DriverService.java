@@ -117,6 +117,35 @@ public class DriverService {
 		}
 	}
 
+	/**
+	 * Revokes a driver's access (SCRUM-98): the login account is disabled (so no new sign-in, and an open
+	 * session ends at its next request), the status becomes DEACTIVATED, and the vehicle is released so
+	 * another driver can take it. Routes are left as they are; the head of transportation reassigns them.
+	 * Revoking a revoked driver changes nothing.
+	 */
+	@Transactional
+	public DriverResponse revoke(UUID schoolId, UUID actorId, UUID driverId) {
+		Driver driver = findOwned(schoolId, driverId);
+		if (driver.getUserId() != null) {
+			userService.setEnabled(schoolId, actorId, driver.getUserId(), Role.DRIVER, false);
+		}
+		driver.setStatus(DriverStatus.DEACTIVATED);
+		driver.setAssignedVehicleId(null);
+		return toResponse(driver);
+	}
+
+	/** Restores a revoked driver: back to ACTIVE, or INVITED if they never set a password. No vehicle comes back. */
+	@Transactional
+	public DriverResponse restore(UUID schoolId, UUID actorId, UUID driverId) {
+		Driver driver = findOwned(schoolId, driverId);
+		boolean hasPassword = false;
+		if (driver.getUserId() != null) {
+			hasPassword = userService.setEnabled(schoolId, actorId, driver.getUserId(), Role.DRIVER, true).hasPassword();
+		}
+		driver.setStatus(hasPassword ? DriverStatus.ACTIVE : DriverStatus.INVITED);
+		return toResponse(driver);
+	}
+
 	/** Runs in the transaction that sets the password, so the driver and the password change together. */
 	@EventListener
 	@Transactional
