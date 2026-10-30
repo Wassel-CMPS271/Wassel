@@ -1,8 +1,9 @@
 package com.wassel.backend.runs.service;
 
 import com.wassel.backend.drivers.service.DriverService;
+import com.wassel.backend.routes.dto.DriverRouteResponse;
+import com.wassel.backend.routes.dto.DriverRouteStop;
 import com.wassel.backend.routes.dto.RouteDriverSummary;
-import com.wassel.backend.routes.dto.RouteResponse;
 import com.wassel.backend.routes.dto.RouteSummaryResponse;
 import com.wassel.backend.routes.dto.RouteVehicleSummary;
 import com.wassel.backend.routes.service.RouteService;
@@ -19,12 +20,11 @@ import com.wassel.backend.schools.dto.SchoolTimesResponse;
 import com.wassel.backend.schools.service.HalfDayService;
 import com.wassel.backend.schools.service.HolidayService;
 import com.wassel.backend.schools.service.SchoolSettingsService;
-import com.wassel.backend.students.dto.StudentResponse;
-import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.users.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.DayOfWeek;
@@ -32,7 +32,6 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -56,8 +55,6 @@ public class RunService {
 
 	private final RouteService routeService;
 
-	private final StudentService studentService;
-
 	private final DriverService driverService;
 
 	private final HolidayService holidayService;
@@ -68,23 +65,30 @@ public class RunService {
 
 	private final Clock clock;
 
-	/** Today's two runs of the signed-in driver's route, with stops. Empty when they have no route, or on a holiday. */
-	@Transactional
+	private final TransactionTemplate transactionTemplate;
+
+	/**
+	 * Today's two runs of the signed-in driver's route, with stops. Empty when they have no route, or on a holiday.
+	 * Not {@code @Transactional}: the route lookup may wait on the road provider, and a transaction around it
+	 * would hold a database connection meanwhile. Only creating and reading the runs is in one.
+	 */
 	public RunsDayResponse driverDay(User driver) {
 		UUID schoolId = driver.getSchoolId();
 		LocalDate today = LocalDate.now(clock);
 		DayType dayType = dayTypeOf(schoolId, today);
-		Optional<RouteResponse> found = dayType == DayType.HOLIDAY ? Optional.empty()
+		Optional<DriverRouteResponse> found = dayType == DayType.HOLIDAY ? Optional.empty()
 				: driverService.findDriverIdForUser(schoolId, driver.getId())
 						.flatMap(driverId -> routeService.findRouteOfDriver(schoolId, driverId));
 		if (found.isEmpty()) {
 			return new RunsDayResponse(today, dayType, List.of());
 		}
-		RouteResponse route = found.get();
-		runRepository.createMissing(schoolId, route.id(), today);
-		Map<RunDirection, Run> runs = runsOf(schoolId, today, List.of(route.id())).get(route.id());
+		DriverRouteResponse route = found.get();
 		SchoolTimesResponse times = schoolSettingsService.getTimes(schoolId);
-		List<RunStopResponse> morning = morningStops(schoolId, route);
+		List<RunStopResponse> morning = morningStops(route);
+		Map<RunDirection, Run> runs = transactionTemplate.execute(status -> {
+			runRepository.createMissing(schoolId, route.id(), today);
+			return runsOf(schoolId, today, List.of(route.id())).get(route.id());
+		});
 		List<RunResponse> result = Arrays.stream(RunDirection.values())
 				.map(direction -> driverRun(runs.get(direction), route, morning, dayType, times))
 				.toList();
@@ -95,7 +99,7 @@ public class RunService {
 	 * One run with its stops, as the driver sees it. Today's runs use it, and so should start, end and confirm
 	 * (SCRUM-234/235), which answer with the whole run: one place to fill in absences and confirmations.
 	 */
-	private RunResponse driverRun(Run run, RouteResponse route, List<RunStopResponse> morning, DayType dayType,
+	private RunResponse driverRun(Run run, DriverRouteResponse route, List<RunStopResponse> morning, DayType dayType,
 			SchoolTimesResponse times) {
 		List<RunStopResponse> stops = run.getDirection() == RunDirection.MORNING ? morning : afternoonStops(morning);
 		return toResponse(run, new RunRouteResponse(route.id(), route.name()), route.vehicle(), route.driver(),
@@ -162,21 +166,18 @@ public class RunService {
 	}
 
 	/**
-	 * The route's students in stop order, built from one read of them, each with the arrival time the routes
-	 * module gives it. A student added between the two reads has no time until the next fetch; one moved off is
-	 * simply not on the route any more. Absences and confirmations are not recorded yet (SCRUM-239, SCRUM-235):
-	 * every stop is present and unconfirmed.
+	 * The route's stops as run stops, in the route's order with the times and guardians the routes module read
+	 * together with it. Absences and confirmations are not recorded yet (SCRUM-239, SCRUM-235): every stop is
+	 * present, unconfirmed, and still on the route.
 	 */
-	private List<RunStopResponse> morningStops(UUID schoolId, RouteResponse route) {
-		Map<UUID, LocalTime> arrivals = new HashMap<>();
-		route.stops().forEach(stop -> arrivals.put(stop.studentId(), stop.arrivalTime()));
-		List<StudentResponse> students = studentService.listOnRoute(schoolId, route.id());
-		return IntStream.range(0, students.size()).mapToObj(i -> {
-			StudentResponse student = students.get(i);
-			return new RunStopResponse(student.id(), i + 1, student.firstName(), student.lastName(), student.address(),
-					student.latitude(), student.longitude(), arrivals.get(student.id()), student.guardianName(),
-					student.guardianPhone(), false, null);
-		}).toList();
+	private List<RunStopResponse> morningStops(DriverRouteResponse route) {
+		return route.stops().stream().map(this::toStop).toList();
+	}
+
+	private RunStopResponse toStop(DriverRouteStop stop) {
+		return new RunStopResponse(stop.studentId(), stop.position(), stop.firstName(), stop.lastName(),
+				stop.address(), stop.latitude(), stop.longitude(), stop.arrivalTime(), stop.guardianName(),
+				stop.guardianPhone(), false, null, false);
 	}
 
 	/** The morning order reversed, numbered 1..n again, with no times. */

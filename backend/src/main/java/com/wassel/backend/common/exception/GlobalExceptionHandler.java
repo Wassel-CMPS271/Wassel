@@ -9,6 +9,7 @@ import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
+import com.wassel.backend.routes.exception.ActiveRunConflictException;
 import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteCapacityExceededException;
@@ -219,6 +220,13 @@ public class GlobalExceptionHandler {
 	// capacity, not a field error.
 	@ExceptionHandler(RouteCapacityExceededException.class)
 	public ProblemDetail handleRouteCapacityExceeded(RouteCapacityExceededException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	// A plain detail, as the runs contract has it: it names the run (or the child on a bus) and what to wait for.
+	@ExceptionHandler(ActiveRunConflictException.class)
+	public ProblemDetail handleActiveRunConflict(ActiveRunConflictException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
 	}

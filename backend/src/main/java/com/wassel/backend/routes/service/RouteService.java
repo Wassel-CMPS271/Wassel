@@ -3,6 +3,8 @@ package com.wassel.backend.routes.service;
 import com.wassel.backend.drivers.dto.DriverResponse;
 import com.wassel.backend.drivers.service.DriverService;
 import com.wassel.backend.routes.dto.AssignStudentRequest;
+import com.wassel.backend.routes.dto.DriverRouteResponse;
+import com.wassel.backend.routes.dto.DriverRouteStop;
 import com.wassel.backend.routes.dto.ProposalOrderResponse;
 import com.wassel.backend.routes.dto.ProposalResponse;
 import com.wassel.backend.routes.dto.ReorderStopsRequest;
@@ -16,6 +18,7 @@ import com.wassel.backend.routes.dto.StopResponse;
 import com.wassel.backend.routes.entity.Route;
 import com.wassel.backend.routes.entity.RouteProposal;
 import com.wassel.backend.routes.entity.RouteVersion;
+import com.wassel.backend.routes.exception.ActiveRunConflictException;
 import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteCapacityExceededException;
@@ -35,6 +38,7 @@ import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.vehicles.dto.VehicleResponse;
 import com.wassel.backend.vehicles.service.VehicleService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -63,6 +67,7 @@ import java.util.stream.Collectors;
  * {@code Route} itself — a reorder or a new pin changes them on the next read with nothing to
  * invalidate.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RouteService {
@@ -95,6 +100,8 @@ public class RouteService {
 
 	private final TravelTimes travelTimes;
 
+	private final ActiveRunGuard activeRunGuard;
+
 	/** The school's routes, oldest first. */
 	@Transactional(readOnly = true)
 	public List<RouteSummaryResponse> listRoutes(UUID schoolId) {
@@ -109,11 +116,49 @@ public class RouteService {
 		return toResponse(schoolId, findOwned(schoolId, routeId));
 	}
 
-	/** For the runs module: the route a driver is on, if any. A driver is on at most one route. */
-	@Transactional(readOnly = true)
-	public Optional<RouteResponse> findRouteOfDriver(UUID schoolId, UUID driverId) {
-		return routeRepository.findBySchoolIdAndDriverId(schoolId, driverId)
-				.map(route -> toResponse(schoolId, route));
+	/**
+	 * For the runs module: the route a driver is on, if any. A driver is on at most one route. The students are
+	 * read once and the times, order and guardians all come from that read. Deliberately not
+	 * {@code @Transactional}: the arrival times may wait on the road provider (up to its 3 s timeout), and a
+	 * transaction around that would hold a database connection the whole time. Each read below is its own short one.
+	 */
+	public Optional<DriverRouteResponse> findRouteOfDriver(UUID schoolId, UUID driverId) {
+		return routeRepository.findBySchoolIdAndDriverId(schoolId, driverId).map(route -> {
+			VehicleResponse vehicle = vehicleService.getOwnedVehicle(schoolId, route.getVehicleId());
+			DriverResponse driver = driverService.getOwnedDriver(schoolId, route.getDriverId());
+			List<StudentResponse> onRoute = studentService.listOnRoute(schoolId, route.getId());
+			Map<UUID, LocalTime> arrivals = schedule(onRoute, schoolSettingsService.getTimes(schoolId).arrivalTime())
+					.arrivals();
+			List<DriverRouteStop> stops = new ArrayList<>(onRoute.size());
+			for (int i = 0; i < onRoute.size(); i++) {
+				StudentResponse student = onRoute.get(i);
+				stops.add(new DriverRouteStop(student.id(), i + 1, student.firstName(), student.lastName(),
+						student.address(), student.latitude(), student.longitude(), arrivals.get(student.id()),
+						student.guardianName(), student.guardianPhone()));
+			}
+			return new DriverRouteResponse(route.getId(), route.getName(),
+					new RouteVehicleSummary(vehicle.id(), vehicle.plateNumber(), vehicle.capacity()),
+					new RouteDriverSummary(driver.id(), driver.firstName(), driver.lastName()), stops);
+		});
+	}
+
+	/**
+	 * Works out every route's arrival times once, which fills the road-time cache (a route whose pairs are all
+	 * cached never calls the provider again). Called at startup, after a restart empties the cache. One route
+	 * that fails is logged and skipped. Not transactional, for the reason {@link #findRouteOfDriver} gives.
+	 * shortcut: one request per route, so more routes than the provider's per-minute cap leaves the rest cold
+	 * until first use; spread the calls out if a school ever has that many.
+	 */
+	public void warmTravelTimes() {
+		for (Route route : routeRepository.findAll()) {
+			try {
+				UUID schoolId = route.getSchoolId();
+				schedule(studentService.listOnRoute(schoolId, route.getId()),
+						schoolSettingsService.getTimes(schoolId).arrivalTime());
+			} catch (RuntimeException e) {
+				log.warn("Could not warm travel times for route {}: {}", route.getId(), e.getMessage(), e);
+			}
+		}
 	}
 
 	@Transactional
@@ -139,6 +184,11 @@ public class RouteService {
 	@Transactional
 	public RouteResponse editRoute(UUID schoolId, UUID routeId, RouteRequest request) {
 		Route route = findOwned(schoolId, routeId);
+		if (!request.vehicleId().equals(route.getVehicleId()) || !request.driverId().equals(route.getDriverId())) {
+			activeRunGuard.blockReasonForRouteChange(schoolId, routeId, route.getName()).ifPresent(reason -> {
+				throw new ActiveRunConflictException(reason);
+			});
+		}
 		// Only a vehicle or driver being put on the route must be usable: a rename must not fail
 		// because the ones it already has were deactivated since.
 		VehicleResponse vehicle = request.vehicleId().equals(route.getVehicleId())
@@ -190,6 +240,8 @@ public class RouteService {
 				throw new RouteCapacityExceededException("The route has %d students but the vehicle seats %d."
 						.formatted(currentCount, vehicle.capacity()));
 			}
+			// Not on this route yet, so this may move them off another one; re-adding one already here moves no one.
+			requireNotOnABus(schoolId, request.studentId());
 		}
 		studentService.assignToRoute(schoolId, request.studentId(), routeId);
 		return toResponse(schoolId, route);
@@ -199,6 +251,7 @@ public class RouteService {
 	@Transactional
 	public RouteResponse removeStudent(UUID schoolId, UUID routeId, UUID studentId) {
 		Route route = findOwned(schoolId, routeId);
+		requireNotOnABus(schoolId, studentId);
 		studentService.removeFromRoute(schoolId, studentId, routeId);
 		return toResponse(schoolId, route);
 	}
@@ -366,6 +419,13 @@ public class RouteService {
 	private Optional<Route> findByDriver(UUID schoolId, UUID driverId, UUID excludedRouteId) {
 		return excludedRouteId == null ? routeRepository.findBySchoolIdAndDriverId(schoolId, driverId)
 				: routeRepository.findBySchoolIdAndDriverIdAndIdNot(schoolId, driverId, excludedRouteId);
+	}
+
+	/** A student a driver has picked up today stays on their route until the run ends (409). */
+	private void requireNotOnABus(UUID schoolId, UUID studentId) {
+		activeRunGuard.blockReasonForStudentMove(schoolId, studentId).ifPresent(reason -> {
+			throw new ActiveRunConflictException(reason);
+		});
 	}
 
 	private Route findOwned(UUID schoolId, UUID routeId) {
