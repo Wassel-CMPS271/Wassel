@@ -145,6 +145,13 @@ class RoleAccessMatrixTests {
 		TABLE.put("POST /api/head-of-transport/routes/generation", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("POST /api/head-of-transport/routes/generation/{proposalId}/apply", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("DELETE /api/head-of-transport/routes/generation/{proposalId}", Access.HEAD_OF_TRANSPORT_ONLY);
+
+		TABLE.put("GET /api/head-of-transport/absences", Access.HEAD_OF_TRANSPORT_ONLY);
+
+		// parent (SCRUM-238)
+		TABLE.put("GET /api/parent/children/{studentId}/absences", Access.PARENT_ONLY);
+		TABLE.put("POST /api/parent/children/{studentId}/absences", Access.PARENT_ONLY);
+		TABLE.put("DELETE /api/parent/children/{studentId}/absences/{absenceId}", Access.PARENT_ONLY);
 	}
 
 	// Path variables are all ids, so one UUID fits every {name}; the service then answers 404 or 400.
@@ -180,6 +187,7 @@ class RoleAccessMatrixTests {
 		VALID_BODIES.put("PUT /api/head-of-transport/routes/{id}", route);
 		VALID_BODIES.put("POST /api/head-of-transport/routes/{id}/students", "{\"studentId\":\"" + SOME_ID + "\"}");
 		VALID_BODIES.put("PUT /api/head-of-transport/routes/{id}/stops", "{\"studentIds\":[]}");
+		VALID_BODIES.put("POST /api/parent/children/{studentId}/absences", "{\"fromDate\":\"2030-01-04\"}");
 	}
 
 	@Autowired
