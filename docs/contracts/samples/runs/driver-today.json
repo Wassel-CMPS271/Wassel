@@ -47,7 +47,8 @@
           "confirmation": {
             "status": "PICKED_UP",
             "at": "2026-10-21T04:08:00Z"
-          }
+          },
+          "removedFromRoute": false
         },
         {
           "studentId": "40000000-0000-4000-8000-000000000002",
@@ -64,7 +65,8 @@
           "confirmation": {
             "status": "NOT_PRESENT",
             "at": "2026-10-21T04:16:00Z"
-          }
+          },
+          "removedFromRoute": false
         },
         {
           "studentId": "40000000-0000-4000-8000-000000000003",
@@ -78,7 +80,8 @@
           "guardianName": "Nadia Mansour",
           "guardianPhone": "+961 71 411 003",
           "absent": true,
-          "confirmation": null
+          "confirmation": null,
+          "removedFromRoute": false
         },
         {
           "studentId": "40000000-0000-4000-8000-000000000004",
@@ -92,7 +95,8 @@
           "guardianName": "Ghada Fares",
           "guardianPhone": "+961 3 411 004",
           "absent": false,
-          "confirmation": null
+          "confirmation": null,
+          "removedFromRoute": false
         }
       ]
     },
@@ -138,7 +142,8 @@
           "guardianName": "Ghada Fares",
           "guardianPhone": "+961 3 411 004",
           "absent": false,
-          "confirmation": null
+          "confirmation": null,
+          "removedFromRoute": false
         },
         {
           "studentId": "40000000-0000-4000-8000-000000000003",
@@ -152,7 +157,8 @@
           "guardianName": "Nadia Mansour",
           "guardianPhone": "+961 71 411 003",
           "absent": true,
-          "confirmation": null
+          "confirmation": null,
+          "removedFromRoute": false
         },
         {
           "studentId": "40000000-0000-4000-8000-000000000002",
@@ -166,7 +172,8 @@
           "guardianName": "Fadi Khoury",
           "guardianPhone": "+961 70 411 002",
           "absent": false,
-          "confirmation": null
+          "confirmation": null,
+          "removedFromRoute": false
         },
         {
           "studentId": "40000000-0000-4000-8000-000000000001",
@@ -180,7 +187,8 @@
           "guardianName": "Maya Nasr",
           "guardianPhone": "+961 3 411 001",
           "absent": false,
-          "confirmation": null
+          "confirmation": null,
+          "removedFromRoute": false
         }
       ]
     }

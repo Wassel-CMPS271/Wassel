@@ -157,7 +157,13 @@ that's the structure this codebase moved away from.
   never from its raw value. `StudentService.assignToRoute`/`removeFromRoute`/`countOnRoute`/
   `listOnRoute`/`isOnRoute`/`clearRoute`/`reorderRoute` are for the `routes` module to call; this
   module never imports `routes` (it takes a plain route id, the same way `route` is a plain
-  string). `reorderRoute` (SCRUM-210) replaces a route's whole order at once: unlike
+  string). `getRouteId` (SCRUM-238) is the same idea for one student at a time: `routes` uses it
+  to find which route a student is on without this module exposing `routeId`/`stopPosition` on
+  `StudentResponse` itself. `getStudent` and `findChildOf` (SCRUM-238) are for a module (e.g.
+  `absences`) that needs one student's current fields, or a parent-ownership check on a
+  `studentId` path variable — `findChildOf` returns empty for a wrong school, an unknown id,
+  *and* a student linked to a different parent, on purpose, so a caller can't tell "not yours"
+  from "unknown" apart. `reorderRoute` (SCRUM-210) replaces a route's whole order at once: unlike
   `assignToRoute`'s watermark, it rewrites positions as a clean `1..n`, and rejects (via
   `InvalidStopOrderException`) a list that repeats a student or doesn't contain exactly the
   route's current stops. Setting an address — at creation (SCRUM-213) or via the update endpoint
@@ -188,7 +194,11 @@ that's the structure this codebase moved away from.
   timing, and `schools` (`SchoolSettingsService.getTimes`) plus the
   `schools.config.SchoolLocationProperties` (`wassel.school.latitude`/`longitude`, required — the
   app refuses to start without it) for the `Route.school` block. Response shapes follow
-  `docs/contracts/routing.md`.
+  `docs/contracts/routing.md`. `RouteService.findStudentRoute` (SCRUM-238) is for the `absences`
+  module: a student's route and their 1-based display position among its stops (from
+  `StudentService.listOnRoute`'s order, not the raw `stopPosition` watermark), or empty if
+  they're not on a route — including if their route vanished between the lookup and this call,
+  treated the same as "no route" rather than a 404 naming a route the caller never asked about.
   Optimization (SCRUM-203): `propose` asks `routing.service.RouteOptimizer` for an order and saves it as the
   route's one pending proposal (`entity/RouteProposal`, table `route_proposals`, unique `route_id`; it holds
   the route's order when it was made, `baseOrder`, and the suggestion, `proposedOrder`). Every propose
@@ -308,7 +318,7 @@ that's the structure this codebase moved away from.
   entities. The JSON shapes, endpoint table and rules are in `docs/contracts/routing.md`, with
   samples in `docs/contracts/samples/routing/`; change them by pull request that tags the owners.
 - `runs` — the daily runs (SCRUM-233): `GET /api/driver/runs/today` and `GET /api/head-of-transport/runs?date=`,
-  shapes and rules in `docs/contracts/runs.md`. A run is one route, one direction, one date (`runs`, migration V6,
+  shapes and rules in `docs/contracts/runs.md`. A run is one route, one direction, one date (`runs`, migration V7,
   unique on route + date + direction, no foreign keys). It stores only its own state and times: stops, vehicle,
   driver, `schoolTime` and the kind of day are read on every response, so a route edit, a driver swap or a holiday
   added later changes the run at once. Runs are created only when today's are asked for, by
@@ -317,17 +327,27 @@ that's the structure this codebase moved away from.
   route; the driver's request creates their own route's runs, the head's every route's. Other dates only read, and a
   deleted route's runs stay as rows nobody lists. "Today" is `LocalDate.now(clock)` with the `Clock` bean of
   `common/config/ClockConfig` (`Asia/Beirut`); tests move it with `common/MutableClock`, because Saturday and Sunday
-  are `HOLIDAY` and a test on the real date would fail on a weekend. The morning stops are one read of
-  `StudentService.listOnRoute` (order, guardian), each with the arrival time from `RouteService.findRouteOfDriver`'s
-  stops, so a student moved between the two reads is never dropped (at worst one has no time until the next fetch);
-  the afternoon is that list reversed with no times and no confirmations. `RunService.driverRun` builds one whole run
+  are `HOLIDAY` and a test on the real date would fail on a weekend. The morning stops come from one read:
+  `RouteService.findRouteOfDriver` returns the driver's route with each stop's arrival time and guardian from a single
+  `StudentService.listOnRoute`, so order, times and phones cannot disagree after a reorder (SCRUM-233 review). That lookup
+  and `driverDay` are deliberately not `@Transactional`, because the arrival times may wait on the road provider (3 s) and
+  a transaction around it holds a connection; `driverDay` uses a `TransactionTemplate` only around `createMissing` and the
+  read of the runs. `routes/config/TravelTimeWarmer` (not in the `test` profile) calls `RouteService.warmTravelTimes` on its
+  own thread at startup so the road-time cache is not empty for the first requests after a restart. The afternoon is that
+  list reversed with no times and no confirmations. `RunStopResponse.removedFromRoute` is always false until SCRUM-235, which
+  adds a confirmed student who has left the route to the end of the stops. `routes` declares `service/ActiveRunGuard` and
+  `RouteService` calls it before changing a route's driver or vehicle (`editRoute`) and before a student leaves their route
+  (`addStudent` onto another route, `removeStudent`); a block is `ActiveRunConflictException`, a 409 with the guard's text.
+  `runs/service/RunActiveRunGuard` implements it (its own class, so `RunService` and `RouteService` do not need each other's
+  beans); only today's `IN_PROGRESS` runs block a route change, and the student-move check always allows until 235 has
+  confirmations. Deleting a route and applying generated routes (`placeOnRoutes`) are not guarded. `RunService.driverRun` builds one whole run
   with stops, which start and end answer with and confirm should. `runs` reads other modules through
-  `RouteService.findRouteOfDriver` and `listRoutes`, `StudentService.listOnRoute`, `DriverService.findDriverIdForUser`,
+  `RouteService.findRouteOfDriver` and `listRoutes`, `DriverService.findDriverIdForUser`,
   `HolidayService.isHoliday`, `HalfDayService.isHalfDay` and `SchoolSettingsService.getTimes`. A half-day afternoon run has `schoolTime: null` (no half-day dismissal time
   exists). Confirmations and absences are SCRUM-235 and SCRUM-239: until then every stop is `absent: false` with
   `confirmation: null` and the counts other than `students` are 0.
   Start and end (SCRUM-234): `POST /api/driver/runs/{runId}/start` and `/end` (`DriverRunController`, `RunService.start`/`end`
-  over one `move`), no migration (`started_at`/`ended_at` were in V6). The move is `RunRepository.markStarted`/`markEnded`,
+  over one `move`), no migration (`started_at`/`ended_at` were in V7). `start`/`end` are not `@Transactional` (the route lookup can wait on the road provider): `move` finds the route first, then does the checks, the update and the re-read in one `TransactionTemplate`. The move is `RunRepository.markStarted`/`markEnded`,
   a conditional `UPDATE ... WHERE school AND state = <expected>` (the `LoginCode` pattern, no `@Version` or lock), so
   simultaneous requests keep the first time; `move` then re-reads the run (the update clears the persistence context):
   already in the target state is a 200 that changes nothing, any other state is
@@ -339,6 +359,38 @@ that's the structure this codebase moved away from.
   becomes a holiday, can no longer be ended by the driver and stays `IN_PROGRESS` (the contract's "stays that way"), and a
   repeated end that arrives after midnight is a 404, not the usual 200. A start racing an end on the same run can get a 409
   `FINISHED`. SCRUM-235 should find its run the same way (`routeOf` then `todaysRun`), so confirmations follow the same rule.
+- `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
+  of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
+  are in `docs/contracts/runs.md` (owned jointly with the `runs` module, SCRUM-232/239); build
+  against that, not against `runs`' code — this module never reads `runs`. `entity/Absence` never
+  stores `cancelled` by a physical delete: cancelling an absence that hasn't started yet
+  (`fromDate` today or later) sets `cancelled = true`, kept as history the same way a used
+  `PasswordToken` or claimed `RouteProposal` stays a row; one already in progress (`fromDate`
+  before today, `toDate` today or later) has `toDate` shortened to yesterday instead, so the days
+  already gone by stay recorded as a real, un-cancelled absence. Every query filters
+  `cancelled = false` explicitly, so a cancelled absence behaves as "gone" everywhere without
+  being deleted. The overlap rule (an exact repeat of an existing absence is idempotent — 200,
+  nothing written; any other overlap is 409, naming the absence it conflicts with) is checked in
+  `AbsenceService` for the message and the 200-vs-201 decision; the real guarantee that no two
+  overlapping, non-cancelled absences for one student can ever exist — across however many app
+  instances race to insert one — is a PostgreSQL exclusion constraint (`V6__absences.sql`,
+  `EXCLUDE USING gist` over `student_id` and `daterange(from_date, to_date)`, needing the
+  `btree_gist` extension the migration creates), the same backstop role the unique constraints on
+  `routes`/`school_holidays` play for their own check-then-insert races. PostgreSQL aborts the
+  whole transaction once a statement fails, so the losing request can't safely query again in the
+  same transaction (as `RouteService#lostRace` documents for its own races); `AbsenceService`
+  catches the constraint's `DataIntegrityViolationException` and answers a plain 409 asking the
+  client to retry, the same pattern `RouteService#propose` uses for two optimizations of a route
+  at once. Depends on `students`
+  (`StudentService.findChildOf` for parent ownership of a `studentId` path variable,
+  `StudentService.getStudent`/`getRouteId` for the head of transportation's list) and `routes`
+  (`RouteService.findStudentRoute`, added for this module: a student's route and their 1-based
+  display position among its stops, from `StudentService.listOnRoute`, not the raw watermarked
+  `stopPosition` column). "Today" is the shared `common.config.ClockConfig` bean
+  (`Asia/Beirut`), also used by `runs`. Known limit: the exclusion constraint has no JPA
+  `@Table(uniqueConstraints=...)` equivalent to declare on the entity (unlike the plain unique
+  constraints elsewhere), so Hibernate's schema `validate` can't catch a dropped or renamed one —
+  only the migration enforces it.
 
 ## Where things go
 
@@ -435,6 +487,11 @@ Testcontainers JDBC URL `jdbc:tc:postgresql:16:///wassel`, which starts one cont
 with every test context in the run, so the schema is migrated once. All tests share that one database, so a test
 that needs its own data should use its own school id or unique values, as the existing ones do. There is no H2
 anymore: don't add it back, and don't add a test that depends on a table or column no migration creates.
+
+**Coverage (SCRUM-151).** JaCoCo (`jacoco-maven-plugin` in `pom.xml`) records coverage during the tests and writes an
+HTML report to `backend/target/site/jacoco/index.html` at the `verify` phase, so `./mvnw verify` produces it (plain
+`test` does not). CI uploads the folder as the `backend-coverage` artifact. It is a report only: there are no
+thresholds, so a low number never fails the build.
 
 Tests mirror the main package structure: a test for
 `main/java/com/wassel/backend/schools/controller/SchoolSettingsController.java`

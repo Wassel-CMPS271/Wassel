@@ -10,7 +10,11 @@ import com.wassel.backend.routes.entity.Route;
 import com.wassel.backend.routes.repository.RouteProposalRepository;
 import com.wassel.backend.routes.repository.RouteRepository;
 import com.wassel.backend.routes.repository.RouteVersionRepository;
+import com.wassel.backend.routes.service.RouteService;
+import com.wassel.backend.routing.service.OpenRouteServiceTravelTimes;
+import com.wassel.backend.routing.service.TravelTimes;
 import com.wassel.backend.runs.entity.Run;
+import com.wassel.backend.runs.entity.RunDirection;
 import com.wassel.backend.runs.entity.RunState;
 import com.wassel.backend.runs.repository.RunRepository;
 import com.wassel.backend.schools.entity.HalfDay;
@@ -32,6 +36,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -45,6 +50,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.nio.file.Files;
@@ -62,11 +68,14 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -96,6 +105,14 @@ class RunControllerTests {
 
 	private static final String WEDNESDAY_DATE = "2026-10-28";
 
+	/** What the real travel times were doing when they were asked, for the review tests below. */
+	private static final AtomicInteger travelTimeCalls = new AtomicInteger();
+
+	private static volatile boolean travelTimesInTransaction;
+
+	private static volatile Runnable whileTravelTimesRun = () -> {
+	};
+
 	@TestConfiguration
 	static class TestClock {
 
@@ -103,6 +120,28 @@ class RunControllerTests {
 		@Primary
 		MutableClock testClock() {
 			return new MutableClock(WEDNESDAY, ClockConfig.SCHOOL_ZONE);
+		}
+
+		/**
+		 * Wraps the real road-time client (no key in the test profile, so straight-line times) to note, on each
+		 * call, whether a transaction was open and to let a test change the route while the call is running.
+		 */
+		@Bean
+		static BeanPostProcessor travelTimesProbe() {
+			return new BeanPostProcessor() {
+				@Override
+				public Object postProcessAfterInitialization(Object bean, String beanName) {
+					if (bean instanceof OpenRouteServiceTravelTimes real) {
+						return (TravelTimes) points -> {
+							travelTimeCalls.incrementAndGet();
+							travelTimesInTransaction = TransactionSynchronizationManager.isActualTransactionActive();
+							whileTravelTimesRun.run();
+							return real.matrix(points);
+						};
+					}
+					return bean;
+				}
+			};
 		}
 	}
 
@@ -115,6 +154,9 @@ class RunControllerTests {
 
 	@Autowired
 	private MutableClock clock;
+
+	@Autowired
+	private RouteService routeService;
 
 	@Autowired
 	private RunRepository runRepository;
@@ -149,6 +191,10 @@ class RunControllerTests {
 	@BeforeEach
 	void cleanDatabase() {
 		clock.set(WEDNESDAY);
+		travelTimeCalls.set(0);
+		travelTimesInTransaction = false;
+		whileTravelTimesRun = () -> {
+		};
 		runRepository.deleteAll();
 		proposalRepository.deleteAll();
 		versionRepository.deleteAll();
@@ -790,6 +836,137 @@ class RunControllerTests {
 					.andExpect(status().isForbidden())
 					.andExpect(jsonPath("$.detail").value("Access denied"));
 		}
+	}
+
+	// ---- SCRUM-233 review: one read, no transaction around road times, nothing pulled from under a run ----
+
+	@Test
+	void theRoadTimesAreAskedForWithNoTransactionOpen() throws Exception {
+		schoolTimes(schoolA, "07:30", "14:30");
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+
+		driverToday(schoolA, f.userId());
+
+		assertTrue(travelTimeCalls.get() > 0, "the times were never asked for, so this test proves nothing");
+		assertFalse(travelTimesInTransaction, "the driver's day held a database connection while waiting on road times");
+	}
+
+	@Test
+	void aReorderWhileTheTimesAreWorkedOutCannotMixTheOrderWithTheTimes() throws Exception {
+		schoolTimes(schoolA, "07:30", "14:30");
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		Student rami = studentRepository.findAll().stream().filter(student -> "Rami".equals(student.getFirstName()))
+				.findFirst().orElseThrow();
+		whileTravelTimesRun = () -> {
+			rami.setStopPosition(9);
+			studentRepository.save(rami);
+		};
+
+		String body = driverToday(schoolA, f.userId());
+
+		// The reorder lands after the students were read, so this response is the order it read, with that
+		// order's times: every stop later than the one before it.
+		List<String> names = JsonPath.read(body, "$.runs[0].stops[*].firstName");
+		List<String> times = JsonPath.read(body, "$.runs[0].stops[*].arrivalTime");
+		assertEquals(List.of("Rami", "Salma", "Tarek"), names);
+		assertEquals(times.stream().sorted().toList(), times);
+		assertEquals(3, times.stream().distinct().count());
+	}
+
+	@Test
+	void warmingTheTravelTimesAsksForEveryRoutesTimesWithNoTransactionOpen() {
+		schoolTimes(schoolA, "07:30", "14:30");
+		driverWithRoute(schoolA, "Hamra morning run");
+		driverWithRoute(schoolA, "Verdun morning run");
+
+		routeService.warmTravelTimes();
+
+		assertEquals(2, travelTimeCalls.get());
+		assertFalse(travelTimesInTransaction);
+	}
+
+	private void startTodaysMorningRun() {
+		Run morning = runRepository.findAll().stream().filter(run -> run.getDirection() == RunDirection.MORNING)
+				.findFirst().orElseThrow();
+		morning.setState(RunState.IN_PROGRESS);
+		runRepository.save(morning);
+	}
+
+	private ResultActions editRoute(Route route, String name, UUID vehicleId, UUID driverId) throws Exception {
+		return mockMvc.perform(put("/api/head-of-transport/routes/" + route.getId())
+				.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"name\":\"%s\",\"vehicleId\":\"%s\",\"driverId\":\"%s\"}".formatted(name, vehicleId,
+						driverId)));
+	}
+
+	@Test
+	void theDriverCannotBeSwappedWhileTheRouteHasARunInProgressTodayAndNothingChanges() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		driverToday(schoolA, f.userId());
+		startTodaysMorningRun();
+		Driver other = aDriver(schoolA, UUID.randomUUID(), "Nadia");
+
+		editRoute(f.route(), "Hamra morning run", f.route().getVehicleId(), other.getId())
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(
+						"Route \"Hamra morning run\" has its morning run in progress. Change the driver or vehicle after it ends."));
+
+		assertEquals(f.driver().getId(), routeRepository.findById(f.route().getId()).orElseThrow().getDriverId());
+		mockMvc.perform(get(DRIVER_URL).with(loggedInAs(Role.DRIVER, schoolA, f.userId())))
+				.andExpect(jsonPath("$.runs[0].state").value("IN_PROGRESS"));
+	}
+
+	@Test
+	void theVehicleCannotBeSwappedWhileTheRouteHasARunInProgressToday() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		driverToday(schoolA, f.userId());
+		startTodaysMorningRun();
+		Vehicle other = vehicleRepository.save(Vehicle.builder().schoolId(schoolA).plateNumber("Z 999999").capacity(20)
+				.active(true).build());
+
+		editRoute(f.route(), "Hamra morning run", other.getId(), f.driver().getId())
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("in progress")));
+
+		assertEquals(f.route().getVehicleId(), routeRepository.findById(f.route().getId()).orElseThrow().getVehicleId());
+	}
+
+	@Test
+	void renamingARouteWithARunInProgressIsAllowed() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		driverToday(schoolA, f.userId());
+		startTodaysMorningRun();
+
+		editRoute(f.route(), "Hamra", f.route().getVehicleId(), f.driver().getId())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.name").value("Hamra"));
+	}
+
+	@Test
+	void theDriverCanBeSwappedOnceTheRunHasEnded() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		driverToday(schoolA, f.userId());
+		startTodaysMorningRun();
+		Run morning = runRepository.findAll().stream().filter(run -> run.getState() == RunState.IN_PROGRESS)
+				.findFirst().orElseThrow();
+		morning.setState(RunState.FINISHED);
+		runRepository.save(morning);
+		Driver other = aDriver(schoolA, UUID.randomUUID(), "Nadia");
+
+		editRoute(f.route(), "Hamra morning run", f.route().getVehicleId(), other.getId())
+				.andExpect(status().isOk());
+	}
+
+	@Test
+	void aRunLeftInProgressOnAnEarlierDateDoesNotFreezeTheRoute() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		runRepository.save(Run.builder().schoolId(schoolA).routeId(f.route().getId())
+				.runDate(LocalDate.parse(WEDNESDAY_DATE).minusDays(1)).direction(RunDirection.MORNING)
+				.state(RunState.IN_PROGRESS).startedAt(Instant.parse("2026-10-27T05:00:00Z")).build());
+		Driver other = aDriver(schoolA, UUID.randomUUID(), "Nadia");
+
+		editRoute(f.route(), "Hamra morning run", f.route().getVehicleId(), other.getId())
+				.andExpect(status().isOk());
 	}
 
 	// ---- SCRUM-234: start and end a run ----

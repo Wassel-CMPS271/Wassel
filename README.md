@@ -269,8 +269,19 @@ or `main`:
 
 | Check            | What it runs                                                                      |
 | ---------------- | --------------------------------------------------------------------------------- |
-| `backend-build`  | `mvn -B verify` in `/backend` (compile + tests + package)                         |
-| `frontend-build` | `npm ci`, `npm run lint`, `npm test --if-present`, `npm run build` in `/frontend` |
+| `backend-build`  | `mvn -B verify` in `/backend` (compile + tests + package), uploads `backend-coverage` |
+| `frontend-build` | `npm ci`, `npm audit --audit-level=high`, `npm run lint`, `npm run test:coverage`, `npm run build` in `/frontend`, uploads `frontend-coverage` |
+
+Both jobs upload a coverage report as a build artifact (open the run on GitHub, **Artifacts** at the bottom, download
+and open `index.html`). It is a report only: no minimum is enforced.
+
+**Dependency scanning (SCRUM-253).** `frontend-build` fails on a high or critical known vulnerability in any npm
+package (`npm audit --audit-level=high`, dev packages included), so a newly published advisory can turn an
+unrelated PR red; the fix is to update the package, not to remove the step. `.github/dependabot.yml` opens weekly
+update PRs for Maven (`/backend`), npm (`/frontend`) and GitHub Actions. Dependabot **alerts** (which also cover the
+backend's Maven libraries) are a repository setting that an admin turns on under Settings, Advanced Security.
+`next` is pinned to an exact version and `package.json` overrides the `postcss` that `next` bundles, because the
+bundled one has known high findings; drop the override once a `next` release ships a fixed one.
 
 The same checks can be run locally before pushing:
 

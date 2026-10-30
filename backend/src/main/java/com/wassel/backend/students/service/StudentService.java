@@ -267,6 +267,39 @@ public class StudentService {
 				.toList();
 	}
 
+	/**
+	 * A single student, scoped to the school. For a module (e.g. {@code absences}) that only
+	 * needs one student's current name and other roster fields, not a parent-ownership check.
+	 * Throws {@link StudentNotFoundException} if the id doesn't exist in this school.
+	 */
+	@Transactional(readOnly = true)
+	public StudentResponse getStudent(UUID schoolId, UUID studentId) {
+		return toResponse(findOwned(schoolId, studentId));
+	}
+
+	/**
+	 * This student, only if they exist in this school <em>and</em> are linked to this parent;
+	 * empty otherwise (wrong school, unknown id, or someone else's child). For the {@code
+	 * absences} module (and, later, {@code parent}) to check parent ownership of a studentId
+	 * path variable in one call, without exposing {@link #findOwned} or the repository.
+	 */
+	@Transactional(readOnly = true)
+	public Optional<StudentResponse> findChildOf(UUID schoolId, UUID parentUserId, UUID studentId) {
+		return studentRepository.findBySchoolIdAndId(schoolId, studentId)
+				.filter(student -> parentUserId.equals(student.getParentUserId()))
+				.map(this::toResponse);
+	}
+
+	/**
+	 * This student's current route id, or {@code null} if they're not on one. For the {@code
+	 * routes} module to look up a student's route without this module exposing
+	 * {@code routeId}/{@code stopPosition} on {@link StudentResponse} itself.
+	 */
+	@Transactional(readOnly = true)
+	public UUID getRouteId(UUID schoolId, UUID studentId) {
+		return findOwned(schoolId, studentId).getRouteId();
+	}
+
 	private StudentStatus parseStatus(String status) {
 		String normalized = normalize(status);
 		if (normalized == null) {
