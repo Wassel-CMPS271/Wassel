@@ -40,9 +40,10 @@ import java.util.UUID;
  * guarantees no two overlapping, non-cancelled absences ever exist for one student, across
  * however many app instances are running, the same way a unique constraint backs the holiday and
  * route checks. The check below can still race (read, then a concurrent insert wins before this
- * one writes); {@link #resolveAfterConflict} is what the losing request falls back to once the
- * constraint has rejected its insert, so it answers exactly as if it had seen the winner's row
- * from the start.
+ * one writes); PostgreSQL aborts the whole transaction once a statement fails (see
+ * {@code RouteService#lostRace}), so the losing request in {@link #reportAbsence} must not query
+ * again in the same transaction — it answers a plain 409 asking the client to retry, the same
+ * race-loss pattern {@code RouteService#propose} uses for two optimizations of a route at once.
  */
 @Service
 @RequiredArgsConstructor
@@ -103,11 +104,14 @@ public class AbsenceService {
 		try {
 			return new ReportResult(toResponse(absenceRepository.saveAndFlush(absence)), true);
 		} catch (DataIntegrityViolationException e) {
-			// Lost the race: another request for an overlapping range committed first (the
-			// exclusion constraint is what caught it, not the check above). Resolve again now
-			// that the winner's row is visible, so this request answers exactly as if it had
-			// seen it from the start.
-			return resolveAfterConflict(schoolId, studentId, fromDate, toDate);
+			// Lost the race: another request for an overlapping range committed first, and the
+			// exclusion constraint is what caught it, not the check above. PostgreSQL has already
+			// aborted this transaction, so nothing here may query before this is thrown (same
+			// constraint RouteService#lostRace documents) — the client's retry runs in a fresh
+			// transaction and will resolve correctly (200 for an exact repeat, 409 naming the
+			// real conflict otherwise).
+			throw new AbsenceOverlapException(
+					"Another absence for overlapping dates was just reported for this child. Try again.");
 		}
 	}
 
@@ -170,13 +174,6 @@ public class AbsenceService {
 					.formatted(other.getFromDate(), other.getToDate()));
 		}
 		return Optional.empty();
-	}
-
-	/** Same decision as {@link #resolveOverlap}, for the request that lost the insert race: it must find a match now. */
-	private ReportResult resolveAfterConflict(UUID schoolId, UUID studentId, LocalDate fromDate, LocalDate toDate) {
-		return resolveOverlap(schoolId, studentId, fromDate, toDate)
-				.orElseThrow(() -> new IllegalStateException(
-						"Absence insert conflicted but no overlapping absence was found afterwards."));
 	}
 
 	private AbsentStudentResponse toAbsentStudentResponse(UUID schoolId, Absence absence) {

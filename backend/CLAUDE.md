@@ -334,9 +334,12 @@ that's the structure this codebase moved away from.
   instances race to insert one — is a PostgreSQL exclusion constraint (`V6__absences.sql`,
   `EXCLUDE USING gist` over `student_id` and `daterange(from_date, to_date)`, needing the
   `btree_gist` extension the migration creates), the same backstop role the unique constraints on
-  `routes`/`school_holidays` play for their own check-then-insert races; `AbsenceService` catches
-  the constraint's `DataIntegrityViolationException` and re-resolves, so the losing request
-  answers exactly as if it had seen the winner's row from the start. Depends on `students`
+  `routes`/`school_holidays` play for their own check-then-insert races. PostgreSQL aborts the
+  whole transaction once a statement fails, so the losing request can't safely query again in the
+  same transaction (as `RouteService#lostRace` documents for its own races); `AbsenceService`
+  catches the constraint's `DataIntegrityViolationException` and answers a plain 409 asking the
+  client to retry, the same pattern `RouteService#propose` uses for two optimizations of a route
+  at once. Depends on `students`
   (`StudentService.findChildOf` for parent ownership of a `studentId` path variable,
   `StudentService.getStudent`/`getRouteId` for the head of transportation's list) and `routes`
   (`RouteService.findStudentRoute`, added for this module: a student's route and their 1-based

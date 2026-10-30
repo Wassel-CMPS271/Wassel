@@ -1,7 +1,10 @@
 package com.wassel.backend.absences.controller;
 
+import com.wassel.backend.absences.dto.ReportAbsenceRequest;
 import com.wassel.backend.absences.entity.Absence;
+import com.wassel.backend.absences.exception.AbsenceOverlapException;
 import com.wassel.backend.absences.repository.AbsenceRepository;
+import com.wassel.backend.absences.service.AbsenceService;
 import com.wassel.backend.drivers.dto.CreateDriverRequest;
 import com.wassel.backend.drivers.dto.DriverResponse;
 import com.wassel.backend.drivers.service.DriverService;
@@ -32,6 +35,11 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -60,6 +68,9 @@ class AbsenceControllerTests {
 
 	@Autowired
 	private AbsenceRepository absenceRepository;
+
+	@Autowired
+	private AbsenceService absenceService;
 
 	@Autowired
 	private StudentService studentService;
@@ -186,6 +197,48 @@ class AbsenceControllerTests {
 
 		assertEquals(1, absenceRepository.findBySchoolIdAndStudentIdAndCancelledFalseAndToDateGreaterThanEqualOrderByFromDateAsc(
 				schoolId, child.id(), LocalDate.now()).size());
+	}
+
+	/**
+	 * The race the overlap check alone can't close (see {@link AbsenceService#reportAbsence}):
+	 * two requests for the exact same range at once. Calls the service directly, the same way
+	 * {@code PasswordControllerTests.twoRequestsWithTheSameTokenSucceedExactlyOnce} drives its
+	 * own race, so both attempts are genuinely concurrent rather than serialized by one MockMvc
+	 * request at a time. Whichever loses either sees the winner's committed row and returns a
+	 * graceful 200 (not a new row), or hits the database's exclusion constraint and is caught as
+	 * {@link AbsenceOverlapException} (409, "try again") — either way, exactly one row must ever
+	 * get created; this is what would fail if the migration's constraint were missing or wrong.
+	 */
+	@Test
+	void reportingTheSameRangeTwiceAtOnceCreatesExactlyOneAbsence() throws Exception {
+		User parent = newParent();
+		StudentResponse child = newChildOf(parent);
+		LocalDate from = LocalDate.now().plusDays(10);
+		LocalDate to = from.plusDays(1);
+		ReportAbsenceRequest request = new ReportAbsenceRequest(from, to);
+		CountDownLatch start = new CountDownLatch(1);
+
+		Callable<Boolean> attempt = () -> {
+			start.await();
+			try {
+				return absenceService.reportAbsence(schoolId, parent.getId(), child.id(), request).created();
+			} catch (AbsenceOverlapException e) {
+				return false;
+			}
+		};
+
+		ExecutorService pool = Executors.newFixedThreadPool(2);
+		try {
+			Future<Boolean> first = pool.submit(attempt);
+			Future<Boolean> second = pool.submit(attempt);
+			start.countDown();
+			long createdCount = List.of(first.get(), second.get()).stream().filter(created -> created).count();
+			assertEquals(1, createdCount, "exactly one of the two concurrent requests should have created a new absence");
+		} finally {
+			pool.shutdown();
+		}
+
+		assertEquals(1, absenceRepository.findOverlapping(schoolId, child.id(), from, to).size());
 	}
 
 	@Test
