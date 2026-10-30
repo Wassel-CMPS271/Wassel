@@ -8,6 +8,7 @@ import { RoleGuard } from "@/components/auth/RoleGuard";
 import { UserBlock } from "@/components/auth/UserBlock";
 import { BrandMark } from "@/components/ui/BrandMark";
 import {
+  ClockIcon,
   DriverIcon,
   RouteIcon,
   SettingsIcon,
@@ -25,6 +26,7 @@ interface NavItem {
 
 // Settings has no ticket yet.
 const NAV_ITEMS: NavItem[] = [
+  { label: "Today", href: "/head-of-transport/today", enabled: true, Icon: ClockIcon },
   { label: "Parents", href: "/head-of-transport/parents", enabled: true, Icon: StudentIcon },
   { label: "Vehicles", href: "/head-of-transport/vehicles", enabled: true, Icon: VehicleIcon },
   { label: "Drivers", href: "/head-of-transport/drivers", enabled: true, Icon: DriverIcon },
