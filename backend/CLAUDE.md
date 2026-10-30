@@ -317,12 +317,22 @@ that's the structure this codebase moved away from.
   route; the driver's request creates their own route's runs, the head's every route's. Other dates only read, and a
   deleted route's runs stay as rows nobody lists. "Today" is `LocalDate.now(clock)` with the `Clock` bean of
   `common/config/ClockConfig` (`Asia/Beirut`); tests move it with `common/MutableClock`, because Saturday and Sunday
-  are `HOLIDAY` and a test on the real date would fail on a weekend. The morning stops are one read of
-  `StudentService.listOnRoute` (order, guardian), each with the arrival time from `RouteService.findRouteOfDriver`'s
-  stops, so a student moved between the two reads is never dropped (at worst one has no time until the next fetch);
-  the afternoon is that list reversed with no times and no confirmations. `RunService.driverRun` builds one whole run
+  are `HOLIDAY` and a test on the real date would fail on a weekend. The morning stops come from one read:
+  `RouteService.findRouteOfDriver` returns the driver's route with each stop's arrival time and guardian from a single
+  `StudentService.listOnRoute`, so order, times and phones cannot disagree after a reorder (SCRUM-233 review). That lookup
+  and `driverDay` are deliberately not `@Transactional`, because the arrival times may wait on the road provider (3 s) and
+  a transaction around it holds a connection; `driverDay` uses a `TransactionTemplate` only around `createMissing` and the
+  read of the runs. `routes/config/TravelTimeWarmer` (not in the `test` profile) calls `RouteService.warmTravelTimes` on its
+  own thread at startup so the road-time cache is not empty for the first requests after a restart. The afternoon is that
+  list reversed with no times and no confirmations. `RunStopResponse.removedFromRoute` is always false until SCRUM-235, which
+  adds a confirmed student who has left the route to the end of the stops. `routes` declares `service/ActiveRunGuard` and
+  `RouteService` calls it before changing a route's driver or vehicle (`editRoute`) and before a student leaves their route
+  (`addStudent` onto another route, `removeStudent`); a block is `ActiveRunConflictException`, a 409 with the guard's text.
+  `runs/service/RunActiveRunGuard` implements it (its own class, so `RunService` and `RouteService` do not need each other's
+  beans); only today's `IN_PROGRESS` runs block a route change, and the student-move check always allows until 235 has
+  confirmations. Deleting a route and applying generated routes (`placeOnRoutes`) are not guarded. `RunService.driverRun` builds one whole run
   with stops, which start, end and confirm should answer with. `runs` reads other modules through
-  `RouteService.findRouteOfDriver` and `listRoutes`, `StudentService.listOnRoute`, `DriverService.findDriverIdForUser`,
+  `RouteService.findRouteOfDriver` and `listRoutes`, `DriverService.findDriverIdForUser`,
   `HolidayService.isHoliday`, `HalfDayService.isHalfDay` and `SchoolSettingsService.getTimes`. A half-day afternoon run has `schoolTime: null` (no half-day dismissal time
   exists). Confirmations and absences are SCRUM-235 and SCRUM-239: until then every stop is `absent: false` with
   `confirmation: null` and the counts other than `students` are 0. Start and end (SCRUM-234) add to

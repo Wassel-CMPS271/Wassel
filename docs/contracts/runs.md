@@ -51,6 +51,7 @@ One student on one run. **A stop is a student**, as in the routing contract: two
 | `guardianName`, `guardianPhone` | string | for the "Call parent" button |
 | `absent` | boolean | a parent reported this student absent for the run's date and has not cancelled it |
 | `confirmation` | `{ status, at }` or null | the student's latest confirmation, null when there is none yet. `status` is `PICKED_UP`, `DROPPED_OFF` or `NOT_PRESENT` |
+| `removedFromRoute` | boolean | `true` for a student who has a confirmation on this run and is no longer on the route. They stay on the run, **after the route's current stops** (numbered on, no duplicates by `studentId`), so a child who was picked up never disappears from the bus they are on. `false` for every other stop. See [Moving a student or changing the driver](#moving-a-student-or-changing-the-driver-during-a-run) |
 
 `arrivalTime` is the morning estimate of the routing contract. On an **afternoon run it is always null**, and the stops are the morning order **reversed**, with `position` numbered `1..n` again (the first stop is the last pickup of the morning).
 
@@ -130,7 +131,8 @@ The head of transportation's absence list is one endpoint for SCRUM-238 and SCRU
 
 - Every route gets **one morning and one afternoon run** per date, except on a holiday or a weekend. A run is identified by route, date and direction; the same one is never created twice, however many people ask at once.
 - Runs are created when **today's** runs are asked for, by the driver or by the head of transportation. Asking for any other date only reads runs that already exist, so a past date shows what happened and a future date shows no runs. Nothing else creates a run.
-- The stops are the route's stops in the routing contract, in its **current** order, read each time. A student the head of transportation adds, removes or moves during the day changes the run at once.
+- The stops are the route's stops in the routing contract, in its **current** order, read each time, plus any student who has a confirmation on this run and has left the route (`removedFromRoute: true`, last). A student the head of transportation adds, removes or moves during the day changes the run at once, except one who is on the bus: see [Moving a student or changing the driver](#moving-a-student-or-changing-the-driver-during-a-run).
+- Stop order, arrival times and guardians come from **one read** of the route's students, so they cannot disagree with each other when the route is reordered while a request is being answered.
 - A route deleted during the day takes its runs with it: they are no longer listed, for that day or any other (see [Known limits](#known-limits)).
 - The kind of day is decided when the runs are asked for, not when they were made. A holiday added for a date that already has runs, even a past date, hides them: a holiday always answers `runs: []`. Removing the holiday shows the same runs again, unchanged.
 - **Morning:** the order and `arrivalTime`s of the routing contract. **Afternoon:** the same students reversed, no times (see [Known limits](#known-limits)).
@@ -144,6 +146,15 @@ The head of transportation's absence list is one endpoint for SCRUM-238 and SCRU
 - Ending is allowed while students are still on the bus (picked up, not dropped off). The screens should warn using `counts`; the server does not refuse.
 - The morning and afternoon runs are independent: either can start first.
 - The driver only ever gets today's runs, so there is no separate rule for other dates. A run left `IN_PROGRESS` overnight stays that way and shows so to the head of transportation.
+
+### Moving a student or changing the driver during a run
+
+Only **today's** runs count here: a run left `IN_PROGRESS` on an earlier date never blocks anything.
+
+- **A student who is on a bus stays on their route until the run ends.** When the head of transportation moves a student to another route or removes them from their route, and that student has a confirmation on one of today's `IN_PROGRESS` runs, the server answers **409** and changes nothing, for example *"Sara is on the Hamra bus (picked up 07:12). Move her after the run ends."* Once the run ends the move is allowed, and applies from the next run. Re-adding a student to the route they are already on is not a move.
+- **Backup for a race.** If the head clicks "move" in the same instant the driver ticks "picked up", both checks can pass. So a student with a confirmation on the run always stays on it, last, with `removedFromRoute: true`, and still counts in `students` and `pickedUp`.
+- **A route's driver or vehicle cannot change while one of its runs is `IN_PROGRESS` today.** The edit answers **409**, for example *"Route "Hamra morning run" has its morning run in progress. Change the driver or vehicle after it ends."* A rename, which changes neither, is allowed.
+- Not covered: deleting a route, and applying generated routes (`/routes/generation`), still change rosters mid-run (see [Known limits](#known-limits)).
 
 ### Confirmations
 
@@ -200,6 +211,8 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 | A child that is not yours, or unknown | 404 | `detail` |
 | An absence that is gone, or not that child's | 404 | `detail` |
 | Start a `FINISHED` run, or end a run that has not started | 409 | `detail`, including the run's state |
+| Move a student off their route (add to another route, or remove) while they are on a bus | 409 | `detail`, naming the child, the route and the pickup time. On `POST` and `DELETE` `/head-of-transport/routes/{id}/students` |
+| Change a route's driver or vehicle while one of its runs is in progress | 409 | `detail`, naming the route and the run. On `PUT /head-of-transport/routes/{id}` |
 | Confirm while the run is not `IN_PROGRESS` | 409 | `detail`, including the run's state |
 | A confirmation move the table above refuses | 409 | `detail`, including the current status |
 | Report an absence that overlaps another (not an exact repeat) | 409 | `errors: { fromDate: message }`, naming the absence it overlaps |
@@ -214,7 +227,7 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 - **The school week is fixed.** The school runs Monday to Friday; Saturday and Sunday (by the date in `Asia/Beirut`) are `HOLIDAY` with no runs, and no one enters them in the calendar. The week is not a school setting; a different school week would be a new setting.
 - **No half-day times.** A half-day has no dismissal time of its own, so a half-day afternoon run has `schoolTime: null`. Adding one later is a new nullable field. Half-days are **planned only** in Sprint 3: a same-day early dismissal is not supported (no time, no notice, and a half-day cannot be removed). A dismissal time and a delete are a separate ticket.
 - **Afternoon has no schedule.** There are no afternoon stop times, no "expected pickup" for it and no stops-left count; the afternoon is the morning's students in reverse order.
-- **A live roster.** A student moved off a route mid-day leaves that day's run, and their confirmation is no longer shown on it. The same goes for a route deleted mid-day (its runs are no longer listed) and a driver or vehicle swapped mid-day (the run shows the new one, past runs included). A signed-in driver not linked to a driver record is a driver with no route.
+- **A live roster.** A student the head moves off a route before their run starts, or after it is over, leaves that day's run (before it starts: at once; after it ends: from the next run). A student on a bus cannot be moved, and one who still gets moved by a race stays on the run as `removedFromRoute`. A route deleted mid-day takes its runs with it (they are no longer listed), and applying generated routes mid-day rewrites rosters without these checks. A driver or vehicle swapped when no run is in progress shows on the day's runs, past runs included. A signed-in driver not linked to a driver record is a driver with no route.
 - **No undo.** A wrong confirmation can only be moved on the way the table allows; it cannot be taken back.
 - **Whole days only.** An absence cannot be for the morning run alone, or start part-way through a day.
 - **The planned time only.** `expectedPickupTime` does not follow the bus. A late bus is visible only through the run's state and, later, the stops-left count.
@@ -224,6 +237,7 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 
 Reach other modules through their **services** only (`backend/CLAUDE.md`). What the new code needs and does not have yet, so each owner adds it to the owning module in their own PR:
 
+- `routes` declares `ActiveRunGuard` (is a student on a bus, is a route's run in progress) and calls it before moving a student or changing a driver or vehicle; `runs` implements it. Routes never imports runs, and the implementation is its own class, not `RunService`, so the two do not need each other's beans.
 - `runs` (Hashem): the run and confirmation tables, `RunService`. Reads `RouteService` (the route of a driver, as a lookup it does not have yet; its stops and arrival times), `DriverService` (the driver of a signed-in user, as a lookup it does not have yet), `SchoolSettingsService.getTimes` (`schoolTime`), `HolidayService` / `HalfDayService` (the day's type, as `isHoliday` / `isHalfDay` lookups they do not have yet) and, from SCRUM-239, `AbsenceService`.
 - `absences` (Moustafa): the absence table, `AbsenceService`. Reads `StudentService` (which children a parent has, as a lookup it does not have yet) and, for the head of transportation's list, `RouteService` (a student's route and position, as a lookup it does not have yet). Never reads `runs`.
 - The new 404 and 409 exceptions need entries in the shared `GlobalExceptionHandler` (otherwise they answer 500). Hashem and Moustafa both edit it, so the second to merge rebases onto the first.
