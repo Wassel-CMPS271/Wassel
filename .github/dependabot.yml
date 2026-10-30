@@ -1,0 +1,19 @@
+# Weekly update pull requests for the libraries we depend on (SCRUM-253). Security alerts are a separate
+# repository setting ("Dependabot alerts"); this file is what opens the version-update PRs.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

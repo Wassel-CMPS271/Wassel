@@ -1,5 +1,9 @@
 package com.wassel.backend.common.exception;
 
+import com.wassel.backend.absences.exception.AbsenceNotCancellableException;
+import com.wassel.backend.absences.exception.AbsenceNotFoundException;
+import com.wassel.backend.absences.exception.AbsenceOverlapException;
+import com.wassel.backend.absences.exception.InvalidAbsenceDateException;
 import com.wassel.backend.auth.exception.CodeCooldownException;
 import com.wassel.backend.auth.exception.InvalidCodeException;
 import com.wassel.backend.auth.exception.InvalidCredentialsException;
@@ -233,6 +237,39 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(ProposalNotFoundException.class)
 	public ProblemDetail handleProposalNotFound(ProposalNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// Same "errors" shape as bean validation, keyed by whichever field was wrong (fromDate or
+	// toDate): a reported absence's dates don't make sense.
+	@ExceptionHandler(InvalidAbsenceDateException.class)
+	public ProblemDetail handleInvalidAbsenceDate(InvalidAbsenceDateException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
+		return problem;
+	}
+
+	// Same "errors" shape again, keyed by "fromDate" as the contract specifies: a reported
+	// absence overlaps another, non-cancelled one this child already has.
+	@ExceptionHandler(AbsenceOverlapException.class)
+	public ProblemDetail handleAbsenceOverlap(AbsenceOverlapException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Absence overlap");
+		problem.setProperty("errors", Map.of("fromDate", ex.getMessage()));
+		return problem;
+	}
+
+	// No "errors" map: the contract has this as a plain detail naming when the absence ended.
+	@ExceptionHandler(AbsenceNotCancellableException.class)
+	public ProblemDetail handleAbsenceNotCancellable(AbsenceNotCancellableException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	@ExceptionHandler(AbsenceNotFoundException.class)
+	public ProblemDetail handleAbsenceNotFound(AbsenceNotFoundException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
