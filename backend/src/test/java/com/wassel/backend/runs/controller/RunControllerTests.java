@@ -1336,4 +1336,20 @@ class RunControllerTests {
 		}
 		assertEquals(action.equals("start") ? RunState.IN_PROGRESS : RunState.FINISHED, stored(id).getState());
 	}
+
+	@Test
+	void startingARunLocksTheRoutesDriverAndVehicleAndEndingItReleasesThem() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		String morning = runId(driverToday(schoolA, f.userId()), 0);
+		Driver other = aDriver(schoolA, UUID.randomUUID(), "Nadia");
+
+		act("start", morning, schoolA, f.userId()).andExpect(status().isOk());
+		editRoute(f.route(), "Hamra morning run", f.route().getVehicleId(), other.getId())
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("morning run in progress")));
+
+		act("end", morning, schoolA, f.userId()).andExpect(status().isOk());
+		editRoute(f.route(), "Hamra morning run", f.route().getVehicleId(), other.getId())
+				.andExpect(status().isOk());
+	}
 }
