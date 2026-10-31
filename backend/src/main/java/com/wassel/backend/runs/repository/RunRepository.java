@@ -1,7 +1,9 @@
 package com.wassel.backend.runs.repository;
 
 import com.wassel.backend.runs.entity.Run;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -10,6 +12,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -19,6 +22,14 @@ import java.util.UUID;
 public interface RunRepository extends JpaRepository<Run, UUID> {
 
 	List<Run> findBySchoolIdAndRunDateAndRouteIdIn(UUID schoolId, LocalDate runDate, Collection<UUID> routeIds);
+
+	/**
+	 * The run with its row locked until the transaction ends. A confirmation takes it so that its checks (the run is
+	 * in progress, what the student already has) and its insert are not interleaved with another confirmation of
+	 * the same student or with the run ending. The first row lock in the codebase; it is held for milliseconds.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	Optional<Run> findLockedBySchoolIdAndId(UUID schoolId, UUID id);
 
 	/**
 	 * Creates the route's morning and afternoon run for the date, leaving any that exist. One statement, so
