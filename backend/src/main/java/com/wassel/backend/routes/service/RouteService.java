@@ -3,6 +3,7 @@ package com.wassel.backend.routes.service;
 import com.wassel.backend.drivers.dto.DriverResponse;
 import com.wassel.backend.drivers.service.DriverService;
 import com.wassel.backend.routes.dto.AssignStudentRequest;
+import com.wassel.backend.routes.dto.ChildRouteInfo;
 import com.wassel.backend.routes.dto.DriverRouteResponse;
 import com.wassel.backend.routes.dto.DriverRouteStop;
 import com.wassel.backend.routes.dto.ProposalOrderResponse;
@@ -393,6 +394,31 @@ public class RouteService {
 				}
 			}
 			return Optional.empty();
+		});
+	}
+
+	/**
+	 * A child's route, driver, vehicle and expected pickup time (SCRUM-240), or empty if they're
+	 * not on a route — the same "no route" treatment {@link #findStudentRoute} gives a vanished
+	 * route. The pickup time is this student's arrival time from the same {@link #schedule} the
+	 * route's own stops use, so it is null exactly when theirs would be (no pin, no school arrival
+	 * time, or a route that would start before 06:00).
+	 */
+	@Transactional(readOnly = true)
+	public Optional<ChildRouteInfo> findRouteForChild(UUID schoolId, UUID studentId) {
+		UUID routeId = studentService.getRouteId(schoolId, studentId);
+		if (routeId == null) {
+			return Optional.empty();
+		}
+		return routeRepository.findBySchoolIdAndId(schoolId, routeId).map(route -> {
+			DriverResponse driver = driverService.getOwnedDriver(schoolId, route.getDriverId());
+			VehicleResponse vehicle = vehicleService.getOwnedVehicle(schoolId, route.getVehicleId());
+			LocalTime schoolArrival = schoolSettingsService.getTimes(schoolId).arrivalTime();
+			List<StudentResponse> onRoute = studentService.listOnRoute(schoolId, routeId);
+			LocalTime pickupTime = schedule(onRoute, schoolArrival).arrivals().get(studentId);
+			return new ChildRouteInfo(route.getId(), route.getName(),
+					new ChildRouteInfo.Driver(driver.id(), driver.firstName(), driver.lastName(), driver.phone()),
+					new RouteVehicleSummary(vehicle.id(), vehicle.plateNumber(), vehicle.capacity()), pickupTime);
 		});
 	}
 
