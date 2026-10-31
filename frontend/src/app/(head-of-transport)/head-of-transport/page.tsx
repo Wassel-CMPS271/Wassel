@@ -4,7 +4,7 @@ import type { ComponentType, CSSProperties } from "react";
 import Link from "next/link";
 import { motion, type Variants } from "framer-motion";
 import { Card } from "@/components/ui/Card";
-import { DriverIcon, StudentIcon, VehicleIcon } from "@/components/ui/icons";
+import { ClockIcon, DriverIcon, StudentIcon, VehicleIcon } from "@/components/ui/icons";
 import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
 
 interface Feature {
@@ -16,6 +16,14 @@ interface Feature {
 }
 
 const FEATURES: Feature[] = [
+  {
+    title: "Today",
+    description:
+      "See every run's state and progress for today, and which students are absent, at a glance.",
+    href: "/head-of-transport/today",
+    cta: "Open today",
+    Icon: ClockIcon,
+  },
   {
     title: "Vehicles",
     description:
