@@ -66,6 +66,21 @@ it("lists every run with route, driver, morning or afternoon, state and progress
   expect(within(morning).getByText(", 1 absent")).toBeInTheDocument();
 });
 
+it("shows a student the driver marked not present, apart from one who is simply not picked up yet", async () => {
+  render(<TodayPage />);
+  await screen.findByText(SAMPLE_DATE);
+
+  // Achrafieh's morning run: 3 of 4 picked up, and the fourth was a no-show.
+  const noShow = rowFor("Achrafieh morning run", "Morning");
+  expect(within(noShow).getByText("3 of 4 picked up")).toBeInTheDocument();
+  expect(within(noShow).getByText(", 1 not present")).toBeInTheDocument();
+  expect(within(noShow).queryByText(/absent/)).not.toBeInTheDocument();
+
+  // A run with nobody not present shows nothing extra.
+  const clean = rowFor("Hamra morning run", "Morning");
+  expect(within(clean).queryByText(/not present/)).not.toBeInTheDocument();
+});
+
 it("measures an afternoon run by students dropped off, not picked up", async () => {
   render(<TodayPage />);
   await screen.findByText(SAMPLE_DATE);

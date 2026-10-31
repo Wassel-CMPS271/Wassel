@@ -78,6 +78,9 @@ function Progress({ run }: { run: RunSummary }) {
         {run.counts.absent > 0 && (
           <span style={{ color: darkTheme.text.secondary }}>, {run.counts.absent} absent</span>
         )}
+        {run.counts.notPresent > 0 && (
+          <span style={{ color: darkTheme.text.secondary }}>, {run.counts.notPresent} not present</span>
+        )}
       </span>
       <span
         aria-hidden="true"
@@ -106,7 +109,7 @@ function Progress({ run }: { run: RunSummary }) {
 function RunsTable({ runs }: { runs: RunSummary[] }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+      <table className="w-full min-w-[640px] text-sm" style={{ borderCollapse: "collapse" }}>
         <caption className="sr-only">Runs for the day</caption>
         <thead>
           <tr>
@@ -142,7 +145,7 @@ function RunsTable({ runs }: { runs: RunSummary[] }) {
 function AbsentTable({ students }: { students: AbsentStudent[] }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+      <table className="w-full min-w-[640px] text-sm" style={{ borderCollapse: "collapse" }}>
         <caption className="sr-only">Students absent for the day</caption>
         <thead>
           <tr>
