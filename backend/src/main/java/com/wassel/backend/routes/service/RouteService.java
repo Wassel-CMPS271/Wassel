@@ -45,8 +45,10 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -81,6 +83,8 @@ public class RouteService {
 
 	private static final String PROPOSAL_NOT_FOUND_MESSAGE = "Proposal not found.";
 
+	private static final DateTimeFormatter BUS_TIME = DateTimeFormatter.ofPattern("HH:mm");
+
 	private final RouteRepository routeRepository;
 
 	private final RouteProposalRepository proposalRepository;
@@ -102,6 +106,8 @@ public class RouteService {
 	private final TravelTimes travelTimes;
 
 	private final ActiveRunGuard activeRunGuard;
+
+	private final Clock clock;
 
 	/** The school's routes, oldest first. */
 	@Transactional(readOnly = true)
@@ -229,7 +235,8 @@ public class RouteService {
 	 * counted in {@code currentCount}, so adding them again takes no new seat.
 	 * {@link StudentService#assignToRoute} throws 404/409 if the student doesn't exist, belongs
 	 * to another school, or isn't active; it also moves a student off any other route they were
-	 * already on, so no seat is held on two routes at once.
+	 * already on, so no seat is held on two routes at once. Moving a student who is on a bus today
+	 * (a confirmation on a run in progress) off their route is a 409 ({@link ActiveRunConflictException}).
 	 */
 	@Transactional
 	public RouteResponse addStudent(UUID schoolId, UUID routeId, AssignStudentRequest request) {
@@ -248,11 +255,17 @@ public class RouteService {
 		return toResponse(schoolId, route);
 	}
 
-	/** 404s if the student exists but isn't currently a stop on this particular route. */
+	/**
+	 * 404s if the student exists but isn't currently a stop on this particular route, and 409s
+	 * ({@link ActiveRunConflictException}) while they are on a bus today. The 404 is checked first, so a wrong
+	 * route is never answered with a 409 about the right one.
+	 */
 	@Transactional
 	public RouteResponse removeStudent(UUID schoolId, UUID routeId, UUID studentId) {
 		Route route = findOwned(schoolId, routeId);
-		requireNotOnABus(schoolId, studentId);
+		if (studentService.isOnRoute(schoolId, studentId, routeId)) {
+			requireNotOnABus(schoolId, studentId);
+		}
 		studentService.removeFromRoute(schoolId, studentId, routeId);
 		return toResponse(schoolId, route);
 	}
@@ -447,10 +460,17 @@ public class RouteService {
 				: routeRepository.findBySchoolIdAndDriverIdAndIdNot(schoolId, driverId, excludedRouteId);
 	}
 
-	/** A student a driver has picked up today stays on their route until the run ends (409). */
+	/**
+	 * A student with a confirmation on a run in progress today stays on their route until the run ends (409). The
+	 * text is built here: the name and the route are this side's to read, and the time is in the {@link Clock}'s zone.
+	 */
 	private void requireNotOnABus(UUID schoolId, UUID studentId) {
-		activeRunGuard.blockReasonForStudentMove(schoolId, studentId).ifPresent(reason -> {
-			throw new ActiveRunConflictException(reason);
+		activeRunGuard.studentOnBus(schoolId, studentId).ifPresent(bus -> {
+			String bound = routeRepository.findBySchoolIdAndId(schoolId, bus.routeId())
+					.map(route -> "the " + route.getName() + " bus").orElse("a bus");
+			throw new ActiveRunConflictException("%s is on %s (%s %s). Move them after the run ends.".formatted(
+					studentService.getStudent(schoolId, studentId).firstName(), bound, bus.action(),
+					BUS_TIME.format(bus.at().atZone(clock.getZone()))));
 		});
 	}
 
