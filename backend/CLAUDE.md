@@ -340,12 +340,18 @@ that's the structure this codebase moved away from.
   (`addStudent` onto another route, `removeStudent`); a block is `ActiveRunConflictException`, a 409 with the guard's text.
   `runs/service/RunActiveRunGuard` implements it (its own class, so `RunService` and `RouteService` do not need each other's
   beans); only today's `IN_PROGRESS` runs block a route change, and the student-move check always allows until 235 has
-  confirmations. Deleting a route and applying generated routes (`placeOnRoutes`) are not guarded. `RunService.driverRun` builds one whole run
+  confirmations. Deleting a route and applying generated routes (`placeOnRoutes`) are not guarded. `absent`
+  (SCRUM-239) is this route's students with a live absence for today, from `AbsenceService.absentStudentIds`
+  (one query for the whole roster, never the repository), read fresh on every fetch so a same-day report or
+  cancellation shows on the next one. `counts.absent` follows it wherever stops are fetched (the driver's own
+  run); it stays 0 on the head of transportation's stop-less `RunSummary`, which has its own list instead
+  (`GET /api/head-of-transport/absences`, from the `absences` module). `RunService.driverRun` builds one whole run
   with stops, which start, end and confirm should answer with. `runs` reads other modules through
-  `RouteService.findRouteOfDriver` and `listRoutes`, `DriverService.findDriverIdForUser`,
-  `HolidayService.isHoliday`, `HalfDayService.isHalfDay` and `SchoolSettingsService.getTimes`. A half-day afternoon run has `schoolTime: null` (no half-day dismissal time
-  exists). Confirmations and absences are SCRUM-235 and SCRUM-239: until then every stop is `absent: false` with
-  `confirmation: null` and the counts other than `students` are 0. Start and end (SCRUM-234) add to
+  `RouteService.findRouteOfDriver` and `listRoutes`, `AbsenceService.absentStudentIds`,
+  `DriverService.findDriverIdForUser`, `HolidayService.isHoliday`, `HalfDayService.isHalfDay` and
+  `SchoolSettingsService.getTimes`. A half-day afternoon run has `schoolTime: null` (no half-day dismissal time
+  exists). Confirmations are SCRUM-235: until then every stop's `confirmation` is `null` and
+  `pickedUp`/`droppedOff`/`notPresent` are 0. Start and end (SCRUM-234) add to
   `DriverRunController` and use the `started_at`/`ended_at` columns that are already there.
 - `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
   of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
@@ -369,7 +375,9 @@ that's the structure this codebase moved away from.
   same transaction (as `RouteService#lostRace` documents for its own races); `AbsenceService`
   catches the constraint's `DataIntegrityViolationException` and answers a plain 409 asking the
   client to retry, the same pattern `RouteService#propose` uses for two optimizations of a route
-  at once. Depends on `students`
+  at once. `AbsenceService.absentStudentIds` (SCRUM-239) is for `runs`: which of a route's students
+  have a live absence on a given date, one query for the whole roster rather than one per student.
+  Depends on `students`
   (`StudentService.findChildOf` for parent ownership of a `studentId` path variable,
   `StudentService.getStudent`/`getRouteId` for the head of transportation's list) and `routes`
   (`RouteService.findStudentRoute`, added for this module: a student's route and their 1-based

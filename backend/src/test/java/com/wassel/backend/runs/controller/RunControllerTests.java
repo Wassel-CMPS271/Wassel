@@ -1,6 +1,8 @@
 package com.wassel.backend.runs.controller;
 
 import com.jayway.jsonpath.JsonPath;
+import com.wassel.backend.absences.entity.Absence;
+import com.wassel.backend.absences.repository.AbsenceRepository;
 import com.wassel.backend.common.MutableClock;
 import com.wassel.backend.common.config.ClockConfig;
 import com.wassel.backend.drivers.entity.Driver;
@@ -175,6 +177,9 @@ class RunControllerTests {
 	private StudentRepository studentRepository;
 
 	@Autowired
+	private AbsenceRepository absenceRepository;
+
+	@Autowired
 	private SchoolSettingsRepository schoolSettingsRepository;
 
 	@Autowired
@@ -196,6 +201,7 @@ class RunControllerTests {
 		routeRepository.deleteAll();
 		driverRepository.deleteAll();
 		vehicleRepository.deleteAll();
+		absenceRepository.deleteAll();
 		studentRepository.deleteAll();
 		schoolSettingsRepository.deleteAll();
 		holidayRepository.deleteAll();
@@ -514,6 +520,90 @@ class RunControllerTests {
 				.andExpect(jsonPath("$.runs[0].stops[3].firstName").value("Dana"))
 				.andExpect(jsonPath("$.runs[1].stops[0].firstName").value("Dana"));
 		assertEquals(2, runRepository.count());
+	}
+
+	// ---- absences on the run (SCRUM-239) ----
+
+	private Absence anAbsence(UUID schoolId, UUID studentId, LocalDate fromDate, LocalDate toDate) {
+		return absenceRepository.saveAndFlush(Absence.builder().schoolId(schoolId).studentId(studentId)
+				.fromDate(fromDate).toDate(toDate).createdBy(UUID.randomUUID()).build());
+	}
+
+	@Test
+	void aStudentWithALiveAbsenceTodayIsMarkedAbsentOnBothRuns() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		Student salma = studentRepository.findBySchoolIdAndRouteIdOrderByStopPositionAsc(schoolA, f.route().getId())
+				.get(1);
+		anAbsence(schoolA, salma.getId(), LocalDate.parse(WEDNESDAY_DATE), LocalDate.parse(WEDNESDAY_DATE));
+
+		mockMvc.perform(get(DRIVER_URL).with(loggedInAs(Role.DRIVER, schoolA, f.userId())))
+				.andExpect(jsonPath("$.runs[0].stops[1].firstName").value("Salma"))
+				.andExpect(jsonPath("$.runs[0].stops[1].absent").value(true))
+				.andExpect(jsonPath("$.runs[0].counts.absent").value(1))
+				// The afternoon run is the same students reversed: an absence covers the whole day.
+				.andExpect(jsonPath("$.runs[1].stops[1].firstName").value("Salma"))
+				.andExpect(jsonPath("$.runs[1].stops[1].absent").value(true))
+				.andExpect(jsonPath("$.runs[1].counts.absent").value(1))
+				// Rami and Tarek are not absent.
+				.andExpect(jsonPath("$.runs[0].stops[0].absent").value(false))
+				.andExpect(jsonPath("$.runs[0].stops[2].absent").value(false));
+	}
+
+	@Test
+	void aCancelledAbsenceDoesNotMarkTheStudentAbsent() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		Student rami = studentRepository.findBySchoolIdAndRouteIdOrderByStopPositionAsc(schoolA, f.route().getId())
+				.get(0);
+		Absence absence = anAbsence(schoolA, rami.getId(), LocalDate.parse(WEDNESDAY_DATE), LocalDate.parse(WEDNESDAY_DATE));
+		absence.setCancelled(true);
+		absenceRepository.saveAndFlush(absence);
+
+		mockMvc.perform(get(DRIVER_URL).with(loggedInAs(Role.DRIVER, schoolA, f.userId())))
+				.andExpect(jsonPath("$.runs[0].stops[0].absent").value(false))
+				.andExpect(jsonPath("$.runs[0].counts.absent").value(0));
+	}
+
+	@Test
+	void anAbsenceThatDoesNotCoverTodayDoesNotMarkTheStudentAbsent() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		Student rami = studentRepository.findBySchoolIdAndRouteIdOrderByStopPositionAsc(schoolA, f.route().getId())
+				.get(0);
+		anAbsence(schoolA, rami.getId(), LocalDate.parse(WEDNESDAY_DATE).plusDays(1),
+				LocalDate.parse(WEDNESDAY_DATE).plusDays(2));
+
+		mockMvc.perform(get(DRIVER_URL).with(loggedInAs(Role.DRIVER, schoolA, f.userId())))
+				.andExpect(jsonPath("$.runs[0].stops[0].absent").value(false))
+				.andExpect(jsonPath("$.runs[0].counts.absent").value(0));
+	}
+
+	@Test
+	void anAbsenceReportedAfterTheRunStartedShowsOnTheNextFetch() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		driverToday(schoolA, f.userId());
+		Student tarek = studentRepository.findBySchoolIdAndRouteIdOrderByStopPositionAsc(schoolA, f.route().getId())
+				.get(2);
+
+		anAbsence(schoolA, tarek.getId(), LocalDate.parse(WEDNESDAY_DATE), LocalDate.parse(WEDNESDAY_DATE));
+
+		mockMvc.perform(get(DRIVER_URL).with(loggedInAs(Role.DRIVER, schoolA, f.userId())))
+				.andExpect(jsonPath("$.runs[0].stops[2].firstName").value("Tarek"))
+				.andExpect(jsonPath("$.runs[0].stops[2].absent").value(true));
+		assertEquals(2, runRepository.count());
+	}
+
+	@Test
+	void theHeadsRunsDayCountsStayZeroForAbsentSinceItDoesNotFetchStops() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		Student rami = studentRepository.findBySchoolIdAndRouteIdOrderByStopPositionAsc(schoolA, f.route().getId())
+				.get(0);
+		anAbsence(schoolA, rami.getId(), LocalDate.parse(WEDNESDAY_DATE), LocalDate.parse(WEDNESDAY_DATE));
+
+		// A RunSummary (no stops) has nothing to compute the absent count from; the head of
+		// transportation sees who is absent today through the absences module's own endpoint
+		// instead (docs/contracts/runs.md: GET /api/head-of-transport/absences).
+		mockMvc.perform(get(HEAD_URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
+				.andExpect(jsonPath("$.runs[0].stops").doesNotExist())
+				.andExpect(jsonPath("$.runs[0].counts.absent").value(0));
 	}
 
 	@Test
