@@ -151,7 +151,7 @@ The head of transportation's absence list is one endpoint for SCRUM-238 and SCRU
 
 Only **today's** runs count here: a run left `IN_PROGRESS` on an earlier date never blocks anything.
 
-- **A student who is on a bus stays on their route until the run ends.** When the head of transportation moves a student to another route or removes them from their route, and that student has a confirmation on one of today's `IN_PROGRESS` runs, the server answers **409** and changes nothing, for example *"Sara is on the Hamra bus (picked up 07:12). Move her after the run ends."* Once the run ends the move is allowed, and applies from the next run. Re-adding a student to the route they are already on is not a move.
+- **A student who is on a bus stays on their route until the run ends.** When the head of transportation moves a student to another route or removes them from their route, and that student has a confirmation on one of today's `IN_PROGRESS` runs, the server answers **409** and changes nothing, for example *"Sara is on the Hamra bus (picked up 07:12). Move them after the run ends."* The text names the child by first name, the route, and the latest status in words (*picked up*, *dropped off*, *marked not present*) with the time of day in the school's zone. Once the run ends the move is allowed, and applies from the next run. Re-adding a student to the route they are already on is not a move.
 - **Backup for a race.** If the head clicks "move" in the same instant the driver ticks "picked up", both checks can pass. So a student with a confirmation on the run always stays on it, last, with `removedFromRoute: true`, and still counts in `students` and `pickedUp`.
 - **A route's driver or vehicle cannot change while one of its runs is `IN_PROGRESS` today.** The edit answers **409**, for example *"Route "Hamra morning run" has its morning run in progress. Change the driver or vehicle after it ends."* A rename, which changes neither, is allowed.
 - Not covered: deleting a route, and applying generated routes (`/routes/generation`), still change rosters mid-run (see [Known limits](#known-limits)).
@@ -171,7 +171,10 @@ Only **today's** runs count here: a run left `IN_PROGRESS` on an earlier date ne
 - The time is the server's, never the client's. There is **no undo**.
 - An absent student can still be confirmed. A parent's absence does not stop the driver, and a confirmation always wins over `absent` in what the screens show.
 - A student who is not a stop on that run is **404**.
-- Each status is recorded once per student and run, so a retry cannot create a second record.
+- Each status is recorded once per student and run, so a retry cannot create a second record. A status the student already has is answered 200 with nothing changed **even when a later status exists**: a retry of *picked up* that arrives after *dropped off* is not an error, and the stop keeps showing the later status.
+- A student's **latest** confirmation is the highest status they have (`NOT_PRESENT` < `PICKED_UP` < `DROPPED_OFF`), not the newest record.
+- Checks run in this order: the run is one of the driver's today (404), the student is a stop of the run or already confirmed on it (404), the run is `IN_PROGRESS` (409), then the table (409).
+- A confirmation and a move or end of the same run never interleave: the server serialises them per run.
 
 ### What the driver screen works out for itself
 
@@ -238,7 +241,7 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 Reach other modules through their **services** only (`backend/CLAUDE.md`). What the new code needs and does not have yet, so each owner adds it to the owning module in their own PR:
 
 - `routes` declares `ActiveRunGuard` (is a student on a bus, is a route's run in progress) and calls it before moving a student or changing a driver or vehicle; `runs` implements it. Routes never imports runs, and the implementation is its own class, not `RunService`, so the two do not need each other's beans.
-- `runs` (Hashem): the run and confirmation tables, `RunService`. Reads `RouteService` (the route of a driver, as a lookup it does not have yet; its stops and arrival times), `DriverService` (the driver of a signed-in user, as a lookup it does not have yet), `SchoolSettingsService.getTimes` (`schoolTime`), `HolidayService` / `HalfDayService` (the day's type, as `isHoliday` / `isHalfDay` lookups they do not have yet) and, from SCRUM-239, `AbsenceService`.
+- `runs` (Hashem): the run and confirmation tables, `RunService`. Reads `RouteService.findRouteOfDriver` and `listRoutes` (the driver's route with its stops and arrival times; every route), `DriverService.findDriverIdForUser` (the driver of a signed-in user), `StudentService` (a confirmed student who has left the route), `SchoolSettingsService.getTimes` (`schoolTime`), `HolidayService.isHoliday` / `HalfDayService.isHalfDay` (the day's type) and, from SCRUM-239, `AbsenceService`.
 - `absences` (Moustafa): the absence table, `AbsenceService`. Reads `StudentService` (which children a parent has, as a lookup it does not have yet) and, for the head of transportation's list, `RouteService` (a student's route and position, as a lookup it does not have yet). Never reads `runs`.
 - The new 404 and 409 exceptions need entries in the shared `GlobalExceptionHandler` (otherwise they answer 500). Hashem and Moustafa both edit it, so the second to merge rebases onto the first.
 - The parent view is **its own module** (called `parent`), because it reads `runs` (SCRUM-237) and `runs` already reads `routes`; it would be a cycle inside `routes` or `students`. Nothing depends on it.
