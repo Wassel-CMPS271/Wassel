@@ -1,5 +1,6 @@
 package com.wassel.backend.runs.service;
 
+import com.wassel.backend.absences.service.AbsenceService;
 import com.wassel.backend.drivers.service.DriverService;
 import com.wassel.backend.routes.dto.DriverRouteResponse;
 import com.wassel.backend.routes.dto.DriverRouteStop;
@@ -35,6 +36,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -54,6 +56,8 @@ public class RunService {
 	private final RunRepository runRepository;
 
 	private final RouteService routeService;
+
+	private final AbsenceService absenceService;
 
 	private final DriverService driverService;
 
@@ -84,7 +88,7 @@ public class RunService {
 		}
 		DriverRouteResponse route = found.get();
 		SchoolTimesResponse times = schoolSettingsService.getTimes(schoolId);
-		List<RunStopResponse> morning = morningStops(route);
+		List<RunStopResponse> morning = morningStops(schoolId, route, today);
 		Map<RunDirection, Run> runs = transactionTemplate.execute(status -> {
 			runRepository.createMissing(schoolId, route.id(), today);
 			return runsOf(schoolId, today, List.of(route.id())).get(route.id());
@@ -167,17 +171,20 @@ public class RunService {
 
 	/**
 	 * The route's stops as run stops, in the route's order with the times and guardians the routes module read
-	 * together with it. Absences and confirmations are not recorded yet (SCRUM-239, SCRUM-235): every stop is
-	 * present, unconfirmed, and still on the route.
+	 * together with it. {@code absent} (SCRUM-239) is this route's students with a live absence for {@code today},
+	 * from {@link AbsenceService#absentStudentIds}, read fresh on every fetch — never its repository. Confirmations
+	 * are not recorded yet (SCRUM-235): every stop is unconfirmed and still on the route.
 	 */
-	private List<RunStopResponse> morningStops(DriverRouteResponse route) {
-		return route.stops().stream().map(this::toStop).toList();
+	private List<RunStopResponse> morningStops(UUID schoolId, DriverRouteResponse route, LocalDate today) {
+		List<UUID> studentIds = route.stops().stream().map(DriverRouteStop::studentId).toList();
+		Set<UUID> absent = absenceService.absentStudentIds(schoolId, studentIds, today);
+		return route.stops().stream().map(stop -> toStop(stop, absent.contains(stop.studentId()))).toList();
 	}
 
-	private RunStopResponse toStop(DriverRouteStop stop) {
+	private RunStopResponse toStop(DriverRouteStop stop, boolean absent) {
 		return new RunStopResponse(stop.studentId(), stop.position(), stop.firstName(), stop.lastName(),
 				stop.address(), stop.latitude(), stop.longitude(), stop.arrivalTime(), stop.guardianName(),
-				stop.guardianPhone(), false, null, false);
+				stop.guardianPhone(), absent, null, false);
 	}
 
 	/** The morning order reversed, numbered 1..n again, with no times. */
@@ -188,8 +195,12 @@ public class RunService {
 
 	private RunResponse toResponse(Run run, RunRouteResponse route, RouteVehicleSummary vehicle,
 			RouteDriverSummary driver, int students, LocalTime schoolTime, List<RunStopResponse> stops) {
+		// absent (contract: "stops with absent:true and no confirmation") is exactly the absent count
+		// while there are no confirmations yet (SCRUM-235); null here means no stops were fetched
+		// (the head of transportation's RunSummary), so it stays 0 like the rest of counts until then.
+		int absent = stops == null ? 0 : (int) stops.stream().filter(RunStopResponse::absent).count();
 		return new RunResponse(run.getId(), run.getRunDate(), run.getDirection(), run.getState(), schoolTime,
-				run.getStartedAt(), run.getEndedAt(), route, vehicle, driver, new RunCountsResponse(students, 0, 0, 0, 0),
-				stops);
+				run.getStartedAt(), run.getEndedAt(), route, vehicle, driver,
+				new RunCountsResponse(students, absent, 0, 0, 0), stops);
 	}
 }
