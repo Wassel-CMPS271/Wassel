@@ -8,6 +8,11 @@ spring:
     username: wassel
     password: wassel
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+    # Every cached test context has its own pool, and the shared container has a connection limit. With Hikari's
+    # default of 10 idle connections each, enough distinct contexts fail with "too many clients already"
+    # (SCRUM-237). One idle connection each keeps the maximum of 10 for tests that really run in parallel.
+    hikari:
+      minimum-idle: 1
 
 jwt:
   secret: test-secret-test-secret-test-secret-test-secret

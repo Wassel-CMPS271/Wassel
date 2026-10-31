@@ -51,6 +51,7 @@ import java.time.Duration;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -411,28 +412,38 @@ public class RouteService {
 	}
 
 	/**
-	 * A child's route, driver, vehicle and expected pickup time (SCRUM-240), or empty if they're
-	 * not on a route — the same "no route" treatment {@link #findStudentRoute} gives a vanished
-	 * route. The pickup time is this student's arrival time from the same {@link #schedule} the
-	 * route's own stops use, so it is null exactly when theirs would be (no pin, no school arrival
-	 * time, or a route that would start before 06:00).
+	 * The route, driver, vehicle and expected pickup time of each of these children (SCRUM-240), for the
+	 * {@code parent} module. A child on no route, or whose route vanished, is missing from the answer (the same
+	 * "no route" treatment {@link #findStudentRoute} gives). The pickup time is the child's arrival time from the
+	 * same {@link #schedule} the route's own stops use, so it is null exactly when theirs would be (no pin, no school
+	 * arrival time, or a route that would start before 06:00). The work is per distinct route, not per child:
+	 * siblings share one route read, one roster read and one schedule.
 	 */
 	@Transactional(readOnly = true)
-	public Optional<ChildRouteInfo> findRouteForChild(UUID schoolId, UUID studentId) {
-		UUID routeId = studentService.getRouteId(schoolId, studentId);
-		if (routeId == null) {
-			return Optional.empty();
+	public Map<UUID, ChildRouteInfo> findRoutesForChildren(UUID schoolId, Collection<UUID> studentIds) {
+		Map<UUID, UUID> routeOfChild = studentService.findRouteIds(schoolId, studentIds);
+		Map<UUID, ChildRouteInfo> result = new HashMap<>();
+		if (routeOfChild.isEmpty()) {
+			return result;
 		}
-		return routeRepository.findBySchoolIdAndId(schoolId, routeId).map(route -> {
-			DriverResponse driver = driverService.getOwnedDriver(schoolId, route.getDriverId());
-			VehicleResponse vehicle = vehicleService.getOwnedVehicle(schoolId, route.getVehicleId());
-			LocalTime schoolArrival = schoolSettingsService.getTimes(schoolId).arrivalTime();
-			List<StudentResponse> onRoute = studentService.listOnRoute(schoolId, routeId);
-			LocalTime pickupTime = schedule(onRoute, schoolArrival).arrivals().get(studentId);
-			return new ChildRouteInfo(route.getId(), route.getName(),
-					new ChildRouteInfo.Driver(driver.id(), driver.firstName(), driver.lastName(), driver.phone()),
-					new RouteVehicleSummary(vehicle.id(), vehicle.plateNumber(), vehicle.capacity()), pickupTime);
-		});
+		LocalTime schoolArrival = schoolSettingsService.getTimes(schoolId).arrivalTime();
+		routeOfChild.values().stream().distinct().forEach(routeId ->
+				routeRepository.findBySchoolIdAndId(schoolId, routeId).ifPresent(route -> {
+					DriverResponse driver = driverService.getOwnedDriver(schoolId, route.getDriverId());
+					VehicleResponse vehicle = vehicleService.getOwnedVehicle(schoolId, route.getVehicleId());
+					Map<UUID, LocalTime> arrivals = schedule(studentService.listOnRoute(schoolId, routeId), schoolArrival)
+							.arrivals();
+					routeOfChild.forEach((studentId, childRouteId) -> {
+						if (childRouteId.equals(routeId)) {
+							result.put(studentId, new ChildRouteInfo(route.getId(), route.getName(),
+									new ChildRouteInfo.Driver(driver.id(), driver.firstName(), driver.lastName(),
+											driver.phone()),
+									new RouteVehicleSummary(vehicle.id(), vehicle.plateNumber(), vehicle.capacity()),
+									arrivals.get(studentId)));
+						}
+					});
+				}));
+		return result;
 	}
 
 	private VehicleResponse requireActiveVehicle(UUID schoolId, UUID vehicleId) {

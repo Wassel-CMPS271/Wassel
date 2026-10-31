@@ -11,7 +11,7 @@ The JSON examples live in [`samples/runs/`](samples/runs). They are the source o
 | [`run-finished.json`](samples/runs/run-finished.json) | `Run` | Walid's Verdun run, finished. This is also the answer to start, end and confirm. A stop with no pin | driver screen, maps button |
 | [`hot-runs.json`](samples/runs/hot-runs.json) | `RunsDay` | A half-day: six runs in all three states | head of transportation Today screen |
 | [`hot-absences.json`](samples/runs/hot-absences.json) | `AbsentStudent[]` | Two students absent on that day, one with no route | head of transportation Today screen |
-| [`parent-children.json`](samples/runs/parent-children.json) | `Child[]` | A child with a route and one with none | parent home |
+| [`parent-children.json`](samples/runs/parent-children.json) | `Child[]` | A child with a route and one with none. The child with a route is absent on a morning run that is in progress, so `todayRun.stopsLeft` is null (SCRUM-237) | parent home |
 | [`absences.json`](samples/runs/absences.json) | `Absence[]` | One child's upcoming absences: a range and a single day | parent absence screens |
 
 ## Conventions
@@ -93,6 +93,7 @@ The driver's **current run** is the first in `runs` that is not `FINISHED`; when
 | `driver` | `{ id, firstName, lastName, phone }` or null | the phone is for the "Call driver" button |
 | `vehicle` | `{ id, plateNumber }` or null | |
 | `expectedPickupTime` | `"HH:mm"` or null | this child's `arrivalTime` from the routing contract (morning), and null exactly when that is null (no pin, no school arrival time, or a route that would start before 06:00). It is the planned time, not a live estimate |
+| `todayRun` | `{ direction, state, stopsLeft }` or null | today's run for this child, see [Today's run for a child](#todays-run-for-a-child-the-parents-view). Null when the child has no route, and on a holiday or weekend |
 
 Every child linked to the signed-in parent, and no one else's, ordered by first name. A parent with no children gets `[]`.
 
@@ -116,7 +117,7 @@ An absence seen from the school's side, for the date asked: `absenceId`, `studen
 | POST | `/api/driver/runs/{runId}/start` | DRIVER | none | 200 `Run` | Hashem, SCRUM-234 |
 | POST | `/api/driver/runs/{runId}/end` | DRIVER | none | 200 `Run` | Hashem, SCRUM-234 |
 | PUT | `/api/driver/runs/{runId}/students/{studentId}/confirmation` | DRIVER | `{ status }` | 200 `Run` | Hashem, SCRUM-235 |
-| GET | `/api/parent/children` | PARENT | | 200 `Child[]` | Moustafa, SCRUM-240 |
+| GET | `/api/parent/children` | PARENT | | 200 `Child[]` | Moustafa, SCRUM-240 (`todayRun`: Hashem, SCRUM-237) |
 | GET | `/api/parent/children/{studentId}/absences` | PARENT | | 200 `Absence[]`, upcoming only | Moustafa, SCRUM-238 |
 | POST | `/api/parent/children/{studentId}/absences` | PARENT | `{ fromDate, toDate? }` | 201 `Absence`; 200 with the existing one on an exact repeat | Moustafa, SCRUM-238 |
 | DELETE | `/api/parent/children/{studentId}/absences/{absenceId}` | PARENT | | 204 | Moustafa, SCRUM-238 |
@@ -199,7 +200,27 @@ So that the screens and their tests agree, these are defined here and not sent b
 ### Parent view
 
 - `expectedPickupTime` follows the routing contract's arrival-time rule; the parent endpoint does not redo it.
-- The parent's run status and "stops left before my child" (SCRUM-237) are **not in this contract yet**. When they are pulled in, that story adds the fields here and to `parent-children.json` in the same PR.
+- `todayRun` is the parent's run status and "stops left before my child" (SCRUM-237), defined below. Like the driver's and the head's views it is read on every request, and asking for it never creates a run.
+
+#### Today's run for a child (the parent's view)
+
+`todayRun` is `{ direction, state, stopsLeft }`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `direction` | `MORNING` or `AFTERNOON` | which of today's two runs this is, so a screen can say so |
+| `state` | `NOT_STARTED`, `IN_PROGRESS` or `FINISHED` | that run's state, as in [Run states](#run-states) |
+| `stopsLeft` | integer or null | how many stops the bus still has before this child's stop. **`0` means the child is next; null means no count applies.** A screen must not treat 0 as "no value" |
+
+**Which run.** A route has a morning and an afternoon run, and either can start first. A direction with no run yet (the driver has not opened today's runs) counts as `NOT_STARTED`, so a parent is not shown "nothing" before the driver's day starts. The run shown is, in this order: one that is `IN_PROGRESS` (the morning run if both are), else the first `NOT_STARTED` (morning before afternoon), else the afternoon run, `FINISHED`. So after the morning run ends the parent sees the afternoon run as `NOT_STARTED` until it starts.
+
+**When `todayRun` is null.** The child has no route, or today is a holiday (including Saturday and Sunday). Nothing else makes it null: a school day with a route always has a run to show.
+
+**When `stopsLeft` is null.** Unless all of these hold: the shown run is `IN_PROGRESS`, the child is not absent without a confirmation (the bus skips them), and the child is not done on that run. Done is the driver screen's definition, [below](#what-the-driver-screen-works-out-for-itself): on a morning run any confirmation, on an afternoon run `DROPPED_OFF` or `NOT_PRESENT`. So a child already picked up (morning) or dropped off (afternoon) has no count.
+
+**How it is counted.** The stops of the run before this child's `position`, in the run's order (the route's order for the morning, reversed for the afternoon), that are neither done nor skippable, using the same definitions. Stops are counted by what is still to do, not by position alone: a stop already picked up out of order does not count, and an absent child's stop does not count unless the driver has confirmed them (then it is done or still to do like any confirmed stop). A student confirmed on the run who has left the route (`removedFromRoute`) is after the route's stops and so never counts. It is live: a student removed from the route before any confirmation drops out of the count at once, and a reorder by the head of transportation can make it go up. It follows the confirmations, not the bus's position.
+
+The same data counts under the same date and the same holiday rule as the driver's run, the date in `Asia/Beirut`. Example from [`driver-today.json`](samples/runs/driver-today.json): Tarek is stop 3 on the Hamra morning run, which is in progress; stops 1 and 2 are done, so he would have `stopsLeft: 0`, but he is absent, so it is null (as in [`parent-children.json`](samples/runs/parent-children.json)).
 
 ## Errors
 
@@ -229,11 +250,12 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 
 - **The school week is fixed.** The school runs Monday to Friday; Saturday and Sunday (by the date in `Asia/Beirut`) are `HOLIDAY` with no runs, and no one enters them in the calendar. The week is not a school setting; a different school week would be a new setting.
 - **No half-day times.** A half-day has no dismissal time of its own, so a half-day afternoon run has `schoolTime: null`. Adding one later is a new nullable field. Half-days are **planned only** in Sprint 3: a same-day early dismissal is not supported (no time, no notice, and a half-day cannot be removed). A dismissal time and a delete are a separate ticket.
-- **Afternoon has no schedule.** There are no afternoon stop times, no "expected pickup" for it and no stops-left count; the afternoon is the morning's students in reverse order.
+- **Afternoon has no schedule.** There are no afternoon stop times and no "expected pickup" for it; the afternoon is the morning's students in reverse order. The parent's `stopsLeft` on an afternoon run counts drop-offs still to do before the child's, in that order; it is not a time.
 - **A live roster.** A student the head moves off a route before their run starts, or after it is over, leaves that day's run (before it starts: at once; after it ends: from the next run). A student on a bus cannot be moved, and one who still gets moved by a race stays on the run as `removedFromRoute`. A route deleted mid-day takes its runs with it (they are no longer listed), and applying generated routes mid-day rewrites rosters without these checks. A driver or vehicle swapped when no run is in progress shows on the day's runs, past runs included. A signed-in driver not linked to a driver record is a driver with no route.
 - **No undo.** A wrong confirmation can only be moved on the way the table allows; it cannot be taken back.
 - **Whole days only.** An absence cannot be for the morning run alone, or start part-way through a day.
-- **The planned time only.** `expectedPickupTime` does not follow the bus. A late bus is visible only through the run's state and, later, the stops-left count.
+- **The planned time only.** `expectedPickupTime` does not follow the bus. A late bus is visible through the run's state and the stops-left count.
+- **A run nobody has opened reads as not started.** The parent's `todayRun` shows a direction with no run yet as `NOT_STARTED`. If a driver never opens the afternoon runs, the parent keeps seeing the afternoon run as not started.
 - **A run started and never ended** stays `IN_PROGRESS` for its date.
 
 ## Interfaces (backend)
@@ -244,7 +266,7 @@ Reach other modules through their **services** only (`backend/CLAUDE.md`). What 
 - `runs` (Hashem): the run and confirmation tables, `RunService`. Reads `RouteService.findRouteOfDriver` and `listRoutes` (the driver's route with its stops and arrival times; every route), `DriverService.findDriverIdForUser` (the driver of a signed-in user), `StudentService` (a confirmed student who has left the route), `SchoolSettingsService.getTimes` (`schoolTime`), `HolidayService.isHoliday` / `HalfDayService.isHalfDay` (the day's type) and, from SCRUM-239, `AbsenceService`.
 - `absences` (Moustafa): the absence table, `AbsenceService`. Reads `StudentService` (which children a parent has, as a lookup it does not have yet) and, for the head of transportation's list, `RouteService` (a student's route and position, as a lookup it does not have yet). Never reads `runs`.
 - The new 404 and 409 exceptions need entries in the shared `GlobalExceptionHandler` (otherwise they answer 500). Hashem and Moustafa both edit it, so the second to merge rebases onto the first.
-- The parent view is **its own module** (called `parent`), because it reads `runs` (SCRUM-237) and `runs` already reads `routes`; it would be a cycle inside `routes` or `students`. Nothing depends on it.
+- The parent view is **its own module** (called `parent`), because it reads `runs` (SCRUM-237, `RunService.todayRunStatus`: one call for all of a parent's children, with no road-provider call) and `runs` already reads `routes`; it would be a cycle inside `routes` or `students`. Nothing depends on it.
 - "Today" comes from one `Clock` bean and one zone constant (`Asia/Beirut`), so tests can fix the date and a server running in UTC is right after midnight in Beirut.
 - Flyway: each story takes the **next free** `V<n>` when it merges and never merges a number lower than one already on `develop`. Say so at stand-up when two are open at once.
 

@@ -8,6 +8,8 @@ import com.wassel.backend.routes.dto.RouteDriverSummary;
 import com.wassel.backend.routes.dto.RouteSummaryResponse;
 import com.wassel.backend.routes.dto.RouteVehicleSummary;
 import com.wassel.backend.routes.service.RouteService;
+import com.wassel.backend.runs.dto.ChildOnRoute;
+import com.wassel.backend.runs.dto.ChildRunResponse;
 import com.wassel.backend.runs.dto.ConfirmationResponse;
 import com.wassel.backend.runs.dto.DayType;
 import com.wassel.backend.runs.dto.RunCountsResponse;
@@ -55,6 +57,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 /**
  * The daily runs (SCRUM-233, docs/contracts/runs.md). Runs are created only when today's are asked for, by the
@@ -214,7 +217,14 @@ public class RunService {
 	}
 
 	private Map<UUID, List<Confirmation>> confirmationsOf(UUID schoolId, Collection<Run> runs) {
-		return confirmationRepository.findBySchoolIdAndRunIdIn(schoolId, runs.stream().map(Run::getId).toList())
+		return confirmationsByRunId(schoolId, runs.stream().map(Run::getId).toList());
+	}
+
+	private Map<UUID, List<Confirmation>> confirmationsByRunId(UUID schoolId, List<UUID> runIds) {
+		if (runIds.isEmpty()) {
+			return Map.of();
+		}
+		return confirmationRepository.findBySchoolIdAndRunIdIn(schoolId, runIds)
 				.stream().collect(Collectors.groupingBy(Confirmation::getRunId));
 	}
 
@@ -338,6 +348,86 @@ public class RunService {
 		return new RunsDayResponse(day, dayType, result);
 	}
 
+	/**
+	 * Today's run for each child, for the {@code parent} module (SCRUM-237). Every child given gets an answer, except
+	 * on a holiday, when the answer is empty. Read-only: a direction whose run does not exist yet counts as
+	 * {@code NOT_STARTED} instead of being created. It reads the school's runs and confirmations in one query each,
+	 * however many children there are, plus one roster read per route that has a run in progress and one absence
+	 * query for those rosters; it needs no road times. Not {@code @Transactional}, like the rest of this service.
+	 */
+	public Map<UUID, ChildRunResponse> todayRunStatus(UUID schoolId, Collection<ChildOnRoute> children) {
+		LocalDate today = LocalDate.now(clock);
+		if (children.isEmpty() || dayTypeOf(schoolId, today) == DayType.HOLIDAY) {
+			return Map.of();
+		}
+		List<UUID> routeIds = children.stream().map(ChildOnRoute::routeId).distinct().toList();
+		Map<UUID, Map<RunDirection, Run>> runs = runsOf(schoolId, today, routeIds);
+		Map<UUID, ShownRun> shown = routeIds.stream().collect(Collectors.toMap(Function.identity(),
+				routeId -> shownRun(routeId, runs.getOrDefault(routeId, Map.of()))));
+		// Only a run in progress needs its roster, confirmations and absences.
+		List<ShownRun> inProgress = shown.values().stream().filter(run -> run.state() == RunState.IN_PROGRESS).toList();
+		Map<UUID, List<Confirmation>> confirmed = confirmationsByRunId(schoolId,
+				inProgress.stream().map(ShownRun::id).toList());
+		Map<UUID, List<UUID>> rosters = inProgress.stream().collect(Collectors.toMap(ShownRun::routeId,
+				run -> studentService.listOnRoute(schoolId, run.routeId()).stream().map(StudentResponse::id).toList()));
+		Set<UUID> absent = absenceService.absentStudentIds(schoolId,
+				rosters.values().stream().flatMap(List::stream).collect(Collectors.toSet()), today);
+		return children.stream().collect(Collectors.toMap(ChildOnRoute::studentId, child -> {
+			ShownRun run = shown.get(child.routeId());
+			Integer left = run.state() != RunState.IN_PROGRESS ? null : stopsLeft(run.direction(), child.studentId(),
+					rosters.get(child.routeId()), latestOf(confirmed.getOrDefault(run.id(), List.of())), absent);
+			return new ChildRunResponse(run.direction(), run.state(), left);
+		}));
+	}
+
+	/** One of a route's two runs as the parent module sees it; {@code id} is null for a run that does not exist yet. */
+	private record ShownRun(UUID id, UUID routeId, RunDirection direction, RunState state) {
+	}
+
+	/**
+	 * The route's run a parent should see: one in progress (the morning one if both are), else the first not
+	 * started, else the afternoon one, finished. A direction with no row yet is a {@code NOT_STARTED} run that
+	 * is not saved, so the morning being over and the afternoon not opened yet reads as "not started".
+	 */
+	private ShownRun shownRun(UUID routeId, Map<RunDirection, Run> ofRoute) {
+		List<ShownRun> both = Arrays.stream(RunDirection.values()).map(direction -> {
+			Run run = ofRoute.get(direction);
+			return run == null ? new ShownRun(null, routeId, direction, RunState.NOT_STARTED)
+					: new ShownRun(run.getId(), routeId, direction, run.getState());
+		}).toList();
+		return Stream.of(RunState.IN_PROGRESS, RunState.NOT_STARTED)
+				.flatMap(state -> both.stream().filter(run -> run.state() == state))
+				.findFirst().orElse(both.getLast());
+	}
+
+	/**
+	 * Stops before the child's (in the run's order) that are still to do, by the contract's own definitions in
+	 * "What the driver screen works out for itself". Null for a child who is done or skipped, or who is not on the
+	 * roster any more (they left the route between the two reads).
+	 */
+	private static Integer stopsLeft(RunDirection direction, UUID studentId, List<UUID> morning,
+			Map<UUID, Confirmation> latest, Set<UUID> absent) {
+		List<UUID> order = direction == RunDirection.MORNING ? morning : morning.reversed();
+		int own = order.indexOf(studentId);
+		if (own < 0 || !pending(direction, studentId, latest, absent)) {
+			return null;
+		}
+		return (int) order.subList(0, own).stream().filter(id -> pending(direction, id, latest, absent)).count();
+	}
+
+	/** Neither done nor skippable: the bus still has to stop here. */
+	private static boolean pending(RunDirection direction, UUID studentId, Map<UUID, Confirmation> latest,
+			Set<UUID> absent) {
+		boolean skippable = absent.contains(studentId) && !latest.containsKey(studentId);
+		return !skippable && !isDone(direction, latest.get(studentId));
+	}
+
+	/** Morning: any confirmation. Afternoon: dropped off or not present (everyone is picked up at the gate). */
+	private static boolean isDone(RunDirection direction, Confirmation latest) {
+		return latest != null && (direction == RunDirection.MORNING
+				|| latest.getStatus() != ConfirmationStatus.PICKED_UP);
+	}
+
 	/** Monday to Friday, no holiday in the calendar: a school day, or a half-day if it is marked as one. */
 	private DayType dayTypeOf(UUID schoolId, LocalDate date) {
 		DayOfWeek weekday = date.getDayOfWeek();
@@ -347,7 +437,7 @@ public class RunService {
 		return halfDayService.isHalfDay(schoolId, date) ? DayType.HALF_DAY : DayType.SCHOOL_DAY;
 	}
 
-	/** The school's arrival time for a morning run, its dismissal time for an afternoon one. */
+	/** The school's arrival time for a morning run, its dismissal time for an afternoon one (null on a half-day). */
 	private LocalTime schoolTimeOf(RunDirection direction, DayType dayType, SchoolTimesResponse times) {
 		if (direction == RunDirection.MORNING) {
 			return times.arrivalTime();

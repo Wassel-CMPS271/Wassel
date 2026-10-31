@@ -412,15 +412,24 @@ that's the structure this codebase moved away from.
   only the migration enforces it.
 - `parent` — the signed-in parent's own children: route, driver, vehicle and expected pickup time
   (SCRUM-240), `GET /api/parent/children`. Shape and rules are in `docs/contracts/runs.md`. Its
-  own module, not a subpackage of `students` or `routes`, because it will also read `runs`
-  (SCRUM-237) once that lands, and `runs` already reads `routes` — putting this inside either
-  would make a cycle; nothing depends on `parent`. `ParentChildrenController`, not
+  own module, not a subpackage of `students` or `routes`, because it also reads `runs`
+  (SCRUM-237), and `runs` already reads `routes` — putting this inside either
+  would make a cycle; nothing depends on `parent`. Run status (SCRUM-237): each child has `todayRun`
+  (`{ direction, state, stopsLeft }`, `runs.dto.ChildRunResponse`, rules in the contract's "Today's run for a child"),
+  from one `RunService.todayRunStatus` call for all the parent's children, which reads no road time. The ids come from `listChildrenOf`, which is
+  what keeps a parent to their own children. It never creates a run: a direction with no row counts as `NOT_STARTED`
+  (the shown run is the one in progress, else the first not started, else the afternoon one), null on a holiday or for
+  a child with no route. `stopsLeft` counts the stops before the child that are neither done nor skippable (the
+  contract's driver-screen definitions, afternoon in reverse order) and is null unless that run is in progress and the
+  child is neither absent (without a confirmation) nor done. Both lookups are batched over the parent's children,
+  `RouteService.findRoutesForChildren` and `RunService.todayRunStatus`, so the work grows with the number of routes,
+  not children (`ParentRunStatusTests` compares statement counts for 1 and 6 children). `ParentChildrenController`, not
   `ParentController`, because `accounts.controller.ParentController` (the head of transportation's
   parent invite/list, a different endpoint) already takes that bean name. Stores nothing of its
   own: `ParentService.listChildren` reads `StudentService.listChildrenOf` (every child linked to
-  the parent, ordered by first name — added for this module) and, per child,
-  `RouteService.findRouteForChild` (route, driver with phone, vehicle, and the child's own
-  arrival time from the same `RouteService#schedule` the route's own stops use), empty when the
+  the parent, ordered by first name — added for this module) and, for all of them at once,
+  `RouteService.findRoutesForChildren` (route, driver with phone, vehicle, and the child's own
+  arrival time from the same `RouteService#schedule` the route's own stops use, one read per distinct route), none when the
   child has no route — the same "no route" treatment `findStudentRoute` (`absences`) gives a
   vanished route.
 
