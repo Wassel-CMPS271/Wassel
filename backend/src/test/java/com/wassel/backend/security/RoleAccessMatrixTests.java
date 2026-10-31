@@ -149,6 +149,7 @@ class RoleAccessMatrixTests {
 		TABLE.put("GET /api/driver/runs/today", Access.DRIVER_ONLY);
 		TABLE.put("POST /api/driver/runs/{runId}/start", Access.DRIVER_ONLY);
 		TABLE.put("POST /api/driver/runs/{runId}/end", Access.DRIVER_ONLY);
+		TABLE.put("PUT /api/driver/runs/{runId}/students/{studentId}/confirmation", Access.DRIVER_ONLY);
 		TABLE.put("GET /api/head-of-transport/runs", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("GET /api/head-of-transport/absences", Access.HEAD_OF_TRANSPORT_ONLY);
 
@@ -179,6 +180,7 @@ class RoleAccessMatrixTests {
 		VALID_BODIES.put("POST /api/head-of-transport/drivers", "{\"firstName\":\"Test\",\"lastName\":\"Driver\","
 				+ "\"phone\":\"+961 3 123 456\",\"email\":\"driver@wassel.test\"}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/drivers/{id}/vehicle", "{\"vehicleId\":\"" + SOME_ID + "\"}");
+		VALID_BODIES.put("PUT /api/driver/runs/{runId}/students/{studentId}/confirmation", "{\"status\":\"PICKED_UP\"}");
 		VALID_BODIES.put("POST /api/head-of-transport/vehicles", "{\"plateNumber\":\"A 123\",\"capacity\":10}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/vehicles/{id}/capacity", "{\"capacity\":10}");
 		VALID_BODIES.put("POST /api/head-of-transport/students", "{\"firstName\":\"Test\",\"lastName\":\"Student\","
