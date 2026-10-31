@@ -44,3 +44,6 @@ logs/
 .cache/
 tmp/
 temp/
+
+# Isolated Playwright credentials, databases, logs and diagnostics
+frontend/e2e-artifacts/

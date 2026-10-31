@@ -1,0 +1,12 @@
+spring:
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+logging:
+  level:
+    org.springframework.security: WARN
+    com.wassel.backend: INFO
