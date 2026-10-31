@@ -342,9 +342,13 @@ that's the structure this codebase moved away from.
   (`studentOnBus` returns data, `RouteService.requireNotOnABus` writes the 409 text with the name, the route name and the
   time in the `Clock` zone). Deleting a route and applying generated routes (`placeOnRoutes`) are not guarded. `RunService.driverRun` builds one whole run
   with stops, which start, end and confirm answer with. `runs` reads other modules through
-  `RouteService.findRouteOfDriver` and `listRoutes`, `DriverService.findDriverIdForUser`,
+  `RouteService.findRouteOfDriver` and `listRoutes`, `AbsenceService.absentStudentIds`, `DriverService.findDriverIdForUser`,
   `HolidayService.isHoliday`, `HalfDayService.isHalfDay` and `SchoolSettingsService.getTimes`. A half-day afternoon run has `schoolTime: null` (no half-day dismissal time
-  exists). Absences are SCRUM-239: until then every stop is `absent: false` and `counts.absent` is 0.
+  exists). `absent` (SCRUM-239) is this route's students with a live absence for today, from
+  `AbsenceService.absentStudentIds` (one query for the whole roster, never the repository), read fresh on every fetch so a
+  same-day report or cancellation shows on the next one. `counts.absent` is the stops with `absent: true` and no
+  confirmation (a confirmation wins, contract); it stays 0 on the head of transportation's stop-less `RunSummary`, which
+  has its own list instead (`GET /api/head-of-transport/absences`, from the `absences` module).
   Confirmations (SCRUM-235): `PUT /api/driver/runs/{runId}/students/{studentId}/confirmation` (`RunService.confirm`,
   `run_confirmations`, migration V8: unique on run + student + status, no foreign keys). One row per status, kept as
   history; the latest is the highest status (`ConfirmationStatus` is declared in rank order), not the newest row. `confirm`
@@ -394,7 +398,9 @@ that's the structure this codebase moved away from.
   same transaction (as `RouteService#lostRace` documents for its own races); `AbsenceService`
   catches the constraint's `DataIntegrityViolationException` and answers a plain 409 asking the
   client to retry, the same pattern `RouteService#propose` uses for two optimizations of a route
-  at once. Depends on `students`
+  at once. `AbsenceService.absentStudentIds` (SCRUM-239) is for `runs`: which of a route's students
+  have a live absence on a given date, one query for the whole roster rather than one per student.
+  Depends on `students`
   (`StudentService.findChildOf` for parent ownership of a `studentId` path variable,
   `StudentService.getStudent`/`getRouteId` for the head of transportation's list) and `routes`
   (`RouteService.findStudentRoute`, added for this module: a student's route and their 1-based
@@ -404,6 +410,19 @@ that's the structure this codebase moved away from.
   `@Table(uniqueConstraints=...)` equivalent to declare on the entity (unlike the plain unique
   constraints elsewhere), so Hibernate's schema `validate` can't catch a dropped or renamed one —
   only the migration enforces it.
+- `parent` — the signed-in parent's own children: route, driver, vehicle and expected pickup time
+  (SCRUM-240), `GET /api/parent/children`. Shape and rules are in `docs/contracts/runs.md`. Its
+  own module, not a subpackage of `students` or `routes`, because it will also read `runs`
+  (SCRUM-237) once that lands, and `runs` already reads `routes` — putting this inside either
+  would make a cycle; nothing depends on `parent`. `ParentChildrenController`, not
+  `ParentController`, because `accounts.controller.ParentController` (the head of transportation's
+  parent invite/list, a different endpoint) already takes that bean name. Stores nothing of its
+  own: `ParentService.listChildren` reads `StudentService.listChildrenOf` (every child linked to
+  the parent, ordered by first name — added for this module) and, per child,
+  `RouteService.findRouteForChild` (route, driver with phone, vehicle, and the child's own
+  arrival time from the same `RouteService#schedule` the route's own stops use), empty when the
+  child has no route — the same "no route" treatment `findStudentRoute` (`absences`) gives a
+  vanished route.
 
 ## Where things go
 

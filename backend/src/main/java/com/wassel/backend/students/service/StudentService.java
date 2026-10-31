@@ -291,6 +291,14 @@ public class StudentService {
 				.map(this::toResponse);
 	}
 
+	/** Every child linked to this parent, by first name (contract, SCRUM-240) — for the {@code parent} module. */
+	@Transactional(readOnly = true)
+	public List<StudentResponse> listChildrenOf(UUID schoolId, UUID parentUserId) {
+		return studentRepository.findBySchoolIdAndParentUserIdOrderByFirstNameAsc(schoolId, parentUserId).stream()
+				.map(this::toResponse)
+				.toList();
+	}
+
 	/**
 	 * This student's current route id, or {@code null} if they're not on one. For the {@code
 	 * routes} module to look up a student's route without this module exposing
