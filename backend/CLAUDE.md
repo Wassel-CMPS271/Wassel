@@ -349,6 +349,19 @@ that's the structure this codebase moved away from.
   `@Table(uniqueConstraints=...)` equivalent to declare on the entity (unlike the plain unique
   constraints elsewhere), so Hibernate's schema `validate` can't catch a dropped or renamed one —
   only the migration enforces it.
+- `parent` — the signed-in parent's own children: route, driver, vehicle and expected pickup time
+  (SCRUM-240), `GET /api/parent/children`. Shape and rules are in `docs/contracts/runs.md`. Its
+  own module, not a subpackage of `students` or `routes`, because it will also read `runs`
+  (SCRUM-237) once that lands, and `runs` already reads `routes` — putting this inside either
+  would make a cycle; nothing depends on `parent`. `ParentChildrenController`, not
+  `ParentController`, because `accounts.controller.ParentController` (the head of transportation's
+  parent invite/list, a different endpoint) already takes that bean name. Stores nothing of its
+  own: `ParentService.listChildren` reads `StudentService.listChildrenOf` (every child linked to
+  the parent, ordered by first name — added for this module) and, per child,
+  `RouteService.findRouteForChild` (route, driver with phone, vehicle, and the child's own
+  arrival time from the same `RouteService#schedule` the route's own stops use), empty when the
+  child has no route — the same "no route" treatment `findStudentRoute` (`absences`) gives a
+  vanished route.
 
 ## Where things go
 

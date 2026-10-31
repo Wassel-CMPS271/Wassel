@@ -30,6 +30,8 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
 
 	List<Student> findBySchoolIdAndRouteIdOrderByStopPositionAsc(UUID schoolId, UUID routeId);
 
+	List<Student> findBySchoolIdAndParentUserIdOrderByFirstNameAsc(UUID schoolId, UUID parentUserId);
+
 	List<Student> findBySchoolIdAndIdIn(UUID schoolId, Collection<UUID> ids);
 
 	/** Null when the route has no stops yet. The next stop's position is this plus one. */

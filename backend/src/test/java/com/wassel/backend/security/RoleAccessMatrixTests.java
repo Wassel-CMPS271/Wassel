@@ -152,6 +152,9 @@ class RoleAccessMatrixTests {
 		TABLE.put("GET /api/parent/children/{studentId}/absences", Access.PARENT_ONLY);
 		TABLE.put("POST /api/parent/children/{studentId}/absences", Access.PARENT_ONLY);
 		TABLE.put("DELETE /api/parent/children/{studentId}/absences/{absenceId}", Access.PARENT_ONLY);
+
+		// parent (SCRUM-240)
+		TABLE.put("GET /api/parent/children", Access.PARENT_ONLY);
 	}
 
 	// Path variables are all ids, so one UUID fits every {name}; the service then answers 404 or 400.
