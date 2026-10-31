@@ -146,6 +146,8 @@ class RoleAccessMatrixTests {
 		TABLE.put("POST /api/head-of-transport/routes/generation/{proposalId}/apply", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("DELETE /api/head-of-transport/routes/generation/{proposalId}", Access.HEAD_OF_TRANSPORT_ONLY);
 
+		TABLE.put("GET /api/driver/runs/today", Access.DRIVER_ONLY);
+		TABLE.put("GET /api/head-of-transport/runs", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("GET /api/head-of-transport/absences", Access.HEAD_OF_TRANSPORT_ONLY);
 
 		// parent (SCRUM-238)

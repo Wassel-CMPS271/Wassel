@@ -22,8 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -146,6 +148,20 @@ public class AbsenceService {
 		return absenceRepository.findActiveOn(schoolId, target).stream()
 				.map(absence -> toAbsentStudentResponse(schoolId, absence))
 				.toList();
+	}
+
+	/**
+	 * Which of the given students have a live absence covering {@code date} (contract: "a parent
+	 * reported this student absent for the run's date and has not cancelled it") — for the runs
+	 * module's per-stop {@code absent} flag (SCRUM-239), read through this service, never the
+	 * repository directly. Empty input skips the query rather than asking for an empty {@code IN}.
+	 */
+	@Transactional(readOnly = true)
+	public Set<UUID> absentStudentIds(UUID schoolId, Collection<UUID> studentIds, LocalDate date) {
+		if (studentIds.isEmpty()) {
+			return Set.of();
+		}
+		return Set.copyOf(absenceRepository.findAbsentStudentIds(schoolId, studentIds, date));
 	}
 
 	/**
