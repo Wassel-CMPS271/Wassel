@@ -1,0 +1,186 @@
+{
+  "date": "2026-10-22",
+  "dayType": "HALF_DAY",
+  "runs": [
+    {
+      "id": "50000000-0000-4000-8000-000000000011",
+      "date": "2026-10-22",
+      "direction": "MORNING",
+      "state": "FINISHED",
+      "schoolTime": "07:30",
+      "startedAt": "2026-10-22T03:58:00Z",
+      "endedAt": "2026-10-22T04:33:00Z",
+      "route": {
+        "id": "10000000-0000-4000-8000-000000000001",
+        "name": "Hamra morning run"
+      },
+      "vehicle": {
+        "id": "20000000-0000-4000-8000-000000000001",
+        "plateNumber": "A 123456",
+        "capacity": 14
+      },
+      "driver": {
+        "id": "30000000-0000-4000-8000-000000000001",
+        "firstName": "Karim",
+        "lastName": "Haddad"
+      },
+      "counts": {
+        "students": 4,
+        "absent": 1,
+        "pickedUp": 3,
+        "droppedOff": 3,
+        "notPresent": 0
+      }
+    },
+    {
+      "id": "50000000-0000-4000-8000-000000000012",
+      "date": "2026-10-22",
+      "direction": "AFTERNOON",
+      "state": "IN_PROGRESS",
+      "schoolTime": null,
+      "startedAt": "2026-10-22T09:50:00Z",
+      "endedAt": null,
+      "route": {
+        "id": "10000000-0000-4000-8000-000000000001",
+        "name": "Hamra morning run"
+      },
+      "vehicle": {
+        "id": "20000000-0000-4000-8000-000000000001",
+        "plateNumber": "A 123456",
+        "capacity": 14
+      },
+      "driver": {
+        "id": "30000000-0000-4000-8000-000000000001",
+        "firstName": "Karim",
+        "lastName": "Haddad"
+      },
+      "counts": {
+        "students": 4,
+        "absent": 1,
+        "pickedUp": 3,
+        "droppedOff": 1,
+        "notPresent": 0
+      }
+    },
+    {
+      "id": "50000000-0000-4000-8000-000000000013",
+      "date": "2026-10-22",
+      "direction": "MORNING",
+      "state": "FINISHED",
+      "schoolTime": "07:30",
+      "startedAt": "2026-10-22T04:02:00Z",
+      "endedAt": "2026-10-22T04:30:00Z",
+      "route": {
+        "id": "10000000-0000-4000-8000-000000000002",
+        "name": "Achrafieh morning run"
+      },
+      "vehicle": {
+        "id": "20000000-0000-4000-8000-000000000002",
+        "plateNumber": "B 234567",
+        "capacity": 14
+      },
+      "driver": {
+        "id": "30000000-0000-4000-8000-000000000002",
+        "firstName": "Nadine",
+        "lastName": "Saab"
+      },
+      "counts": {
+        "students": 4,
+        "absent": 0,
+        "pickedUp": 3,
+        "droppedOff": 3,
+        "notPresent": 1
+      }
+    },
+    {
+      "id": "50000000-0000-4000-8000-000000000014",
+      "date": "2026-10-22",
+      "direction": "AFTERNOON",
+      "state": "NOT_STARTED",
+      "schoolTime": null,
+      "startedAt": null,
+      "endedAt": null,
+      "route": {
+        "id": "10000000-0000-4000-8000-000000000002",
+        "name": "Achrafieh morning run"
+      },
+      "vehicle": {
+        "id": "20000000-0000-4000-8000-000000000002",
+        "plateNumber": "B 234567",
+        "capacity": 14
+      },
+      "driver": {
+        "id": "30000000-0000-4000-8000-000000000002",
+        "firstName": "Nadine",
+        "lastName": "Saab"
+      },
+      "counts": {
+        "students": 4,
+        "absent": 0,
+        "pickedUp": 0,
+        "droppedOff": 0,
+        "notPresent": 0
+      }
+    },
+    {
+      "id": "50000000-0000-4000-8000-000000000015",
+      "date": "2026-10-22",
+      "direction": "MORNING",
+      "state": "FINISHED",
+      "schoolTime": "07:30",
+      "startedAt": "2026-10-22T04:15:00Z",
+      "endedAt": "2026-10-22T04:31:00Z",
+      "route": {
+        "id": "10000000-0000-4000-8000-000000000003",
+        "name": "Verdun morning run"
+      },
+      "vehicle": {
+        "id": "20000000-0000-4000-8000-000000000003",
+        "plateNumber": "C 345678",
+        "capacity": 14
+      },
+      "driver": {
+        "id": "30000000-0000-4000-8000-000000000003",
+        "firstName": "Walid",
+        "lastName": "Barakat"
+      },
+      "counts": {
+        "students": 3,
+        "absent": 0,
+        "pickedUp": 2,
+        "droppedOff": 2,
+        "notPresent": 1
+      }
+    },
+    {
+      "id": "50000000-0000-4000-8000-000000000016",
+      "date": "2026-10-22",
+      "direction": "AFTERNOON",
+      "state": "NOT_STARTED",
+      "schoolTime": null,
+      "startedAt": null,
+      "endedAt": null,
+      "route": {
+        "id": "10000000-0000-4000-8000-000000000003",
+        "name": "Verdun morning run"
+      },
+      "vehicle": {
+        "id": "20000000-0000-4000-8000-000000000003",
+        "plateNumber": "C 345678",
+        "capacity": 14
+      },
+      "driver": {
+        "id": "30000000-0000-4000-8000-000000000003",
+        "firstName": "Walid",
+        "lastName": "Barakat"
+      },
+      "counts": {
+        "students": 3,
+        "absent": 0,
+        "pickedUp": 0,
+        "droppedOff": 0,
+        "notPresent": 0
+      }
+    }
+  ]
+}
