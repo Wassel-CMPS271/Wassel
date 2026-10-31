@@ -19,6 +19,7 @@ import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteCapacityExceededException;
 import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.routes.exception.RouteOptimizationConflictException;
+import com.wassel.backend.runs.exception.ConfirmationConflictException;
 import com.wassel.backend.runs.exception.RunNotFoundException;
 import com.wassel.backend.runs.exception.RunStateConflictException;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
@@ -297,6 +298,13 @@ public class GlobalExceptionHandler {
 	// A plain detail naming the run's state, as the runs contract has it.
 	@ExceptionHandler(RunStateConflictException.class)
 	public ProblemDetail handleRunStateConflict(RunStateConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	// A plain detail naming the student's current status, as the runs contract has it.
+	@ExceptionHandler(ConfirmationConflictException.class)
+	public ProblemDetail handleConfirmationConflict(ConfirmationConflictException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
 	}

@@ -8,22 +8,29 @@ import com.wassel.backend.routes.dto.RouteDriverSummary;
 import com.wassel.backend.routes.dto.RouteSummaryResponse;
 import com.wassel.backend.routes.dto.RouteVehicleSummary;
 import com.wassel.backend.routes.service.RouteService;
+import com.wassel.backend.runs.dto.ConfirmationResponse;
 import com.wassel.backend.runs.dto.DayType;
 import com.wassel.backend.runs.dto.RunCountsResponse;
 import com.wassel.backend.runs.dto.RunResponse;
 import com.wassel.backend.runs.dto.RunRouteResponse;
 import com.wassel.backend.runs.dto.RunStopResponse;
 import com.wassel.backend.runs.dto.RunsDayResponse;
+import com.wassel.backend.runs.entity.Confirmation;
+import com.wassel.backend.runs.entity.ConfirmationStatus;
 import com.wassel.backend.runs.entity.Run;
 import com.wassel.backend.runs.entity.RunDirection;
 import com.wassel.backend.runs.entity.RunState;
+import com.wassel.backend.runs.exception.ConfirmationConflictException;
 import com.wassel.backend.runs.exception.RunNotFoundException;
 import com.wassel.backend.runs.exception.RunStateConflictException;
+import com.wassel.backend.runs.repository.ConfirmationRepository;
 import com.wassel.backend.runs.repository.RunRepository;
 import com.wassel.backend.schools.dto.SchoolTimesResponse;
 import com.wassel.backend.schools.service.HalfDayService;
 import com.wassel.backend.schools.service.HolidayService;
 import com.wassel.backend.schools.service.SchoolSettingsService;
+import com.wassel.backend.students.dto.StudentResponse;
+import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.users.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -37,10 +44,13 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BinaryOperator;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -58,6 +68,10 @@ import java.util.stream.IntStream;
 public class RunService {
 
 	private final RunRepository runRepository;
+
+	private final ConfirmationRepository confirmationRepository;
+
+	private final StudentService studentService;
 
 	private final RouteService routeService;
 
@@ -95,8 +109,9 @@ public class RunService {
 			runRepository.createMissing(schoolId, route.id(), today);
 			return runsOf(schoolId, today, List.of(route.id())).get(route.id());
 		});
+		Map<UUID, List<Confirmation>> confirmed = confirmationsOf(schoolId, runs.values());
 		List<RunResponse> result = Arrays.stream(RunDirection.values())
-				.map(direction -> driverRun(runs.get(direction), route, morning, dayType, times))
+				.map(direction -> driverRun(runs.get(direction), route, morning, dayType, times, confirmed))
 				.toList();
 		return new RunsDayResponse(today, dayType, result);
 	}
@@ -142,7 +157,90 @@ public class RunService {
 			}
 			return current;
 		});
-		return driverRun(run, route, morningStops(schoolId, route, today), dayType, schoolSettingsService.getTimes(schoolId));
+		return driverAnswer(run, route, dayType);
+	}
+
+	/**
+	 * Records what the driver did with a student on a run (SCRUM-235, docs/contracts/runs.md "Confirmations") and
+	 * answers with the whole run. The 404 rule is the one {@link #move} has, then the student (a stop of this run,
+	 * or someone already confirmed on it who has left the route), then the run's state, then the table. The run row
+	 * is locked first, so another confirmation of the student, or the run ending, waits instead of interleaving.
+	 * The status a student already has is kept even when a later one exists: a retry that arrives after the next
+	 * tap is not a mistake. Not {@code @Transactional}, for the reason {@link #driverDay} gives.
+	 */
+	public RunResponse confirm(User driver, UUID runId, UUID studentId, ConfirmationStatus status) {
+		UUID schoolId = driver.getSchoolId();
+		LocalDate today = LocalDate.now(clock);
+		DayType dayType = dayTypeOf(schoolId, today);
+		DriverRouteResponse route = routeOf(driver, dayType).orElseThrow(RunService::runNotFound);
+		Run run = transactionTemplate.execute(tx -> {
+			Run locked = runRepository.findLockedBySchoolIdAndId(schoolId, runId)
+					.filter(found -> found.getRouteId().equals(route.id()) && found.getRunDate().equals(today))
+					.orElseThrow(RunService::runNotFound);
+			List<ConfirmationStatus> had = confirmationRepository
+					.findBySchoolIdAndRunIdAndStudentId(schoolId, runId, studentId).stream()
+					.map(Confirmation::getStatus).toList();
+			if (had.isEmpty() && route.stops().stream().noneMatch(stop -> stop.studentId().equals(studentId))) {
+				throw new RunNotFoundException("Student is not on this run");
+			}
+			if (locked.getState() != RunState.IN_PROGRESS) {
+				throw new RunStateConflictException("Run is " + locked.getState() + ", so it cannot be confirmed");
+			}
+			if (had.contains(status)) {
+				return locked;
+			}
+			ConfirmationStatus current = had.stream().max(Comparator.naturalOrder()).orElse(null);
+			boolean allowed = switch (status) {
+				case NOT_PRESENT -> current == null;
+				case PICKED_UP -> current == null || current == ConfirmationStatus.NOT_PRESENT;
+				case DROPPED_OFF -> current == ConfirmationStatus.PICKED_UP;
+			};
+			if (!allowed) {
+				throw new ConfirmationConflictException("Student " + (current == null ? "has no confirmation yet"
+						: "is " + current) + ", so they cannot be marked " + status);
+			}
+			// The time is read after the lock, so rows are saved in the order the rule saw them.
+			confirmationRepository.insertIfMissing(schoolId, runId, studentId, status.name(), Instant.now(clock));
+			return locked;
+		});
+		return driverAnswer(run, route, dayType);
+	}
+
+	/** One run as the driver sees it, with the confirmations as stored now. */
+	private RunResponse driverAnswer(Run run, DriverRouteResponse route, DayType dayType) {
+		UUID schoolId = run.getSchoolId();
+		return driverRun(run, route, morningStops(schoolId, route, run.getRunDate()), dayType, schoolSettingsService.getTimes(schoolId),
+				confirmationsOf(schoolId, List.of(run)));
+	}
+
+	private Map<UUID, List<Confirmation>> confirmationsOf(UUID schoolId, Collection<Run> runs) {
+		return confirmationRepository.findBySchoolIdAndRunIdIn(schoolId, runs.stream().map(Run::getId).toList())
+				.stream().collect(Collectors.groupingBy(Confirmation::getRunId));
+	}
+
+	/** Each student's latest confirmation on a run: the highest status they have, not the newest row. */
+	private static Map<UUID, Confirmation> latestOf(Collection<Confirmation> confirmed) {
+		return confirmed.stream().collect(Collectors.toMap(Confirmation::getStudentId, Function.identity(),
+				BinaryOperator.maxBy(Comparator.comparing(Confirmation::getStatus))));
+	}
+
+	/**
+	 * {@code absent} is the stops with {@code absent: true} and no confirmation (contract: a confirmation wins); 0
+	 * where no stops were fetched (the head of transportation's {@code RunSummary}).
+	 */
+	private static RunCountsResponse countsOf(int students, int absent, Collection<Confirmation> latest) {
+		int droppedOff = countOf(latest, ConfirmationStatus.DROPPED_OFF);
+		return new RunCountsResponse(students, absent, countOf(latest, ConfirmationStatus.PICKED_UP) + droppedOff, droppedOff,
+				countOf(latest, ConfirmationStatus.NOT_PRESENT));
+	}
+
+	private static int countOf(Collection<Confirmation> latest, ConfirmationStatus status) {
+		return (int) latest.stream().filter(confirmation -> confirmation.getStatus() == status).count();
+	}
+
+	private static ConfirmationResponse responseOf(Confirmation confirmation) {
+		return confirmation == null ? null
+				: new ConfirmationResponse(confirmation.getStatus(), confirmation.getConfirmedAt());
 	}
 
 	/** The run, if it is one of the route's runs on that day in that school. */
@@ -167,14 +265,34 @@ public class RunService {
 	}
 
 	/**
-	 * One run with its stops, as the driver sees it. Today's runs, start and end use it, and so should confirm
-	 * (SCRUM-235), which answers with the whole run: one place to fill in absences and confirmations.
+	 * One run with its stops, as the driver sees it. Today's runs, start, end and confirm use it: one place to
+	 * fill in absences (SCRUM-239) and confirmations. Each stop shows its latest confirmation on this run. A
+	 * student confirmed on the run who has left the route is added last, so a child on the bus never disappears.
 	 */
 	private RunResponse driverRun(Run run, DriverRouteResponse route, List<RunStopResponse> morning, DayType dayType,
-			SchoolTimesResponse times) {
-		List<RunStopResponse> stops = run.getDirection() == RunDirection.MORNING ? morning : afternoonStops(morning);
+			SchoolTimesResponse times, Map<UUID, List<Confirmation>> confirmed) {
+		Map<UUID, Confirmation> latest = latestOf(confirmed.getOrDefault(run.getId(), List.of()));
+		List<RunStopResponse> stops = (run.getDirection() == RunDirection.MORNING ? morning : afternoonStops(morning))
+				.stream().map(stop -> stop.withConfirmation(responseOf(latest.get(stop.studentId()))))
+				.collect(Collectors.toCollection(ArrayList::new));
+		appendRemoved(stops, run.getSchoolId(), latest);
 		return toResponse(run, new RunRouteResponse(route.id(), route.name()), route.vehicle(), route.driver(),
-				stops.size(), schoolTimeOf(run.getDirection(), dayType, times), stops);
+				schoolTimeOf(run.getDirection(), dayType, times), stops, countsOf(stops.size(),
+						(int) stops.stream().filter(stop -> stop.absent() && stop.confirmation() == null).count(),
+						latest.values()));
+	}
+
+	/** After the route's stops, numbered on, in the order they were confirmed. Their details come from the roster. */
+	private void appendRemoved(List<RunStopResponse> stops, UUID schoolId, Map<UUID, Confirmation> latest) {
+		Set<UUID> shown = stops.stream().map(RunStopResponse::studentId).collect(Collectors.toSet());
+		latest.values().stream().filter(confirmation -> !shown.contains(confirmation.getStudentId()))
+				.sorted(Comparator.comparing(Confirmation::getConfirmedAt).thenComparing(Confirmation::getStudentId))
+				.forEach(confirmation -> {
+					StudentResponse student = studentService.getStudent(schoolId, confirmation.getStudentId());
+					stops.add(new RunStopResponse(student.id(), stops.size() + 1, student.firstName(),
+							student.lastName(), student.address(), student.latitude(), student.longitude(), null,
+							student.guardianName(), student.guardianPhone(), false, responseOf(confirmation), true));
+				});
 	}
 
 	/**
@@ -197,6 +315,11 @@ public class RunService {
 			routeIds.forEach(routeId -> runRepository.createMissing(schoolId, routeId, day));
 		}
 		Map<UUID, Map<RunDirection, Run>> runs = runsOf(schoolId, day, routeIds);
+		Map<UUID, List<Confirmation>> confirmed = confirmationsOf(schoolId,
+				runs.values().stream().flatMap(ofRoute -> ofRoute.values().stream()).toList());
+		// A confirmed student who has left the route stays on its run (contract), so they count as one of its students.
+		Map<UUID, UUID> routeOfStudent = studentService.findRouteIds(schoolId, confirmed.values().stream()
+				.flatMap(List::stream).map(Confirmation::getStudentId).collect(Collectors.toSet()));
 		SchoolTimesResponse times = schoolSettingsService.getTimes(schoolId);
 		List<RunResponse> result = new ArrayList<>();
 		for (RouteSummaryResponse route : routes) {
@@ -204,8 +327,11 @@ public class RunService {
 			for (RunDirection direction : RunDirection.values()) {
 				Run run = ofRoute.get(direction);
 				if (run != null) {
+					Map<UUID, Confirmation> latest = latestOf(confirmed.getOrDefault(run.getId(), List.of()));
+					long left = latest.keySet().stream().filter(id -> !route.id().equals(routeOfStudent.get(id))).count();
 					result.add(toResponse(run, new RunRouteResponse(route.id(), route.name()), route.vehicle(),
-							route.driver(), route.studentCount(), schoolTimeOf(direction, dayType, times), null));
+							route.driver(), schoolTimeOf(direction, dayType, times), null,
+							countsOf(route.studentCount() + (int) left, 0, latest.values())));
 				}
 			}
 		}
@@ -240,7 +366,7 @@ public class RunService {
 	 * The route's stops as run stops, in the route's order with the times and guardians the routes module read
 	 * together with it. {@code absent} (SCRUM-239) is this route's students with a live absence for {@code today},
 	 * from {@link AbsenceService#absentStudentIds}, read fresh on every fetch — never its repository. Confirmations
-	 * are not recorded yet (SCRUM-235): every stop is unconfirmed and still on the route.
+	 * belong to a run, so {@link #driverRun} adds them.
 	 */
 	private List<RunStopResponse> morningStops(UUID schoolId, DriverRouteResponse route, LocalDate today) {
 		List<UUID> studentIds = route.stops().stream().map(DriverRouteStop::studentId).toList();
@@ -261,13 +387,8 @@ public class RunService {
 	}
 
 	private RunResponse toResponse(Run run, RunRouteResponse route, RouteVehicleSummary vehicle,
-			RouteDriverSummary driver, int students, LocalTime schoolTime, List<RunStopResponse> stops) {
-		// absent (contract: "stops with absent:true and no confirmation") is exactly the absent count
-		// while there are no confirmations yet (SCRUM-235); null here means no stops were fetched
-		// (the head of transportation's RunSummary), so it stays 0 like the rest of counts until then.
-		int absent = stops == null ? 0 : (int) stops.stream().filter(RunStopResponse::absent).count();
+			RouteDriverSummary driver, LocalTime schoolTime, List<RunStopResponse> stops, RunCountsResponse counts) {
 		return new RunResponse(run.getId(), run.getRunDate(), run.getDirection(), run.getState(), schoolTime,
-				run.getStartedAt(), run.getEndedAt(), route, vehicle, driver,
-				new RunCountsResponse(students, absent, 0, 0, 0), stops);
+				run.getStartedAt(), run.getEndedAt(), route, vehicle, driver, counts, stops);
 	}
 }

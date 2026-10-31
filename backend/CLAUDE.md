@@ -334,24 +334,34 @@ that's the structure this codebase moved away from.
   a transaction around it holds a connection; `driverDay` uses a `TransactionTemplate` only around `createMissing` and the
   read of the runs. `routes/config/TravelTimeWarmer` (not in the `test` profile) calls `RouteService.warmTravelTimes` on its
   own thread at startup so the road-time cache is not empty for the first requests after a restart. The afternoon is that
-  list reversed with no times and no confirmations. `RunStopResponse.removedFromRoute` is always false until SCRUM-235, which
-  adds a confirmed student who has left the route to the end of the stops. `routes` declares `service/ActiveRunGuard` and
+  list reversed with no times; each run shows its own confirmations. `routes` declares `service/ActiveRunGuard` and
   `RouteService` calls it before changing a route's driver or vehicle (`editRoute`) and before a student leaves their route
   (`addStudent` onto another route, `removeStudent`); a block is `ActiveRunConflictException`, a 409 with the guard's text.
   `runs/service/RunActiveRunGuard` implements it (its own class, so `RunService` and `RouteService` do not need each other's
-  beans); only today's `IN_PROGRESS` runs block a route change, and the student-move check always allows until 235 has
-  confirmations. Deleting a route and applying generated routes (`placeOnRoutes`) are not guarded. `absent`
-  (SCRUM-239) is this route's students with a live absence for today, from `AbsenceService.absentStudentIds`
-  (one query for the whole roster, never the repository), read fresh on every fetch so a same-day report or
-  cancellation shows on the next one. `counts.absent` follows it wherever stops are fetched (the driver's own
-  run); it stays 0 on the head of transportation's stop-less `RunSummary`, which has its own list instead
-  (`GET /api/head-of-transport/absences`, from the `absences` module). `RunService.driverRun` builds one whole run
-  with stops, which start, end and confirm should answer with. `runs` reads other modules through
-  `RouteService.findRouteOfDriver` and `listRoutes`, `AbsenceService.absentStudentIds`,
-  `DriverService.findDriverIdForUser`, `HolidayService.isHoliday`, `HalfDayService.isHalfDay` and
-  `SchoolSettingsService.getTimes`. A half-day afternoon run has `schoolTime: null` (no half-day dismissal time
-  exists). Confirmations are SCRUM-235: until then every stop's `confirmation` is `null` and
-  `pickedUp`/`droppedOff`/`notPresent` are 0.
+  beans); only today's `IN_PROGRESS` runs block a route change, and a student with any confirmation on one blocks a move
+  (`studentOnBus` returns data, `RouteService.requireNotOnABus` writes the 409 text with the name, the route name and the
+  time in the `Clock` zone). Deleting a route and applying generated routes (`placeOnRoutes`) are not guarded. `RunService.driverRun` builds one whole run
+  with stops, which start, end and confirm answer with. `runs` reads other modules through
+  `RouteService.findRouteOfDriver` and `listRoutes`, `AbsenceService.absentStudentIds`, `DriverService.findDriverIdForUser`,
+  `HolidayService.isHoliday`, `HalfDayService.isHalfDay` and `SchoolSettingsService.getTimes`. A half-day afternoon run has `schoolTime: null` (no half-day dismissal time
+  exists). `absent` (SCRUM-239) is this route's students with a live absence for today, from
+  `AbsenceService.absentStudentIds` (one query for the whole roster, never the repository), read fresh on every fetch so a
+  same-day report or cancellation shows on the next one. `counts.absent` is the stops with `absent: true` and no
+  confirmation (a confirmation wins, contract); it stays 0 on the head of transportation's stop-less `RunSummary`, which
+  has its own list instead (`GET /api/head-of-transport/absences`, from the `absences` module).
+  Confirmations (SCRUM-235): `PUT /api/driver/runs/{runId}/students/{studentId}/confirmation` (`RunService.confirm`,
+  `run_confirmations`, migration V8: unique on run + student + status, no foreign keys). One row per status, kept as
+  history; the latest is the highest status (`ConfirmationStatus` is declared in rank order), not the newest row. `confirm`
+  finds the route outside any transaction (like `move`), then in one `TransactionTemplate` locks the run row
+  (`RunRepository.findLockedBySchoolIdAndId`, the codebase's only row lock: it orders a confirmation against another
+  of the same student and against the run ending), checks the student, the state and the transition table, and inserts with
+  `ConfirmationRepository.insertIfMissing` (`ON CONFLICT DO NOTHING`). The time is read after the lock. A status the student
+  already has is 200 with no change even if a later one exists. A student confirmed on a run who has left the route is
+  appended last with `removedFromRoute: true`, details from `StudentService.getStudent`. `counts` come from the latest
+  confirmations, and both the driver's runs and the head's list count such students in `students` (the head's list reads
+  their current routes in one `StudentService.findRouteIds`). Tests hold the run lock in another transaction to prove
+  `confirm` takes it before its checks, and that it and the run ending wait for each other. `ConfirmationStatus` order
+  is pinned by a test, because "latest" depends on it.
   Start and end (SCRUM-234): `POST /api/driver/runs/{runId}/start` and `/end` (`DriverRunController`, `RunService.start`/`end`
   over one `move`), no migration (`started_at`/`ended_at` were in V7). `start`/`end` are not `@Transactional` (the route lookup can wait on the road provider): `move` finds the route first, then does the checks, the update and the re-read in one `TransactionTemplate`. The move is `RunRepository.markStarted`/`markEnded`,
   a conditional `UPDATE ... WHERE school AND state = <expected>` (the `LoginCode` pattern, no `@Version` or lock), so
@@ -364,7 +374,8 @@ that's the structure this codebase moved away from.
   nothing reveals which (written into `docs/contracts/runs.md`, Run states and Errors). The cost is known and accepted: a run started and not ended before midnight in Beirut, or on a day that
   becomes a holiday, can no longer be ended by the driver and stays `IN_PROGRESS` (the contract's "stays that way"), and a
   repeated end that arrives after midnight is a 404, not the usual 200. A start racing an end on the same run can get a 409
-  `FINISHED`. SCRUM-235 should find its run the same way (`routeOf` then `todaysRun`), so confirmations follow the same rule.
+  `FINISHED`. Confirmations follow the same rule: `confirm` finds the route with `routeOf`, then locks the run and checks it is
+  that route's run for today.
 - `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
   of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
   are in `docs/contracts/runs.md` (owned jointly with the `runs` module, SCRUM-232/239); build

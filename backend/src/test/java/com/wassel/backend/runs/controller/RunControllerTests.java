@@ -15,9 +15,12 @@ import com.wassel.backend.routes.repository.RouteVersionRepository;
 import com.wassel.backend.routes.service.RouteService;
 import com.wassel.backend.routing.service.OpenRouteServiceTravelTimes;
 import com.wassel.backend.routing.service.TravelTimes;
+import com.wassel.backend.runs.entity.Confirmation;
+import com.wassel.backend.runs.entity.ConfirmationStatus;
 import com.wassel.backend.runs.entity.Run;
 import com.wassel.backend.runs.entity.RunDirection;
 import com.wassel.backend.runs.entity.RunState;
+import com.wassel.backend.runs.repository.ConfirmationRepository;
 import com.wassel.backend.runs.repository.RunRepository;
 import com.wassel.backend.schools.entity.HalfDay;
 import com.wassel.backend.schools.entity.Holiday;
@@ -35,6 +38,7 @@ import com.wassel.backend.vehicles.repository.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +50,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
@@ -53,6 +58,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.nio.file.Files;
@@ -66,10 +72,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -79,6 +88,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -164,6 +174,12 @@ class RunControllerTests {
 	private RunRepository runRepository;
 
 	@Autowired
+	private ConfirmationRepository confirmationRepository;
+
+	@Autowired
+	private TransactionTemplate transactionTemplate;
+
+	@Autowired
 	private RouteRepository routeRepository;
 
 	@Autowired
@@ -200,6 +216,7 @@ class RunControllerTests {
 		travelTimesInTransaction = false;
 		whileTravelTimesRun = () -> {
 		};
+		confirmationRepository.deleteAll();
 		runRepository.deleteAll();
 		proposalRepository.deleteAll();
 		versionRepository.deleteAll();
@@ -1441,5 +1458,570 @@ class RunControllerTests {
 		act("end", morning, schoolA, f.userId()).andExpect(status().isOk());
 		editRoute(f.route(), "Hamra morning run", f.route().getVehicleId(), other.getId())
 				.andExpect(status().isOk());
+	}
+
+	// ---- SCRUM-235: confirmations ----
+
+	/** Rami, Salma and Tarek (stops 1 to 3) on the route "Hamra", whose morning run is in progress. */
+	private record Bus(Fixture f, String morning, String afternoon, UUID rami, UUID salma, UUID tarek) {
+	}
+
+	private Bus aBusInProgress() throws Exception {
+		schoolTimes(schoolA, "07:30", "14:30");
+		Fixture f = driverWithRoute(schoolA, "Hamra");
+		String day = driverToday(schoolA, f.userId());
+		act("start", runId(day, 0), schoolA, f.userId()).andExpect(status().isOk());
+		return new Bus(f, runId(day, 0), runId(day, 1), stopId(day, 0), stopId(day, 1), stopId(day, 2));
+	}
+
+	private UUID stopId(String day, int index) {
+		return UUID.fromString(JsonPath.read(day, "$.runs[0].stops[" + index + "].studentId"));
+	}
+
+	private ResultActions confirmRaw(String runId, UUID studentId, String body, UUID schoolId, UUID userId)
+			throws Exception {
+		return mockMvc.perform(put(RUN_URL + runId + "/students/" + studentId + "/confirmation")
+				.with(loggedInAs(Role.DRIVER, schoolId, userId)).contentType(MediaType.APPLICATION_JSON).content(body));
+	}
+
+	private ResultActions confirmOn(Bus bus, String runId, UUID studentId, String status) throws Exception {
+		return confirmRaw(runId, studentId, "{\"status\":\"" + status + "\"}", schoolA, bus.f().userId());
+	}
+
+	private ResultActions confirm(Bus bus, UUID studentId, String status) throws Exception {
+		return confirmOn(bus, bus.morning(), studentId, status);
+	}
+
+	/** Takes the student off their route behind the route API's back, as a race with the head's click would. */
+	private void leaveRoute(UUID studentId) {
+		Student student = studentRepository.findById(studentId).orElseThrow();
+		student.setRouteId(null);
+		student.setStopPosition(null);
+		studentRepository.save(student);
+	}
+
+	/** Runs the jobs at the same instant, with the clock ticking so a request that overwrote the first time shows. */
+	private List<MockHttpServletResponse> allAtOnce(List<Callable<MockHttpServletResponse>> jobs) throws Exception {
+		CountDownLatch go = new CountDownLatch(1);
+		AtomicBoolean done = new AtomicBoolean();
+		ExecutorService pool = Executors.newFixedThreadPool(jobs.size() + 1);
+		pool.submit(() -> {
+			for (long tick = 1; !done.get(); tick++) {
+				clock.set(WEDNESDAY.plusMillis(tick * 7));
+				Thread.sleep(1);
+			}
+			return null;
+		});
+		try {
+			List<Future<MockHttpServletResponse>> futures = new ArrayList<>();
+			for (Callable<MockHttpServletResponse> job : jobs) {
+				futures.add(pool.submit(() -> {
+					go.await();
+					return job.call();
+				}));
+			}
+			go.countDown();
+			List<MockHttpServletResponse> results = new ArrayList<>();
+			for (Future<MockHttpServletResponse> future : futures) {
+				results.add(future.get());
+			}
+			return results;
+		} finally {
+			done.set(true);
+			pool.shutdownNow();
+		}
+	}
+
+	@Test
+	void pickingUpAStudentSavesTheServersTimeAndAnswersWithTheWholeRun() throws Exception {
+		Bus bus = aBusInProgress();
+
+		// A time sent by the client is ignored: the server's is the only one.
+		confirmRaw(bus.morning(), bus.rami(), "{\"status\":\"PICKED_UP\",\"at\":\"2000-01-01T00:00:00Z\"}", schoolA,
+				bus.f().userId())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(bus.morning()))
+				.andExpect(jsonPath("$.state").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.stops.length()").value(3))
+				.andExpect(jsonPath("$.stops[0].confirmation.status").value("PICKED_UP"))
+				.andExpect(jsonPath("$.stops[0].confirmation.at").value("2026-10-28T08:00:00Z"))
+				.andExpect(jsonPath("$.stops[1].confirmation").value(nullValue()))
+				.andExpect(jsonPath("$.counts.students").value(3))
+				.andExpect(jsonPath("$.counts.pickedUp").value(1))
+				.andExpect(jsonPath("$.counts.droppedOff").value(0))
+				.andExpect(jsonPath("$.counts.notPresent").value(0));
+
+		String day = driverToday(schoolA, bus.f().userId());
+		assertEquals("PICKED_UP", JsonPath.read(day, "$.runs[0].stops[0].confirmation.status"));
+		assertEquals(1, (int) JsonPath.read(day, "$.runs[0].counts.pickedUp"));
+		assertEquals(0, (int) JsonPath.read(day, "$.runs[1].counts.pickedUp"));
+	}
+
+	@Test
+	void everyMoveTheContractAllowsIsRecordedAndCounted() throws Exception {
+		Bus bus = aBusInProgress();
+
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isOk());
+		clock.set(WEDNESDAY.plusSeconds(60));
+		confirm(bus, bus.rami(), "DROPPED_OFF").andExpect(status().isOk())
+				.andExpect(jsonPath("$.stops[0].confirmation.status").value("DROPPED_OFF"))
+				.andExpect(jsonPath("$.stops[0].confirmation.at").value("2026-10-28T08:01:00Z"));
+		confirm(bus, bus.salma(), "NOT_PRESENT").andExpect(status().isOk());
+		// The child came late.
+		confirm(bus, bus.salma(), "PICKED_UP").andExpect(status().isOk());
+		confirm(bus, bus.tarek(), "NOT_PRESENT").andExpect(status().isOk())
+				.andExpect(jsonPath("$.stops[1].confirmation.status").value("PICKED_UP"))
+				.andExpect(jsonPath("$.stops[2].confirmation.status").value("NOT_PRESENT"))
+				.andExpect(jsonPath("$.counts.students").value(3))
+				.andExpect(jsonPath("$.counts.pickedUp").value(2))
+				.andExpect(jsonPath("$.counts.droppedOff").value(1))
+				.andExpect(jsonPath("$.counts.notPresent").value(1));
+
+		assertEquals(5, confirmationRepository.count());
+	}
+
+	@ParameterizedTest
+	@CsvSource({
+			"NONE,DROPPED_OFF,no confirmation",
+			"NOT_PRESENT,DROPPED_OFF,NOT_PRESENT",
+			"PICKED_UP,NOT_PRESENT,PICKED_UP",
+			"DROPPED_OFF,NOT_PRESENT,DROPPED_OFF" })
+	void aMoveTheTableRefusesIs409NamingTheCurrentStatusAndChangesNothing(String current, String requested,
+			String named) throws Exception {
+		Bus bus = aBusInProgress();
+		List<String> path = switch (current) {
+			case "NONE" -> List.of();
+			case "DROPPED_OFF" -> List.of("PICKED_UP", "DROPPED_OFF");
+			default -> List.of(current);
+		};
+		for (String status : path) {
+			confirm(bus, bus.rami(), status).andExpect(status().isOk());
+		}
+
+		confirm(bus, bus.rami(), requested)
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(containsString(named)))
+				.andExpect(jsonPath("$.detail").value(containsString(requested)));
+
+		assertEquals(path.size(), confirmationRepository.count());
+		if (!current.equals("NONE")) {
+			assertEquals(current, JsonPath.read(driverToday(schoolA, bus.f().userId()),
+					"$.runs[0].stops[0].confirmation.status"));
+		}
+	}
+
+	@Test
+	void theSameStatusAgainAnswers200AndKeepsTheFirstTime() throws Exception {
+		Bus bus = aBusInProgress();
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isOk());
+		clock.set(WEDNESDAY.plusSeconds(300));
+
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isOk())
+				.andExpect(jsonPath("$.stops[0].confirmation.at").value("2026-10-28T08:00:00Z"))
+				.andExpect(jsonPath("$.counts.pickedUp").value(1));
+
+		assertEquals(1, confirmationRepository.count());
+	}
+
+	/** A retry that arrives after the next tap: the phone dropped the first answer, not the first request. */
+	@Test
+	void aLateRetryOfAnEarlierStatusAnswers200AndChangesNothing() throws Exception {
+		Bus bus = aBusInProgress();
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isOk());
+		clock.set(WEDNESDAY.plusSeconds(600));
+		confirm(bus, bus.rami(), "DROPPED_OFF").andExpect(status().isOk());
+
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isOk())
+				.andExpect(jsonPath("$.stops[0].confirmation.status").value("DROPPED_OFF"))
+				.andExpect(jsonPath("$.stops[0].confirmation.at").value("2026-10-28T08:10:00Z"));
+
+		assertEquals(2, confirmationRepository.count());
+	}
+
+	@Test
+	void aRunThatIsNotInProgressRefusesConfirmationsWith409NamingItsState() throws Exception {
+		schoolTimes(schoolA, "07:30", "14:30");
+		Fixture f = driverWithRoute(schoolA, "Hamra");
+		String day = driverToday(schoolA, f.userId());
+		String morning = runId(day, 0);
+		Bus bus = new Bus(f, morning, runId(day, 1), stopId(day, 0), stopId(day, 1), stopId(day, 2));
+
+		confirm(bus, bus.rami(), "PICKED_UP")
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(containsString("NOT_STARTED")));
+		// The student is checked first: a stranger on a run that has not started is a 404, not a 409.
+		confirm(bus, UUID.randomUUID(), "PICKED_UP").andExpect(status().isNotFound());
+
+		act("start", morning, schoolA, f.userId()).andExpect(status().isOk());
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isOk());
+		act("end", morning, schoolA, f.userId()).andExpect(status().isOk());
+		confirm(bus, bus.rami(), "DROPPED_OFF")
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(containsString("FINISHED")));
+
+		assertEquals(1, confirmationRepository.count());
+	}
+
+	@Test
+	void aRunOrStudentThatIsNotTheDriversIsTheSame404AndRecordsNothing() throws Exception {
+		Bus bus = aBusInProgress();
+		Fixture otherDriver = driverWithRoute(schoolA, "Verdun");
+		Student stranger = aStudent(schoolA, otherDriver.route(), 4, "Nour");
+		Fixture otherSchool = driverWithRoute(schoolB, "Hamra");
+
+		confirm(bus, UUID.randomUUID(), "PICKED_UP").andExpect(status().isNotFound());
+		confirm(bus, stranger.getId(), "PICKED_UP").andExpect(status().isNotFound());
+		confirmRaw(bus.morning(), bus.rami(), "{\"status\":\"PICKED_UP\"}", schoolA, otherDriver.userId())
+				.andExpect(status().isNotFound());
+		confirmRaw(bus.morning(), bus.rami(), "{\"status\":\"PICKED_UP\"}", schoolB, otherSchool.userId())
+				.andExpect(status().isNotFound());
+		confirmOn(bus, UUID.randomUUID().toString(), bus.rami(), "PICKED_UP").andExpect(status().isNotFound());
+
+		// Thursday in Beirut: Wednesday's run is no longer in the driver's list.
+		clock.set(Instant.parse("2026-10-29T08:00:00Z"));
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isNotFound());
+		clock.set(WEDNESDAY);
+
+		holidayRepository.save(Holiday.builder().schoolId(schoolA).date(LocalDate.parse(WEDNESDAY_DATE))
+				.name("Snow day").build());
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isNotFound());
+
+		assertEquals(0, confirmationRepository.count());
+	}
+
+	@Test
+	void aMissingOrUnknownStatusIsA400() throws Exception {
+		Bus bus = aBusInProgress();
+
+		for (String body : List.of("{}", "{\"status\":null}")) {
+			confirmRaw(bus.morning(), bus.rami(), body, schoolA, bus.f().userId())
+					.andExpect(status().isBadRequest())
+					.andExpect(jsonPath("$.errors.status").isNotEmpty());
+		}
+		for (String body : List.of("{\"status\":\"FLYING\"}", "{\"status\":\"picked_up\"}", "not json")) {
+			confirmRaw(bus.morning(), bus.rami(), body, schoolA, bus.f().userId())
+					.andExpect(status().isBadRequest())
+					.andExpect(jsonPath("$.detail").value("Malformed request body"));
+		}
+		assertEquals(0, confirmationRepository.count());
+	}
+
+	@Test
+	void twentySimultaneousCopiesOfOneConfirmationLeaveOneRowAndOneTime() throws Exception {
+		Bus bus = aBusInProgress();
+		List<Callable<MockHttpServletResponse>> jobs = new ArrayList<>();
+		for (int i = 0; i < 20; i++) {
+			jobs.add(() -> confirm(bus, bus.rami(), "PICKED_UP").andReturn().getResponse());
+		}
+
+		Set<String> times = new HashSet<>();
+		for (MockHttpServletResponse response : allAtOnce(jobs)) {
+			assertEquals(200, response.getStatus(), response.getContentAsString());
+			times.add(JsonPath.read(response.getContentAsString(), "$.stops[0].confirmation.at"));
+		}
+
+		assertEquals(1, times.size(), times.toString());
+		assertEquals(1, confirmationRepository.count());
+	}
+
+	/**
+	 * Picked up and not present at once. Not present may come first (then picked up follows it), but never after
+	 * a pickup. A smoke test: the window is a few milliseconds wide, so the next test is what proves the lock.
+	 */
+	@Test
+	void pickedUpAndNotPresentAtTheSameTimeNeverEndWithNotPresentAfterAPickup() throws Exception {
+		Bus bus = aBusInProgress();
+		List<Callable<MockHttpServletResponse>> jobs = new ArrayList<>();
+		for (int i = 0; i < 6; i++) {
+			jobs.add(() -> confirm(bus, bus.rami(), "PICKED_UP").andReturn().getResponse());
+			jobs.add(() -> confirm(bus, bus.rami(), "NOT_PRESENT").andReturn().getResponse());
+		}
+
+		List<MockHttpServletResponse> responses = allAtOnce(jobs);
+
+		for (MockHttpServletResponse response : responses) {
+			assertTrue(response.getStatus() == 200 || response.getStatus() == 409, response.getContentAsString());
+		}
+		List<Confirmation> rows = confirmationRepository.findAll();
+		Confirmation pickedUp = rows.stream().filter(row -> row.getStatus() == ConfirmationStatus.PICKED_UP)
+				.findFirst().orElseThrow();
+		assertEquals(1, rows.stream().filter(row -> row.getStatus() == ConfirmationStatus.PICKED_UP).count());
+		rows.stream().filter(row -> row.getStatus() == ConfirmationStatus.NOT_PRESENT)
+				.forEach(row -> assertFalse(row.getConfirmedAt().isAfter(pickedUp.getConfirmedAt()), rows.toString()));
+		assertEquals("PICKED_UP", JsonPath.read(driverToday(schoolA, bus.f().userId()),
+				"$.runs[0].stops[0].confirmation.status"));
+	}
+
+	/**
+	 * Holds the run row's lock in another transaction and does {@code whileHeld} in it, then sends the request. The
+	 * request must still be waiting a second later; it is answered once the lock is let go, which is returned.
+	 */
+	private MockHttpServletResponse sentWhileRunLocked(String runId, Runnable whileHeld,
+			Callable<MockHttpServletResponse> request) throws Exception {
+		CountDownLatch locked = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		ExecutorService pool = Executors.newFixedThreadPool(2);
+		try {
+			pool.submit(() -> transactionTemplate.execute(tx -> {
+				runRepository.findLockedBySchoolIdAndId(schoolA, UUID.fromString(runId));
+				whileHeld.run();
+				locked.countDown();
+				try {
+					release.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+				return null;
+			}));
+			assertTrue(locked.await(10, TimeUnit.SECONDS));
+			Future<MockHttpServletResponse> sent = pool.submit(request);
+
+			assertThrows(TimeoutException.class, () -> sent.get(1, TimeUnit.SECONDS));
+			release.countDown();
+			return sent.get(10, TimeUnit.SECONDS);
+		} finally {
+			release.countDown();
+			pool.shutdownNow();
+		}
+	}
+
+	/** What makes the rule safe: a confirmation does not check or write until it holds the run row's lock. */
+	@Test
+	void aConfirmationWaitsForAnyoneHoldingTheRunRowLock() throws Exception {
+		Bus bus = aBusInProgress();
+
+		MockHttpServletResponse answer = sentWhileRunLocked(bus.morning(), () -> {
+		}, () -> confirm(bus, bus.rami(), "PICKED_UP").andReturn().getResponse());
+
+		assertEquals(200, answer.getStatus(), answer.getContentAsString());
+		assertEquals(1, confirmationRepository.count());
+	}
+
+	/**
+	 * The pickup is saved by whoever holds the lock; the not-present that waited must see it. Checked before the
+	 * lock, it would have seen no confirmation and saved a not-present after a pickup.
+	 */
+	@Test
+	void aConfirmationChecksTheTableOnlyOnceItHoldsTheLock() throws Exception {
+		Bus bus = aBusInProgress();
+		UUID morning = UUID.fromString(bus.morning());
+
+		MockHttpServletResponse answer = sentWhileRunLocked(bus.morning(),
+				() -> confirmationRepository.insertIfMissing(schoolA, morning, bus.rami(), "PICKED_UP", WEDNESDAY),
+				() -> confirm(bus, bus.rami(), "NOT_PRESENT").andReturn().getResponse());
+
+		assertEquals(409, answer.getStatus(), answer.getContentAsString());
+		assertTrue(answer.getContentAsString().contains("PICKED_UP"), answer.getContentAsString());
+		assertEquals(1, confirmationRepository.count());
+	}
+
+	@Test
+	void aConfirmationThatWaitedForTheRunToEndIs409() throws Exception {
+		Bus bus = aBusInProgress();
+		UUID morning = UUID.fromString(bus.morning());
+
+		MockHttpServletResponse answer = sentWhileRunLocked(bus.morning(),
+				() -> runRepository.markEnded(schoolA, morning, WEDNESDAY),
+				() -> confirm(bus, bus.rami(), "PICKED_UP").andReturn().getResponse());
+
+		assertEquals(409, answer.getStatus(), answer.getContentAsString());
+		assertTrue(answer.getContentAsString().contains("FINISHED"), answer.getContentAsString());
+		assertEquals(0, confirmationRepository.count());
+	}
+
+	@Test
+	void endingARunWaitsForAConfirmationInFlightAndKeepsIt() throws Exception {
+		Bus bus = aBusInProgress();
+		UUID morning = UUID.fromString(bus.morning());
+
+		MockHttpServletResponse answer = sentWhileRunLocked(bus.morning(),
+				() -> confirmationRepository.insertIfMissing(schoolA, morning, bus.rami(), "PICKED_UP", WEDNESDAY),
+				() -> act("end", bus.morning(), schoolA, bus.f().userId()).andReturn().getResponse());
+
+		assertEquals(200, answer.getStatus(), answer.getContentAsString());
+		assertEquals("FINISHED", JsonPath.read(answer.getContentAsString(), "$.state"));
+		assertEquals("PICKED_UP", JsonPath.read(answer.getContentAsString(), "$.stops[0].confirmation.status"));
+	}
+
+	/** The contract's backup for a race: a child on the bus never disappears from the run they are on. */
+	@Test
+	void aConfirmedStudentWhoLeftTheRouteStaysOnTheRunLastAndCanStillBeDroppedOff() throws Exception {
+		Bus bus = aBusInProgress();
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isOk());
+		leaveRoute(bus.rami());
+
+		String day = driverToday(schoolA, bus.f().userId());
+
+		assertEquals(3, (int) JsonPath.read(day, "$.runs[0].stops.length()"));
+		assertEquals("Salma", JsonPath.read(day, "$.runs[0].stops[0].firstName"));
+		assertEquals(1, (int) JsonPath.read(day, "$.runs[0].stops[0].position"));
+		assertEquals(false, JsonPath.read(day, "$.runs[0].stops[0].removedFromRoute"));
+		assertEquals("Tarek", JsonPath.read(day, "$.runs[0].stops[1].firstName"));
+		assertEquals("Rami", JsonPath.read(day, "$.runs[0].stops[2].firstName"));
+		assertEquals(3, (int) JsonPath.read(day, "$.runs[0].stops[2].position"));
+		assertEquals(true, JsonPath.read(day, "$.runs[0].stops[2].removedFromRoute"));
+		assertEquals("Guardian Rami", JsonPath.read(day, "$.runs[0].stops[2].guardianName"));
+		assertEquals("PICKED_UP", JsonPath.read(day, "$.runs[0].stops[2].confirmation.status"));
+		assertEquals(3, (int) JsonPath.read(day, "$.runs[0].counts.students"));
+		assertEquals(1, (int) JsonPath.read(day, "$.runs[0].counts.pickedUp"));
+
+		confirm(bus, bus.rami(), "DROPPED_OFF").andExpect(status().isOk())
+				.andExpect(jsonPath("$.stops[2].confirmation.status").value("DROPPED_OFF"))
+				.andExpect(jsonPath("$.stops[2].removedFromRoute").value(true));
+		// Never confirmed on this run and gone from the route: not a stop.
+		leaveRoute(bus.salma());
+		confirm(bus, bus.salma(), "PICKED_UP").andExpect(status().isNotFound());
+	}
+
+	@Test
+	void eachRunKeepsItsOwnConfirmationsAndItsOwnRemovedStudents() throws Exception {
+		Bus bus = aBusInProgress();
+		act("start", bus.afternoon(), schoolA, bus.f().userId()).andExpect(status().isOk());
+
+		// The afternoon order is Tarek, Salma, Rami.
+		confirmOn(bus, bus.afternoon(), bus.tarek(), "PICKED_UP").andExpect(status().isOk())
+				.andExpect(jsonPath("$.direction").value("AFTERNOON"))
+				.andExpect(jsonPath("$.stops[0].firstName").value("Tarek"))
+				.andExpect(jsonPath("$.stops[0].confirmation.status").value("PICKED_UP"))
+				.andExpect(jsonPath("$.counts.pickedUp").value(1));
+		String day = driverToday(schoolA, bus.f().userId());
+		assertEquals(0, (int) JsonPath.read(day, "$.runs[0].counts.pickedUp"));
+		assertNull(JsonPath.read(day, "$.runs[0].stops[2].confirmation"));
+
+		leaveRoute(bus.tarek());
+		day = driverToday(schoolA, bus.f().userId());
+
+		assertEquals(2, (int) JsonPath.read(day, "$.runs[0].stops.length()"));
+		assertEquals(3, (int) JsonPath.read(day, "$.runs[1].stops.length()"));
+		assertEquals("Salma", JsonPath.read(day, "$.runs[1].stops[0].firstName"));
+		assertEquals("Rami", JsonPath.read(day, "$.runs[1].stops[1].firstName"));
+		assertEquals("Tarek", JsonPath.read(day, "$.runs[1].stops[2].firstName"));
+		assertEquals(3, (int) JsonPath.read(day, "$.runs[1].stops[2].position"));
+		assertEquals(true, JsonPath.read(day, "$.runs[1].stops[2].removedFromRoute"));
+		assertEquals(3, (int) JsonPath.read(day, "$.runs[1].counts.students"));
+	}
+
+	@Test
+	void aStudentWithAConfirmationOnABusTodayCannotBeMovedOrRemovedUntilTheRunEnds() throws Exception {
+		Bus bus = aBusInProgress();
+		Route other = aRoute(schoolA, "Verdun", aDriver(schoolA, UUID.randomUUID(), "Nadia"));
+		// 08:00Z is 10:00 in Beirut.
+		confirm(bus, bus.rami(), "NOT_PRESENT").andExpect(status().isOk());
+		clock.set(WEDNESDAY.plusSeconds(300));
+		confirm(bus, bus.salma(), "PICKED_UP").andExpect(status().isOk());
+		clock.set(WEDNESDAY.plusSeconds(600));
+		confirm(bus, bus.tarek(), "PICKED_UP").andExpect(status().isOk());
+		clock.set(WEDNESDAY.plusSeconds(1200));
+		confirm(bus, bus.tarek(), "DROPPED_OFF").andExpect(status().isOk());
+
+		removeFromRoute(bus.f().route(), bus.rami()).andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(
+						"Rami is on the Hamra bus (marked not present 10:00). Move them after the run ends."));
+		removeFromRoute(bus.f().route(), bus.salma()).andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(
+						"Salma is on the Hamra bus (picked up 10:05). Move them after the run ends."));
+		removeFromRoute(bus.f().route(), bus.tarek()).andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(
+						"Tarek is on the Hamra bus (dropped off 10:20). Move them after the run ends."));
+		mockMvc.perform(post("/api/head-of-transport/routes/" + other.getId() + "/students")
+						.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"studentId\":\"" + bus.salma() + "\"}"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(containsString("Salma is on the Hamra bus")));
+		assertEquals(bus.f().route().getId(), studentRepository.findById(bus.salma()).orElseThrow().getRouteId());
+
+		act("end", bus.morning(), schoolA, bus.f().userId()).andExpect(status().isOk());
+		removeFromRoute(bus.f().route(), bus.salma()).andExpect(status().isOk());
+	}
+
+	@Test
+	void removingAStudentOnABusFromARouteTheyAreNotOnIsA404NotA409() throws Exception {
+		Bus bus = aBusInProgress();
+		Route other = aRoute(schoolA, "Verdun", aDriver(schoolA, UUID.randomUUID(), "Nadia"));
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isOk());
+
+		removeFromRoute(other, bus.rami()).andExpect(status().isNotFound());
+		removeFromRoute(bus.f().route(), bus.rami()).andExpect(status().isConflict());
+	}
+
+	/** Deleting a route mid-run is a known limit of the contract; the 409 then names no route rather than failing. */
+	@Test
+	void aStudentOnTheBusOfADeletedRouteIsStillOnABus() throws Exception {
+		Bus bus = aBusInProgress();
+		Route other = aRoute(schoolA, "Verdun", aDriver(schoolA, UUID.randomUUID(), "Nadia"));
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isOk());
+		routeRepository.deleteById(bus.f().route().getId());
+
+		mockMvc.perform(post("/api/head-of-transport/routes/" + other.getId() + "/students")
+						.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"studentId\":\"" + bus.rami() + "\"}"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(
+						"Rami is on a bus (picked up 10:00). Move them after the run ends."));
+	}
+
+	@Test
+	void aConfirmationOnAnEarlierDayDoesNotKeepAStudentOnTheirRoute() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra");
+		Student rami = studentRepository.findAll().stream().filter(s -> s.getFirstName().equals("Rami")).findFirst()
+				.orElseThrow();
+		Run yesterday = runRepository.save(Run.builder().schoolId(schoolA).routeId(f.route().getId())
+				.runDate(LocalDate.parse(WEDNESDAY_DATE).minusDays(1)).direction(RunDirection.MORNING)
+				.state(RunState.IN_PROGRESS).startedAt(Instant.parse("2026-10-27T05:00:00Z")).build());
+		confirmationRepository.save(Confirmation.builder().schoolId(schoolA).runId(yesterday.getId())
+				.studentId(rami.getId()).status(ConfirmationStatus.PICKED_UP)
+				.confirmedAt(Instant.parse("2026-10-27T05:10:00Z")).build());
+
+		removeFromRoute(f.route(), rami.getId()).andExpect(status().isOk());
+	}
+
+	private ResultActions removeFromRoute(Route route, UUID studentId) throws Exception {
+		return mockMvc.perform(delete("/api/head-of-transport/routes/" + route.getId() + "/students/" + studentId)
+				.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)));
+	}
+
+	@Test
+	void theHeadsListCountsPickedUpDroppedOffAndNotPresentPerRun() throws Exception {
+		Bus bus = aBusInProgress();
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isOk());
+		confirm(bus, bus.rami(), "DROPPED_OFF").andExpect(status().isOk());
+		confirm(bus, bus.salma(), "NOT_PRESENT").andExpect(status().isOk());
+		confirm(bus, bus.tarek(), "PICKED_UP").andExpect(status().isOk());
+
+		String head = headRuns(schoolA, "");
+
+		assertEquals(3, (int) JsonPath.read(head, "$.runs[0].counts.students"));
+		assertEquals(2, (int) JsonPath.read(head, "$.runs[0].counts.pickedUp"));
+		assertEquals(1, (int) JsonPath.read(head, "$.runs[0].counts.droppedOff"));
+		assertEquals(1, (int) JsonPath.read(head, "$.runs[0].counts.notPresent"));
+		assertEquals(0, (int) JsonPath.read(head, "$.runs[1].counts.pickedUp"));
+	}
+
+	/** The contract's backup for a race, on the head's list: the child still on the bus is one of its students. */
+	@Test
+	void theHeadsListCountsAConfirmedStudentWhoLeftTheRouteOnTheirRunOnly() throws Exception {
+		Bus bus = aBusInProgress();
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isOk());
+		leaveRoute(bus.rami());
+
+		String head = headRuns(schoolA, "");
+
+		assertEquals(3, (int) JsonPath.read(head, "$.runs[0].counts.students"));
+		assertEquals(1, (int) JsonPath.read(head, "$.runs[0].counts.pickedUp"));
+		assertEquals(2, (int) JsonPath.read(head, "$.runs[1].counts.students"));
+		assertEquals((int) JsonPath.read(driverToday(schoolA, bus.f().userId()), "$.runs[0].counts.students"),
+				(int) JsonPath.read(head, "$.runs[0].counts.students"));
+	}
+
+	@Test
+	void aConfirmedStopHasExactlyTheFieldsOfTheContractSample() throws Exception {
+		Bus bus = aBusInProgress();
+		String sample = Files.readString(Path.of("../docs/contracts/samples/runs/run-finished.json"));
+
+		String answer = confirm(bus, bus.rami(), "PICKED_UP").andReturn().getResponse().getContentAsString();
+
+		for (String path : List.of("$", "$.counts", "$.stops[0]", "$.stops[0].confirmation")) {
+			assertEquals(keys(sample, path), keys(answer, path), path);
+		}
 	}
 }

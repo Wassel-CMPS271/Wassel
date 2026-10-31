@@ -1,7 +1,9 @@
 package com.wassel.backend.runs.dto;
 
+import com.wassel.backend.runs.entity.ConfirmationStatus;
+
 import java.time.Instant;
 
-/** A student's latest confirmation on a run. Always null on a stop until SCRUM-235 records them. */
-public record ConfirmationResponse(String status, Instant at) {
+/** A student's latest confirmation on a run: the highest status they have, and when it was recorded. */
+public record ConfirmationResponse(ConfirmationStatus status, Instant at) {
 }
