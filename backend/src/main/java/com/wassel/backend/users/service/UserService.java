@@ -3,6 +3,7 @@ package com.wassel.backend.users.service;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.entity.User;
 import com.wassel.backend.users.exception.EmailAlreadyInUseException;
+import com.wassel.backend.users.exception.RevokeNotAllowedException;
 import com.wassel.backend.users.exception.UserNotFoundException;
 import com.wassel.backend.users.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -87,6 +88,23 @@ public class UserService {
 		catch (DataIntegrityViolationException ex) {
 			throw new EmailAlreadyInUseException(EMAIL_IN_USE);
 		}
+	}
+
+	/**
+	 * Revokes or restores one of the school's accounts of the given role (SCRUM-98). A disabled account
+	 * can't sign in, and {@code JwtAuthenticationFilter} reloads the user on every request, so an open
+	 * session ends at its next request. Nobody can revoke themselves; the lookup is by school and role, so
+	 * an account of another role (an admin, for instance) or another school is a UserNotFoundException.
+	 * Setting the state it already has changes nothing.
+	 */
+	@Transactional
+	public User setEnabled(UUID schoolId, UUID actorId, UUID userId, Role role, boolean enabled) {
+		if (!enabled && userId.equals(actorId)) {
+			throw new RevokeNotAllowedException("You cannot revoke your own access.");
+		}
+		User user = getOwnedUser(schoolId, userId, role);
+		user.setEnabled(enabled);
+		return user;
 	}
 
 	@Transactional

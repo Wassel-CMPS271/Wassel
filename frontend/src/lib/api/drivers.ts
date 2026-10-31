@@ -33,6 +33,17 @@ export function resendInvite(id: string): Promise<Driver> {
   });
 }
 
+// SCRUM-98: a revoked driver can't sign in and loses an open session at the next request. The server
+// answers with the driver ("deactivated", vehicle released); restoring gives "active" (or "invited" if they
+// never set a password) and does not give the vehicle back.
+export function revokeDriver(id: string): Promise<Driver> {
+  return request<Driver>(`${DRIVERS_API}/${encodeURIComponent(id)}/revoke`, { method: "PATCH" });
+}
+
+export function restoreDriver(id: string): Promise<Driver> {
+  return request<Driver>(`${DRIVERS_API}/${encodeURIComponent(id)}/restore`, { method: "PATCH" });
+}
+
 export function assignDriverToVehicle(driverId: string, vehicleId: string): Promise<Driver> {
   return request<Driver>(`${DRIVERS_API}/${encodeURIComponent(driverId)}/vehicle`, {
     method: "PATCH",

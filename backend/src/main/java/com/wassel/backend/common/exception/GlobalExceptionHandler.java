@@ -27,6 +27,7 @@ import com.wassel.backend.students.exception.StudentAlreadyExistsException;
 import com.wassel.backend.students.exception.StudentNotActiveException;
 import com.wassel.backend.students.exception.StudentNotFoundException;
 import com.wassel.backend.users.exception.EmailAlreadyInUseException;
+import com.wassel.backend.users.exception.RevokeNotAllowedException;
 import com.wassel.backend.users.exception.UserNotFoundException;
 import com.wassel.backend.vehicles.exception.VehicleAlreadyExistsException;
 import com.wassel.backend.vehicles.exception.VehicleNotFoundException;
@@ -282,6 +283,14 @@ public class GlobalExceptionHandler {
 	public ProblemDetail handleUserNotFound(UserNotFoundException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// A 403 that keeps its own message (unlike the generic "Access denied"): the caller is allowed to use
+	// the endpoint, just not on themselves.
+	@ExceptionHandler(RevokeNotAllowedException.class)
+	public ProblemDetail handleRevokeNotAllowed(RevokeNotAllowedException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
 	}
 
 	// Same shape again, keyed by "email", for an account email that is already taken.

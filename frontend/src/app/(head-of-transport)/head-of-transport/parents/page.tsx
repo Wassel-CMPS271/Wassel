@@ -4,9 +4,12 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { getParents, inviteParent, parentError, type Parent } from "@/lib/api/parents";
+import { RevokeAccessControl } from "@/components/ui/RevokeAccessControl";
+import { getParents, inviteParent, parentError, restoreParent, revokeParent, type Parent } from "@/lib/api/parents";
 import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import { colors, darkTheme, sizing, spacing } from "@/styles/tokens";
+
+const STATUS_LABEL: Record<Parent["status"], string> = { active: "Active", invited: "Invited", revoked: "Revoked" };
 
 export default function ParentsPage() {
   const [parents, setParents] = useState<Parent[]>([]);
@@ -15,6 +18,7 @@ export default function ParentsPage() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [actionError, setActionError] = useState("");
   const [saving, setSaving] = useState(false);
   const busy = useRef(false);
   const emailRef = useRef<HTMLInputElement>(null);
@@ -27,6 +31,17 @@ export default function ParentsPage() {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+
+  // SCRUM-98: the row is updated in place, not reloaded, so the list (and the focus on its button) stays put.
+  async function changeAccess(parent: Parent, action: typeof revokeParent, done: string) {
+    setNotice("");
+    setActionError("");
+    try {
+      const updated = await action(parent.id);
+      setParents(current => current.map(item => item.id === parent.id ? updated : item));
+      setNotice(`${parent.email}: ${done}`);
+    } catch (err) { setActionError(parentError(err)); }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -64,11 +79,18 @@ export default function ParentsPage() {
     <p role="status" style={{ color: darkTheme.text.secondary }}>{notice}</p>
     <Card><section aria-labelledby="parents-heading" className="flex flex-col" style={{ gap: spacing.md }}>
       <h2 id="parents-heading" className="text-lg font-semibold">Parents</h2>
+      {actionError && <p role="alert" style={{ color: colors.error[500] }}>{actionError}</p>}
       {loading && <p role="status">Loading parents…</p>}
       {loadError && <div><p role="alert" style={{ color: colors.error[500] }}>{loadError}</p><Button onClick={load} disabled={loading}>Retry parent list</Button></div>}
       {!loading && !loadError && (parents.length === 0 ? <p>No parents yet. Invite a parent above to get started.</p> :
         <ul className="flex flex-col" style={{ gap: spacing.md }}>{parents.map(parent => <li key={parent.id} className="flex flex-wrap justify-between" style={{ gap: spacing.sm }}>
-          <span className="break-all">{parent.email}</span><span style={{ color: darkTheme.text.secondary }}>{parent.status === "active" ? "Active" : "Invited"}</span>
+          <span className="break-all">{parent.email}</span>
+          <span className="flex flex-wrap items-center" style={{ gap: spacing.sm }}>
+            <span style={{ color: darkTheme.text.secondary }}>{STATUS_LABEL[parent.status]}</span>
+            <RevokeAccessControl name={parent.email} revoked={parent.status === "revoked"}
+              onRevoke={() => changeAccess(parent, revokeParent, "access revoked.")}
+              onRestore={() => changeAccess(parent, restoreParent, "access restored.")} />
+          </span>
         </li>)}</ul>)}
     </section></Card>
   </main>;
