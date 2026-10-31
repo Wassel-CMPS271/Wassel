@@ -145,7 +145,7 @@ The head of transportation's absence list is one endpoint for SCRUM-238 and SCRU
 - **End** moves `IN_PROGRESS` to `FINISHED` and saves `endedAt`. Ending a `FINISHED` run changes nothing and answers 200. Ending a run that has **not started** is **409**.
 - Ending is allowed while students are still on the bus (picked up, not dropped off). The screens should warn using `counts`; the server does not refuse.
 - The morning and afternoon runs are independent: either can start first.
-- The driver only ever gets today's runs, so there is no separate rule for other dates. A run left `IN_PROGRESS` overnight stays that way and shows so to the head of transportation.
+- The driver only ever gets today's runs, and can start or end only those: a run that is not in their list right now (another date, or a day made a holiday after the run was created) is **404**, like an unknown run. A run left `IN_PROGRESS` overnight stays that way and shows so to the head of transportation; a screen still holding yesterday's run after midnight gets 404, even for a repeated end, and should reload today's runs.
 
 ### Moving a student or changing the driver during a run
 
@@ -206,7 +206,7 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 |---|---|---|
 | No session | 401 | empty |
 | Signed in with another role | 403 | `detail` ("Access denied") |
-| A run that is another driver's, another school's or unknown | 404 | `detail` |
+| A run that is another driver's, another school's, unknown, or not one of the driver's runs today (another date, or hidden by a holiday) | 404 | `detail` |
 | A student who is not a stop on that run | 404 | `detail` |
 | A child that is not yours, or unknown | 404 | `detail` |
 | An absence that is gone, or not that child's | 404 | `detail` |
