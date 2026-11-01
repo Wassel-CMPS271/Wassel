@@ -5,6 +5,7 @@ import com.wassel.backend.vehicles.dto.SetVehicleCapacityRequest;
 import com.wassel.backend.vehicles.dto.VehicleResponse;
 import com.wassel.backend.vehicles.entity.Vehicle;
 import com.wassel.backend.vehicles.exception.VehicleAlreadyExistsException;
+import com.wassel.backend.vehicles.exception.VehicleCapacityConflictException;
 import com.wassel.backend.vehicles.exception.VehicleNotFoundException;
 import com.wassel.backend.vehicles.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,8 @@ public class VehicleService {
 	private static final String NOT_FOUND_MESSAGE = "Vehicle not found.";
 
 	private final VehicleRepository vehicleRepository;
+
+	private final VehicleOccupancyGuard occupancyGuard;
 
 	/** The school's vehicles, oldest first. */
 	@Transactional(readOnly = true)
@@ -58,9 +61,20 @@ public class VehicleService {
 		}
 	}
 
+	/**
+	 * Lowering a vehicle's capacity below the number of students already on the route it is
+	 * assigned to (SCRUM-241) is a 409: the route has no seats to lose. Equal to the current count
+	 * is allowed (seats left reaches zero, never negative); a vehicle on no route can be set to
+	 * any valid capacity.
+	 */
 	@Transactional
 	public VehicleResponse setCapacity(UUID schoolId, UUID vehicleId, SetVehicleCapacityRequest request) {
 		Vehicle vehicle = findOwned(schoolId, vehicleId);
+		long currentCount = occupancyGuard.studentCountOnVehiclesRoute(schoolId, vehicleId);
+		if (currentCount > request.capacity()) {
+			throw new VehicleCapacityConflictException(
+					"The route has %d students but this vehicle would seat %d.".formatted(currentCount, request.capacity()));
+		}
 		vehicle.setCapacity(request.capacity());
 		return toResponse(vehicle);
 	}

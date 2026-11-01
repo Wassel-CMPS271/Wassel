@@ -34,6 +34,7 @@ import com.wassel.backend.users.exception.EmailAlreadyInUseException;
 import com.wassel.backend.users.exception.RevokeNotAllowedException;
 import com.wassel.backend.users.exception.UserNotFoundException;
 import com.wassel.backend.vehicles.exception.VehicleAlreadyExistsException;
+import com.wassel.backend.vehicles.exception.VehicleCapacityConflictException;
 import com.wassel.backend.vehicles.exception.VehicleNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -133,6 +134,12 @@ public class GlobalExceptionHandler {
 	public ProblemDetail handleVehicleNotFound(VehicleNotFoundException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	@ExceptionHandler(VehicleCapacityConflictException.class)
+	public ProblemDetail handleVehicleCapacityConflict(VehicleCapacityConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
 	}
 
 	// Same shape again, keyed by whichever field conflicted (email or phone), for a duplicate

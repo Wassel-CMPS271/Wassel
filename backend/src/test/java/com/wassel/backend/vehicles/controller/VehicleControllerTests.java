@@ -1,5 +1,18 @@
 package com.wassel.backend.vehicles.controller;
 
+import com.wassel.backend.drivers.dto.CreateDriverRequest;
+import com.wassel.backend.drivers.dto.DriverResponse;
+import com.wassel.backend.drivers.repository.DriverRepository;
+import com.wassel.backend.drivers.service.DriverService;
+import com.wassel.backend.routes.dto.AssignStudentRequest;
+import com.wassel.backend.routes.dto.RouteRequest;
+import com.wassel.backend.routes.dto.RouteResponse;
+import com.wassel.backend.routes.repository.RouteRepository;
+import com.wassel.backend.routes.service.RouteService;
+import com.wassel.backend.students.dto.CreateStudentRequest;
+import com.wassel.backend.students.dto.StudentResponse;
+import com.wassel.backend.students.repository.StudentRepository;
+import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.entity.User;
 import com.wassel.backend.vehicles.repository.VehicleRepository;
@@ -44,9 +57,30 @@ class VehicleControllerTests {
 	@Autowired
 	private VehicleRepository vehicleRepository;
 
+	@Autowired
+	private RouteRepository routeRepository;
+
+	@Autowired
+	private DriverRepository driverRepository;
+
+	@Autowired
+	private StudentRepository studentRepository;
+
+	@Autowired
+	private RouteService routeService;
+
+	@Autowired
+	private DriverService driverService;
+
+	@Autowired
+	private StudentService studentService;
+
 	@BeforeEach
 	void cleanDatabase() {
+		routeRepository.deleteAll();
 		vehicleRepository.deleteAll();
+		driverRepository.deleteAll();
+		studentRepository.deleteAll();
 	}
 
 	private RequestPostProcessor loggedInAs(Role role, UUID schoolId) {
@@ -68,6 +102,19 @@ class VehicleControllerTests {
 		Matcher matcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(body);
 		matcher.find();
 		return matcher.group(1);
+	}
+
+	/** A route on this vehicle with {@code studentCount} students already assigned (SCRUM-241 fixtures). */
+	private void aRouteWithStudents(UUID schoolId, UUID vehicleId, int studentCount) {
+		DriverResponse driver = driverService.addDriver(schoolId, new CreateDriverRequest("Karim", "Haddad",
+				"+961 3 " + (100000 + (int) (Math.random() * 900000)), UUID.randomUUID() + "@wassel.test"));
+		RouteResponse route = routeService.createRoute(schoolId,
+				new RouteRequest("Hamra morning run", vehicleId, driver.id()));
+		for (int i = 0; i < studentCount; i++) {
+			StudentResponse student = studentService.addStudent(schoolId, new CreateStudentRequest("Student",
+					"Number" + i, "3", "Guardian", "+961 3 " + (200000 + i), null));
+			routeService.addStudent(schoolId, route.id(), new AssignStudentRequest(student.id()));
+		}
 	}
 
 	@Test
@@ -173,6 +220,40 @@ class VehicleControllerTests {
 						.contentType(MediaType.APPLICATION_JSON).content("{\"capacity\":20}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.capacity").value(20));
+	}
+
+	@Test
+	void loweringCapacityBelowTheRoutesStudentsIsAConflict() throws Exception {
+		String id = addAs(schoolA, "A 123456", 5);
+		aRouteWithStudents(schoolA, UUID.fromString(id), 2);
+
+		mockMvc.perform(patch(URL + "/" + id + "/capacity").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON).content("{\"capacity\":1}"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value("The route has 2 students but this vehicle would seat 1."));
+
+		assertEquals(5, (int) vehicleRepository.findById(UUID.fromString(id)).orElseThrow().getCapacity());
+	}
+
+	@Test
+	void loweringCapacityToExactlyTheStudentCountIsAllowed() throws Exception {
+		String id = addAs(schoolA, "A 123456", 5);
+		aRouteWithStudents(schoolA, UUID.fromString(id), 2);
+
+		mockMvc.perform(patch(URL + "/" + id + "/capacity").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON).content("{\"capacity\":2}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.capacity").value(2));
+	}
+
+	@Test
+	void aVehicleNotOnARouteCanBeLoweredToAnyValidCapacity() throws Exception {
+		String id = addAs(schoolA, "A 123456", 14);
+
+		mockMvc.perform(patch(URL + "/" + id + "/capacity").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON).content("{\"capacity\":1}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.capacity").value(1));
 	}
 
 	@Test
