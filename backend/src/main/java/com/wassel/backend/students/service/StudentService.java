@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -306,6 +307,20 @@ public class StudentService {
 	@Transactional(readOnly = true)
 	public UUID getRouteId(UUID schoolId, UUID studentId) {
 		return findOwned(schoolId, studentId).getRouteId();
+	}
+
+	/**
+	 * Each of these students' current route id, in one read, for the {@code runs} module to tell who has left the
+	 * route they were confirmed on. A student on no route, or not in this school, is missing from the map.
+	 */
+	@Transactional(readOnly = true)
+	public Map<UUID, UUID> findRouteIds(UUID schoolId, Collection<UUID> studentIds) {
+		if (studentIds.isEmpty()) {
+			return Map.of();
+		}
+		return studentRepository.findBySchoolIdAndIdIn(schoolId, studentIds).stream()
+				.filter(student -> student.getRouteId() != null)
+				.collect(Collectors.toMap(Student::getId, Student::getRouteId));
 	}
 
 	private StudentStatus parseStatus(String status) {

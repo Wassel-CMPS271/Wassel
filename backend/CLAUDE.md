@@ -329,6 +329,65 @@ that's the structure this codebase moved away from.
   no other module: it takes plain `Coordinate`s and ids so it does not depend on the routes
   entities. The JSON shapes, endpoint table and rules are in `docs/contracts/routing.md`, with
   samples in `docs/contracts/samples/routing/`; change them by pull request that tags the owners.
+- `runs` — the daily runs (SCRUM-233): `GET /api/driver/runs/today` and `GET /api/head-of-transport/runs?date=`,
+  shapes and rules in `docs/contracts/runs.md`. A run is one route, one direction, one date (`runs`, migration V7,
+  unique on route + date + direction, no foreign keys). It stores only its own state and times: stops, vehicle,
+  driver, `schoolTime` and the kind of day are read on every response, so a route edit, a driver swap or a holiday
+  added later changes the run at once. Runs are created only when today's are asked for, by
+  `RunRepository.createMissing`, a native `INSERT ... ON CONFLICT DO NOTHING` (catching the unique-key violation in
+  the same transaction would poison it on PostgreSQL), so any number of simultaneous requests end with two rows per
+  route; the driver's request creates their own route's runs, the head's every route's. Other dates only read, and a
+  deleted route's runs stay as rows nobody lists. "Today" is `LocalDate.now(clock)` with the `Clock` bean of
+  `common/config/ClockConfig` (`Asia/Beirut`); tests move it with `common/MutableClock`, because Saturday and Sunday
+  are `HOLIDAY` and a test on the real date would fail on a weekend. The morning stops come from one read:
+  `RouteService.findRouteOfDriver` returns the driver's route with each stop's arrival time and guardian from a single
+  `StudentService.listOnRoute`, so order, times and phones cannot disagree after a reorder (SCRUM-233 review). That lookup
+  and `driverDay` are deliberately not `@Transactional`, because the arrival times may wait on the road provider (3 s) and
+  a transaction around it holds a connection; `driverDay` uses a `TransactionTemplate` only around `createMissing` and the
+  read of the runs. `routes/config/TravelTimeWarmer` (not in the `test` profile) calls `RouteService.warmTravelTimes` on its
+  own thread at startup so the road-time cache is not empty for the first requests after a restart. The afternoon is that
+  list reversed with no times; each run shows its own confirmations. `routes` declares `service/ActiveRunGuard` and
+  `RouteService` calls it before changing a route's driver or vehicle (`editRoute`) and before a student leaves their route
+  (`addStudent` onto another route, `removeStudent`); a block is `ActiveRunConflictException`, a 409 with the guard's text.
+  `runs/service/RunActiveRunGuard` implements it (its own class, so `RunService` and `RouteService` do not need each other's
+  beans); only today's `IN_PROGRESS` runs block a route change, and a student with any confirmation on one blocks a move
+  (`studentOnBus` returns data, `RouteService.requireNotOnABus` writes the 409 text with the name, the route name and the
+  time in the `Clock` zone). Deleting a route and applying generated routes (`placeOnRoutes`) are not guarded. `RunService.driverRun` builds one whole run
+  with stops, which start, end and confirm answer with. `runs` reads other modules through
+  `RouteService.findRouteOfDriver` and `listRoutes`, `AbsenceService.absentStudentIds`, `DriverService.findDriverIdForUser`,
+  `HolidayService.isHoliday`, `HalfDayService.isHalfDay` and `SchoolSettingsService.getTimes`. A half-day afternoon run has `schoolTime: null` (no half-day dismissal time
+  exists). `absent` (SCRUM-239) is this route's students with a live absence for today, from
+  `AbsenceService.absentStudentIds` (one query for the whole roster, never the repository), read fresh on every fetch so a
+  same-day report or cancellation shows on the next one. `counts.absent` is the stops with `absent: true` and no
+  confirmation (a confirmation wins, contract); it stays 0 on the head of transportation's stop-less `RunSummary`, which
+  has its own list instead (`GET /api/head-of-transport/absences`, from the `absences` module).
+  Confirmations (SCRUM-235): `PUT /api/driver/runs/{runId}/students/{studentId}/confirmation` (`RunService.confirm`,
+  `run_confirmations`, migration V8: unique on run + student + status, no foreign keys). One row per status, kept as
+  history; the latest is the highest status (`ConfirmationStatus` is declared in rank order), not the newest row. `confirm`
+  finds the route outside any transaction (like `move`), then in one `TransactionTemplate` locks the run row
+  (`RunRepository.findLockedBySchoolIdAndId`, the codebase's only row lock: it orders a confirmation against another
+  of the same student and against the run ending), checks the student, the state and the transition table, and inserts with
+  `ConfirmationRepository.insertIfMissing` (`ON CONFLICT DO NOTHING`). The time is read after the lock. A status the student
+  already has is 200 with no change even if a later one exists. A student confirmed on a run who has left the route is
+  appended last with `removedFromRoute: true`, details from `StudentService.getStudent`. `counts` come from the latest
+  confirmations, and both the driver's runs and the head's list count such students in `students` (the head's list reads
+  their current routes in one `StudentService.findRouteIds`). Tests hold the run lock in another transaction to prove
+  `confirm` takes it before its checks, and that it and the run ending wait for each other. `ConfirmationStatus` order
+  is pinned by a test, because "latest" depends on it.
+  Start and end (SCRUM-234): `POST /api/driver/runs/{runId}/start` and `/end` (`DriverRunController`, `RunService.start`/`end`
+  over one `move`), no migration (`started_at`/`ended_at` were in V7). `start`/`end` are not `@Transactional` (the route lookup can wait on the road provider): `move` finds the route first, then does the checks, the update and the re-read in one `TransactionTemplate`. The move is `RunRepository.markStarted`/`markEnded`,
+  a conditional `UPDATE ... WHERE school AND state = <expected>` (the `LoginCode` pattern, no `@Version` or lock), so
+  simultaneous requests keep the first time; `move` then re-reads the run (the update clears the persistence context):
+  already in the target state is a 200 that changes nothing, any other state is
+  `RunStateConflictException` (409, the detail names the state). The answer is built from that re-read, so the times are the
+  stored ones, and is `driverRun`, the whole run with stops. **A driver may act only on a run they could see in their
+  today's list right now**: one of today's runs on their own route, on a day that is not a holiday. Anything else (another
+  driver's or school's, unknown, yesterday's, hidden by a holiday added later) is one `RunNotFoundException` (404), so
+  nothing reveals which (written into `docs/contracts/runs.md`, Run states and Errors). The cost is known and accepted: a run started and not ended before midnight in Beirut, or on a day that
+  becomes a holiday, can no longer be ended by the driver and stays `IN_PROGRESS` (the contract's "stays that way"), and a
+  repeated end that arrives after midnight is a 404, not the usual 200. A start racing an end on the same run can get a 409
+  `FINISHED`. Confirmations follow the same rule: `confirm` finds the route with `routeOf`, then locks the run and checks it is
+  that route's run for today.
 - `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
   of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
   are in `docs/contracts/runs.md` (owned jointly with the `runs` module, SCRUM-232/239); build
@@ -351,7 +410,9 @@ that's the structure this codebase moved away from.
   same transaction (as `RouteService#lostRace` documents for its own races); `AbsenceService`
   catches the constraint's `DataIntegrityViolationException` and answers a plain 409 asking the
   client to retry, the same pattern `RouteService#propose` uses for two optimizations of a route
-  at once. Depends on `students`
+  at once. `AbsenceService.absentStudentIds` (SCRUM-239) is for `runs`: which of a route's students
+  have a live absence on a given date, one query for the whole roster rather than one per student.
+  Depends on `students`
   (`StudentService.findChildOf` for parent ownership of a `studentId` path variable,
   `StudentService.getStudent`/`getRouteId` for the head of transportation's list) and `routes`
   (`RouteService.findStudentRoute`, added for this module: a student's route and their 1-based
@@ -363,15 +424,24 @@ that's the structure this codebase moved away from.
   only the migration enforces it.
 - `parent` — the signed-in parent's own children: route, driver, vehicle and expected pickup time
   (SCRUM-240), `GET /api/parent/children`. Shape and rules are in `docs/contracts/runs.md`. Its
-  own module, not a subpackage of `students` or `routes`, because it will also read `runs`
-  (SCRUM-237) once that lands, and `runs` already reads `routes` — putting this inside either
-  would make a cycle; nothing depends on `parent`. `ParentChildrenController`, not
+  own module, not a subpackage of `students` or `routes`, because it also reads `runs`
+  (SCRUM-237), and `runs` already reads `routes` — putting this inside either
+  would make a cycle; nothing depends on `parent`. Run status (SCRUM-237): each child has `todayRun`
+  (`{ direction, state, stopsLeft }`, `runs.dto.ChildRunResponse`, rules in the contract's "Today's run for a child"),
+  from one `RunService.todayRunStatus` call for all the parent's children, which reads no road time. The ids come from `listChildrenOf`, which is
+  what keeps a parent to their own children. It never creates a run: a direction with no row counts as `NOT_STARTED`
+  (the shown run is the one in progress, else the first not started, else the afternoon one), null on a holiday or for
+  a child with no route. `stopsLeft` counts the stops before the child that are neither done nor skippable (the
+  contract's driver-screen definitions, afternoon in reverse order) and is null unless that run is in progress and the
+  child is neither absent (without a confirmation) nor done. Both lookups are batched over the parent's children,
+  `RouteService.findRoutesForChildren` and `RunService.todayRunStatus`, so the work grows with the number of routes,
+  not children (`ParentRunStatusTests` compares statement counts for 1 and 6 children). `ParentChildrenController`, not
   `ParentController`, because `accounts.controller.ParentController` (the head of transportation's
   parent invite/list, a different endpoint) already takes that bean name. Stores nothing of its
   own: `ParentService.listChildren` reads `StudentService.listChildrenOf` (every child linked to
-  the parent, ordered by first name — added for this module) and, per child,
-  `RouteService.findRouteForChild` (route, driver with phone, vehicle, and the child's own
-  arrival time from the same `RouteService#schedule` the route's own stops use), empty when the
+  the parent, ordered by first name — added for this module) and, for all of them at once,
+  `RouteService.findRoutesForChildren` (route, driver with phone, vehicle, and the child's own
+  arrival time from the same `RouteService#schedule` the route's own stops use, one read per distinct route), none when the
   child has no route — the same "no route" treatment `findStudentRoute` (`absences`) gives a
   vanished route.
 

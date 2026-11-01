@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -41,4 +42,14 @@ public interface AbsenceRepository extends JpaRepository<Absence, UUID> {
 	@Query("SELECT a FROM Absence a WHERE a.schoolId = :schoolId AND a.cancelled = false "
 			+ "AND a.fromDate <= :date AND a.toDate >= :date ORDER BY a.fromDate ASC")
 	List<Absence> findActiveOn(@Param("schoolId") UUID schoolId, @Param("date") LocalDate date);
+
+	/**
+	 * Student ids, among the given set, with a live (non-cancelled) absence covering {@code date}
+	 * — the runs module's per-stop {@code absent} flag (SCRUM-239): one query for a whole route's
+	 * roster rather than one per student.
+	 */
+	@Query("SELECT a.studentId FROM Absence a WHERE a.schoolId = :schoolId AND a.studentId IN :studentIds "
+			+ "AND a.cancelled = false AND a.fromDate <= :date AND a.toDate >= :date")
+	List<UUID> findAbsentStudentIds(@Param("schoolId") UUID schoolId,
+			@Param("studentIds") Collection<UUID> studentIds, @Param("date") LocalDate date);
 }

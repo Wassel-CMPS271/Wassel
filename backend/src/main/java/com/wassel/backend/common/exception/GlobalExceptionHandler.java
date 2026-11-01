@@ -13,11 +13,15 @@ import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
+import com.wassel.backend.routes.exception.ActiveRunConflictException;
 import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteCapacityExceededException;
 import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.routes.exception.RouteOptimizationConflictException;
+import com.wassel.backend.runs.exception.ConfirmationConflictException;
+import com.wassel.backend.runs.exception.RunNotFoundException;
+import com.wassel.backend.runs.exception.RunStateConflictException;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.HolidayNotFoundException;
@@ -228,6 +232,13 @@ public class GlobalExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
 	}
 
+	// A plain detail, as the runs contract has it: it names the run (or the child on a bus) and what to wait for.
+	@ExceptionHandler(ActiveRunConflictException.class)
+	public ProblemDetail handleActiveRunConflict(ActiveRunConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
 	@ExceptionHandler(ProposalNotFoundException.class)
 	public ProblemDetail handleProposalNotFound(ProposalNotFoundException ex) {
 		logRejected(ex);
@@ -277,6 +288,26 @@ public class GlobalExceptionHandler {
 			problem.setProperty("studentIds", ex.getStudentIds());
 		}
 		return problem;
+	}
+
+	@ExceptionHandler(RunNotFoundException.class)
+	public ProblemDetail handleRunNotFound(RunNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// A plain detail naming the run's state, as the runs contract has it.
+	@ExceptionHandler(RunStateConflictException.class)
+	public ProblemDetail handleRunStateConflict(RunStateConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	// A plain detail naming the student's current status, as the runs contract has it.
+	@ExceptionHandler(ConfirmationConflictException.class)
+	public ProblemDetail handleConfirmationConflict(ConfirmationConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
 	}
 
 	@ExceptionHandler(UserNotFoundException.class)
