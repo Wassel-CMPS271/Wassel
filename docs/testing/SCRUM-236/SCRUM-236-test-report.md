@@ -119,7 +119,7 @@ The route has 7 students and the too-small capacity is 2, so the message check m
 
 ## What failed
 
-Every failure during the work, and whether the fault was in the feature or in the test. Only the first two are feature bugs; both need two requests at the same instant, so the stories' single-request tests pass. Details, root causes, repros and paste-ready comments are in [`SCRUM-236-bugs.md`](SCRUM-236-bugs.md).
+Every failure during the work, and whether the fault was in the feature or in the test. Only the first two are feature bugs, and the tenth is the author's bad test; both need two requests at the same instant, so the stories' single-request tests pass. Details, root causes, repros and paste-ready comments are in [`SCRUM-236-bugs.md`](SCRUM-236-bugs.md).
 
 | # | What failed | Feature or test? | Outcome |
 |---|---|---|---|
@@ -132,6 +132,7 @@ Every failure during the work, and whether the fault was in the feature or in th
 | 7 | `assertNoRouteIsOverfull` looped over `$[*].seatsLeft` and asserted nothing if the field was missing | **Weak test** (never failed) | Fixed: checks this test's own route explicitly |
 | 8 | The first run of the identical-reports race passed in a fresh JVM | **Test power:** a cold connection pool serialises the two requests | Fixed: 25 rounds |
 | 9 | `mvnw` is `Permission denied` in this checkout | Repository (file mode), not the feature | Run as `sh ./mvnw`; not changed here |
+| 10 | **BUG-3:** in CI, `AbsenceControllerTests.cancellingAnInProgressAbsenceShortensItInsteadOfDeletingIt` (the author's own test, line 350) failed twice with `expected: <2026-10-31> but was: <2026-11-01>`, at 23:34 and 23:36 UTC | **Bad test (not mine, already in `develop`):** it takes "today" from the JVM's zone (UTC on the runners) while the app uses Beirut's, so it fails every night from 22:00 to 24:00 UTC. It passed on my machine because its zone is Beirut | Not changed (it is the author's test). Written up in `SCRUM-236-bugs.md`; a CI re-run after midnight UTC passes |
 
 No test failed on the merged stories' single-request behaviour (238, 239, 240). The findings for a PR are the two bugs and conflict 1 below.
 

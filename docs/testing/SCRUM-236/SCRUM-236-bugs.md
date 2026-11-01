@@ -1,6 +1,6 @@
 # SCRUM-236: bugs found in Moustafa's work
 
-Found while testing SCRUM-238 and SCRUM-241 for SCRUM-236 (2026-11-02). Both are races that need two requests at the same instant, so the story's single-request tests pass. Neither test class runs in CI yet, because both fail on the code as it is; each carries a switch that turns it on (see "Repro" below), to be removed when the bug is fixed.
+Found while testing SCRUM-238 and SCRUM-241 for SCRUM-236 (2026-11-02). BUG-1 and BUG-2 are races that need two requests at the same instant, so the story's single-request tests pass. Neither test class runs in CI yet, because both fail on the code as it is; each carries a switch that turns it on (see "Repro" below), to be removed when the bug is fixed.
 
 Not fixed here, as agreed: the tester raises failing tests on the author's PR and does not change feature code.
 
@@ -105,3 +105,27 @@ wait; curl -s -b "wassel_token=$HEAD" "$BASE/api/head-of-transport/routes/$ROUTE
 **Paste-ready comment.**
 
 > **Bug (SCRUM-241, found by the SCRUM-236 tests):** the rule holds for one request at a time (the 9 tests in `VehicleCapacityCriteriaTests` pass on this PR), but a reduction and an added student sent at the same instant leave the route overfull: with 7 students on 8 seats, one request lowers the seats to 7 while another adds an eighth student, and the route ends with 8 students on 7 seats (`seatsLeft: -1`), in 9 of 10 rounds in tests and 25 of 25 by hand; the same for `PUT /routes/{id}` with a smaller vehicle. `setCapacity`, `editRoute` and `addStudent` each check against a value the other is about to change and write different rows, so nothing makes one wait for the other. Repro: `sh ./mvnw test -Dpending.SCRUM-241=true -Dknown-bug.SCRUM-241-race=true -Dtest=VehicleCapacityRaceCriteriaTests` (needs this PR's code). Suggested: lock the route row in all three paths (the lock `CLAUDE.md` already describes for 203/207), or word the criterion as single-request and note it as a known limit. Also: `docs/contracts/routing.md:52` says `seatsLeft` can be negative; please update it in this PR.
+
+---
+
+## BUG-3: `AbsenceControllerTests` fails in CI every night from 22:00 to 24:00 UTC (a bad test, not the feature)
+
+**Severity: Important for CI, none for users.** It is not caused by SCRUM-236 or by any change in this branch; it was already in `develop`. It turns the backend check red on any PR whose CI happens to run in that window (this PR's did, twice, at 23:34 and 23:36 UTC).
+
+**Where.** `backend/src/test/java/com/wassel/backend/absences/controller/AbsenceControllerTests.java:350`, in `cancellingAnInProgressAbsenceShortensItInsteadOfDeletingIt`. The test builds its dates from `LocalDate.now()` (15 uses in the file), which takes the date in the JVM's default zone: UTC on GitHub's runners, Beirut on a laptop in Lebanon. The application takes "today" from the `Clock` bean, which is `Asia/Beirut`. From 22:00 to 24:00 UTC it is already the next day in Beirut, so the service shortens the in-progress absence to Beirut's yesterday while the test expects UTC's yesterday:
+
+```
+AbsenceControllerTests.cancellingAnInProgressAbsenceShortensItInsteadOfDeletingIt:350 expected: <2026-10-31> but was: <2026-11-01>
+```
+
+Only this assertion is sensitive: it compares an exact date. The other 14 uses add days (`plusDays(1)` and up) with enough slack to survive a one-day shift.
+
+**Evidence.** The failure is identical in both CI runs of this PR (23:34 and 23:36 UTC on 2026-11-01, which is 01:34 on Monday in Beirut), and in no other test. `develop`'s own CI passed at 16:05 UTC the same day. It passes on a machine whose zone is Beirut at any hour, which is why it was not seen locally.
+
+**Reproduce.** Run the class in the window, with the JVM in UTC: `TZ=UTC sh ./mvnw test -Dtest=AbsenceControllerTests` between 22:00 and 24:00 UTC. The window is the only time the two dates differ, so there is no always-failing command; use the CI log above as the evidence.
+
+**Fix direction (not applied; it is the author's test).** Take the date from the same clock the application uses: inject the `Clock` bean, or use `LocalDate.now(ClockConfig.SCHOOL_ZONE)`. Better, pin it the way `RunControllerTests` and the SCRUM-236 suites do (`MutableClock`), so the test never depends on the day it runs. The new `AbsenceCriteriaTests` cover the same rule (`cancellingAnAbsenceInProgressKeepsTheDaysAlreadyGone`) with a pinned clock and pass at any hour.
+
+**Paste-ready comment.**
+
+> **Flaky test (SCRUM-238):** `AbsenceControllerTests.cancellingAnInProgressAbsenceShortensItInsteadOfDeletingIt` (line 350) fails in CI every night between 22:00 and 24:00 UTC (`expected: <2026-10-31> but was: <2026-11-01>`). The test uses `LocalDate.now()`, the JVM's zone (UTC on the runners), but the service uses the Beirut `Clock`, so for those two hours they disagree about the date. Please use the injected `Clock` (or `MutableClock`, as in `RunControllerTests`). Seen on PR #108's CI at 23:34 and 23:36 UTC; a re-run after midnight UTC passes.
