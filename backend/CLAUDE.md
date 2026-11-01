@@ -546,6 +546,24 @@ HTML report to `backend/target/site/jacoco/index.html` at the `verify` phase, so
 `test` does not). CI uploads the folder as the `backend-coverage` artifact. It is a report only: there are no
 thresholds, so a low number never fails the build.
 
+**Independent tests of Moustafa's Sprint 3 work (SCRUM-236, by Hashem)**, written from the tickets and `docs/contracts/runs.md`,
+not from the authors' own suites: `AbsenceCriteriaTests` (238), `AbsentOnRunCriteriaTests` (239),
+`ParentChildrenCriteriaTests` (240), `VehicleCapacityCriteriaTests` (241) and `AccountLockoutCriteriaTests` (171). All but the
+lockout class extend `common/CriteriaTestSupport` (the real app on the PostgreSQL container, `MondayClockConfig` pinning "today"
+to Monday 2026-11-02, random school ids, no deleting, `inParallel` for requests at the same instant) and assert on HTTP
+responses; the lockout class stands alone because it also watches the `Mailer` and the log. Three kinds of switch keep a class
+out of the default build, and a skipped test is reported as skipped, never as passed:
+- **Pending the merge of a story** (`VehicleCapacityCriteriaTests`, `AccountLockoutCriteriaTests`): `-Dpending.SCRUM-241=true` or
+  `-Dpending.SCRUM-171=true`. When the story merges, delete that one `@EnabledIfSystemProperty` line. The lockout class's
+  `@Nested WithAShortLock` uses **assumed** setting names (`wassel.auth.lockout.*`); fix them to the real keys. Removing the
+  guard adds two Spring contexts to the shared test database (`print = NONE`, a `Mailer` spy and the nested property source
+  each make a distinct one); if "too many clients" appears, as in SCRUM-237, lower `hikari.maximum-pool-size` for the test profile.
+- **Known bugs** (`AbsenceRaceCriteriaTests`, `VehicleCapacityRaceCriteriaTests`): `-Dknown-bug.SCRUM-238-race=true` /
+  `-Dknown-bug.SCRUM-241-race=true`. They fail today; the write-up with repros is `docs/testing/SCRUM-236/SCRUM-236-bugs.md`.
+  Delete the guard when the bug is fixed.
+Run any of them with `sh ./mvnw test -D<switch>=true -Dtest=<Class>` (`mvnw` is not marked executable). Report and bugs:
+`docs/testing/SCRUM-236/`.
+
 Tests mirror the main package structure: a test for
 `main/java/com/wassel/backend/schools/controller/SchoolSettingsController.java`
 lives at `test/java/com/wassel/backend/schools/controller/SchoolSettingsControllerTests.java`.
