@@ -50,7 +50,7 @@ export function ForgotPasswordForm() {
 
   return (
     <AuthCard title="Forgot password?" description="Enter your email to request a password reset link.">
-      <form onSubmit={handleSubmit} noValidate aria-busy={isSubmitting} className="flex flex-col" style={{ gap: spacing.md }}>
+      <form method="post" onSubmit={handleSubmit} noValidate aria-busy={isSubmitting} className="flex flex-col" style={{ gap: spacing.md }}>
         <Input
           ref={emailInput}
           label="Email"
