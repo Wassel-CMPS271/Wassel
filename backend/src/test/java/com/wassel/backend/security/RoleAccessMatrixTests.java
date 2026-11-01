@@ -101,6 +101,8 @@ class RoleAccessMatrixTests {
 
 		// admin
 		TABLE.put("POST /api/admin/head-of-transport", Access.ADMIN_ONLY);
+		TABLE.put("PATCH /api/admin/head-of-transport/{id}/revoke", Access.ADMIN_ONLY);
+		TABLE.put("PATCH /api/admin/head-of-transport/{id}/restore", Access.ADMIN_ONLY);
 		TABLE.put("GET /api/admin/school-calendar/half-days", Access.ADMIN_ONLY);
 		TABLE.put("POST /api/admin/school-calendar/half-days", Access.ADMIN_ONLY);
 		TABLE.put("GET /api/admin/school-calendar/holidays", Access.ADMIN_ONLY);
@@ -112,10 +114,14 @@ class RoleAccessMatrixTests {
 		// head of transportation
 		TABLE.put("GET /api/head-of-transport/parents", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("POST /api/head-of-transport/parents", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("PATCH /api/head-of-transport/parents/{id}/revoke", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("PATCH /api/head-of-transport/parents/{id}/restore", Access.HEAD_OF_TRANSPORT_ONLY);
 
 		TABLE.put("GET /api/head-of-transport/drivers", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("POST /api/head-of-transport/drivers", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("PATCH /api/head-of-transport/drivers/{id}/resend-invite", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("PATCH /api/head-of-transport/drivers/{id}/revoke", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("PATCH /api/head-of-transport/drivers/{id}/restore", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("PATCH /api/head-of-transport/drivers/{id}/vehicle", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("DELETE /api/head-of-transport/drivers/{id}/vehicle", Access.HEAD_OF_TRANSPORT_ONLY);
 

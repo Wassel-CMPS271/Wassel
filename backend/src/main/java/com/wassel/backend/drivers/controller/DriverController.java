@@ -54,6 +54,16 @@ public class DriverController {
 		return driverService.resendInvite(schoolIdOf(headOfTransport), id);
 	}
 
+	@PatchMapping("/{id}/revoke")
+	public DriverResponse revokeDriver(@AuthenticationPrincipal User headOfTransport, @PathVariable UUID id) {
+		return driverService.revoke(schoolIdOf(headOfTransport), headOfTransport.getId(), id);
+	}
+
+	@PatchMapping("/{id}/restore")
+	public DriverResponse restoreDriver(@AuthenticationPrincipal User headOfTransport, @PathVariable UUID id) {
+		return driverService.restore(schoolIdOf(headOfTransport), headOfTransport.getId(), id);
+	}
+
 	@PatchMapping("/{id}/vehicle")
 	public DriverResponse assignVehicle(@AuthenticationPrincipal User headOfTransport, @PathVariable UUID id,
 			@Valid @RequestBody AssignVehicleRequest request) {
