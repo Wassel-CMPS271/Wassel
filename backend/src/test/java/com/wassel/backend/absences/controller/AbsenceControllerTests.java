@@ -33,6 +33,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.time.LocalDate;
+import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -86,6 +87,9 @@ class AbsenceControllerTests {
 
 	@Autowired
 	private UserService userService;
+
+	@Autowired
+	private Clock clock;
 
 	// --- fixtures -----------------------------------------------------------------------------
 
@@ -337,8 +341,9 @@ class AbsenceControllerTests {
 	void cancellingAnInProgressAbsenceShortensItInsteadOfDeletingIt() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().minusDays(2);
-		LocalDate to = LocalDate.now().plusDays(5);
+		LocalDate today = LocalDate.now(clock);
+		LocalDate from = today.minusDays(2);
+		LocalDate to = today.plusDays(5);
 		Absence inProgress = absenceRepository.saveAndFlush(Absence.builder().schoolId(schoolId).studentId(child.id())
 				.fromDate(from).toDate(to).createdBy(parent.getId()).build());
 
@@ -347,7 +352,7 @@ class AbsenceControllerTests {
 
 		Absence reloaded = absenceRepository.findById(inProgress.getId()).orElseThrow();
 		assertTrue(!reloaded.isCancelled(), "an in-progress absence is shortened, not marked cancelled");
-		assertEquals(LocalDate.now().minusDays(1), reloaded.getToDate());
+		assertEquals(today.minusDays(1), reloaded.getToDate());
 
 		// Shortened to end yesterday, so it's gone from the upcoming list (toDate < today).
 		mockMvc.perform(get(childUrl(child.id())).with(loggedInAsParent(parent.getId())))
