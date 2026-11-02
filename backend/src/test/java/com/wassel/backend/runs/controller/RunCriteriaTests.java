@@ -4,7 +4,6 @@ import com.jayway.jsonpath.JsonPath;
 import com.wassel.backend.common.RunCriteriaSupport;
 import com.wassel.backend.users.entity.Role;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -613,14 +612,12 @@ class RunCriteriaTests extends RunCriteriaSupport {
 	}
 
 	/**
-	 * FINDING F-1 (see docs/testing/SCRUM-242/SCRUM-242-test-report.md): the contract defines {@code counts.absent} once,
-	 * for every run, and a {@code RunSummary} is "a {@code Run} without {@code stops}", but the head of transportation's
-	 * summary answers 0 here ({@code backend/CLAUDE.md} documents it as intended). Skipped until the team settles which
-	 * one changes; run with {@code -Dfinding.SCRUM-242-F1=true}.
+	 * FINDING F-1 (see docs/testing/SCRUM-242/SCRUM-242-test-report.md), fixed by SCRUM-260 (#118): the contract
+	 * defines {@code counts.absent} once, for every run, and a {@code RunSummary} is "a {@code Run} without
+	 * {@code stops}" — the head of transportation's summary now computes it from the route's roster instead of
+	 * answering 0.
 	 */
 	@Test
-	@EnabledIfSystemProperty(named = "finding.SCRUM-242-F1", matches = "true",
-			disabledReason = "FINDING F-1 of SCRUM-242: the head's counts.absent is 0. Run with -Dfinding.SCRUM-242-F1=true")
 	void theHeadsSummaryCountsAbsentStopsLikeTheDriversRun() throws Exception {
 		UUID parent = aParent();
 		Bus bus = aBus("Hamra morning run");
