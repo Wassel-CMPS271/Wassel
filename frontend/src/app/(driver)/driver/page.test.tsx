@@ -263,18 +263,42 @@ it("asks before ending a run with stops left, and ends it only on Confirm", asyn
   expect(await screen.findByRole("button", { name: "Start run" })).toHaveFocus();
 });
 
-it("ends a run with every stop done straight away, without asking", async () => {
+it("warns before ending a morning run while children are still on the bus, even with no next/pending stops left", async () => {
+  // Every stop confirmed PICKED_UP, none DROPPED_OFF: isDone() marks a
+  // morning stop done at any confirmation, so stopStates() alone finds
+  // nothing to warn about. The run still has every child onboard.
   const [morning, afternoon] = DAY.runs;
   const stops = morning.stops.map((stop) => ({
     ...stop,
-    confirmation: stop.confirmation ?? {
-      status: "PICKED_UP" as const,
-      at: "2026-10-21T04:30:00Z",
-    },
+    confirmation: { status: "PICKED_UP" as const, at: "2026-10-21T04:30:00Z" },
   }));
-  const allDone = { ...morning, stops };
-  vi.mocked(getDriverTodaySample).mockResolvedValue({ ...DAY, runs: [allDone, afternoon] });
-  vi.mocked(endRunSample).mockResolvedValue({ ...allDone, state: "FINISHED" });
+  const allPickedUp = {
+    ...morning,
+    stops,
+    counts: { students: 4, absent: 0, pickedUp: 4, droppedOff: 0, notPresent: 0 },
+  };
+  vi.mocked(getDriverTodaySample).mockResolvedValue({ ...DAY, runs: [allPickedUp, afternoon] });
+  render(<DriverTodayPage />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "End run" }));
+
+  expect(
+    screen.getByText("4 children are still on the bus, not dropped off yet. End the run anyway?"),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Confirm end run" })).toHaveFocus();
+  expect(endRunSample).not.toHaveBeenCalled();
+});
+
+it("ends a run straight away when every stop is skippable and nobody is onboard", async () => {
+  const [morning, afternoon] = DAY.runs;
+  const stops = morning.stops.map((stop) => ({ ...stop, absent: true, confirmation: null }));
+  const allAbsent = {
+    ...morning,
+    stops,
+    counts: { students: 4, absent: 4, pickedUp: 0, droppedOff: 0, notPresent: 0 },
+  };
+  vi.mocked(getDriverTodaySample).mockResolvedValue({ ...DAY, runs: [allAbsent, afternoon] });
+  vi.mocked(endRunSample).mockResolvedValue({ ...allAbsent, state: "FINISHED" });
   render(<DriverTodayPage />);
 
   fireEvent.click(await screen.findByRole("button", { name: "End run" }));
@@ -283,6 +307,57 @@ it("ends a run with every stop done straight away, without asking", async () => 
   expect(endRunSample).toHaveBeenCalledTimes(1);
   expect(endRunSample).toHaveBeenCalledWith(morning.id);
   expect(await screen.findByText("Afternoon run")).toBeInTheDocument();
+});
+
+it("closes the confirm step itself if a delayed confirmation brings the count to 0 while it's open", async () => {
+  const [morning, afternoon] = DAY.runs;
+  const rami = morning.stops.find((s) => s.firstName === "Rami")!;
+  const stops = morning.stops.map((stop) => {
+    if (stop.firstName === "Salma" || stop.firstName === "Dana") {
+      return { ...stop, confirmation: { status: "DROPPED_OFF" as const, at: "2026-10-21T04:20:00Z" } };
+    }
+    if (stop.firstName === "Tarek") {
+      return {
+        ...stop,
+        absent: false,
+        confirmation: { status: "NOT_PRESENT" as const, at: "2026-10-21T04:22:00Z" },
+      };
+    }
+    return stop; // Rami: still PICKED_UP, the one onboard child, dropped off below.
+  });
+  const onboardOne = {
+    ...morning,
+    stops,
+    counts: { students: 4, absent: 0, pickedUp: 3, droppedOff: 2, notPresent: 1 },
+  };
+  vi.mocked(getDriverTodaySample).mockResolvedValue({ ...DAY, runs: [onboardOne, afternoon] });
+  let resolveDropOff!: (run: Run) => void;
+  vi.mocked(confirmStudentSample).mockReturnValue(
+    new Promise((resolve) => (resolveDropOff = resolve)),
+  );
+  render(<DriverTodayPage />);
+  await screen.findByRole("list", { name: "Stops" });
+
+  fireEvent.click(within(card("Rami Nasr")).getByRole("button", { name: "Dropped off" }));
+  fireEvent.click(screen.getByRole("button", { name: "End run" }));
+
+  expect(
+    screen.getByText("1 child is still on the bus, not dropped off yet. End the run anyway?"),
+  ).toBeInTheDocument();
+
+  resolveDropOff({
+    ...onboardOne,
+    stops: stops.map((stop) =>
+      stop.studentId === rami.studentId
+        ? { ...stop, confirmation: { status: "DROPPED_OFF" as const, at: "2026-10-21T04:30:00Z" } }
+        : stop,
+    ),
+    counts: { students: 4, absent: 0, pickedUp: 3, droppedOff: 3, notPresent: 1 },
+  });
+
+  expect(await screen.findByRole("button", { name: "End run" })).toHaveFocus();
+  expect(screen.queryByRole("button", { name: "Confirm end run" })).not.toBeInTheDocument();
+  expect(endRunSample).not.toHaveBeenCalled();
 });
 
 function buttonNames(name: string) {
