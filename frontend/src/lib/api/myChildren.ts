@@ -5,7 +5,8 @@
 //
 //   GET /api/parent/children -> Child[]
 //
-// Run status and "stops left before my child" (SCRUM-237) are not in the contract yet.
+// SCRUM-237 adds todayRun; this Parent Home story tolerates additive fields.
+// Displaying live run status remains separately gated by SCRUM-251 approval.
 
 import { request } from "./client";
 

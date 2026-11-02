@@ -4,7 +4,7 @@ import { ApiError, ApiValidationError } from "./errors";
 export interface Parent {
   id: string;
   email: string;
-  status: "invited" | "active";
+  status: "invited" | "active" | "revoked";
   createdAt: string;
 }
 
@@ -13,6 +13,9 @@ export const getParents = () => request<Parent[]>(PATH);
 export const inviteParent = (email: string) => request<Parent>(PATH, {
   method: "POST", body: { email: email.trim() },
 });
+// SCRUM-98: a revoked parent can't sign in and loses an open session at the next request.
+export const revokeParent = (id: string) => request<Parent>(`${PATH}/${encodeURIComponent(id)}/revoke`, { method: "PATCH" });
+export const restoreParent = (id: string) => request<Parent>(`${PATH}/${encodeURIComponent(id)}/restore`, { method: "PATCH" });
 
 export function parentError(error: unknown): string {
   if (error instanceof ApiValidationError) return Object.values(error.errors).join(" ");

@@ -130,12 +130,13 @@ describe("SCRUM-248 Parent Home", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/something went wrong/i);
   });
 
-  it("labels an explicit development preview as sample data", async () => {
+  it("uses real HTTP even if an obsolete development preview flag is enabled", async () => {
     vi.stubEnv("NODE_ENV", "development"); vi.stubEnv("NEXT_PUBLIC_PARENT_HOME_PREVIEW", "true");
+    fetch.mockResolvedValue(response(children));
     render(<ParentHome />);
     await screen.findByRole("region", { name: "Tarek Mansour" });
-    expect(screen.getByRole("status")).toHaveTextContent(/development preview.*not live school records/i);
-    expect(fetch).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Development preview/)).not.toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("ignores a pending response after unmount", async () => {

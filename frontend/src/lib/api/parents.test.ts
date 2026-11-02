@@ -4,7 +4,7 @@
 // through parentError.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getParents, inviteParent, parentError, type Parent } from "./parents";
+import { getParents, inviteParent, parentError, restoreParent, revokeParent, type Parent } from "./parents";
 import { ApiError, ApiValidationError } from "./errors";
 
 const PARENTS_URL = "http://localhost:8080/api/head-of-transport/parents";
@@ -45,6 +45,28 @@ describe("httpParents", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       PARENTS_URL,
       expect.objectContaining({ method: "POST", body: JSON.stringify({ email: "rami.daher@example.com" }) }),
+    );
+  });
+
+  it("revokes a parent's access with a PATCH and no body, encoding the id (SCRUM-98)", async () => {
+    const revoked = { ...PARENT, status: "revoked" };
+    const fetchMock = mockFetchOnce(true, 200, revoked);
+
+    await expect(revokeParent("a/b")).resolves.toEqual(revoked);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${PARENTS_URL}/a%2Fb/revoke`,
+      expect.objectContaining({ method: "PATCH", body: undefined }),
+    );
+  });
+
+  it("restores a parent's access with a PATCH and no body, encoding the id (SCRUM-98)", async () => {
+    const restored = { ...PARENT, status: "active" };
+    const fetchMock = mockFetchOnce(true, 200, restored);
+
+    await expect(restoreParent("a/b")).resolves.toEqual(restored);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${PARENTS_URL}/a%2Fb/restore`,
+      expect.objectContaining({ method: "PATCH", body: undefined }),
     );
   });
 

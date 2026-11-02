@@ -2,7 +2,19 @@
 
 Date: 2026-10-30 (Asia/Beirut). Author: Wassim Fawaz.
 
-## Status
+## Current verification — 3 November 2026
+
+Integrated real SCRUM-240 from origin/develop `1785ad89aa9b1cbcdf22cbeb83fc76ace3c0fddd` by merge, retaining local snapshot `8167c2a8630dd5290ad35cd97076441058416b45` and SCRUM-249's dependency. Removed the temporary myChildren.development.ts adapter and preview banner. Every environment now calls the authenticated endpoint; former preview tests assert the obsolete flag cannot select sample data. Contract fixtures remain tests only. SCRUM-251's additive fields are tolerated, without implementing its unapproved UI.
+
+Executed on current source: **623 frontend tests passed, 6 existing skipped**, 46 files, with two workers; ESLint passed; production build passed both normally and with the real same-origin API proxy; actual PR diff check against develop passed. The initial unbounded run had four worker-start timeout errors under local memory pressure; no assertion was removed or test timeout relaxed. A bounded rerun passed the whole suite.
+
+**Real PostgreSQL/Flyway browser verification passed**, using the current backend and production frontend, with actual password/LoggingMailer 2FA and no intercepted API responses. Verified two owned children only, another child's 404 and wrong-role 403, route assignment followed by reload, actual route/driver phone/vehicle plate/pickup values, unassigned child messaging, normalized tel link, 44px call target, no horizontal overflow at 360px, an actually invited/activated empty parent account, and logout/session rejection. The assigned-null-pickup edge and explicit load/error cases remain covered by component tests. The 360px screenshot was visually inspected. First browser attempt used the build's default development URL; rebuilt with NEXT_PUBLIC_API_BASE_URL empty and BACKEND_URL pointing to the isolated backend, then the real workflow passed.
+
+Ignored evidence: tmp/SCRUM-248-final/{tests-bounded.log,lint.log,build.log,build-real.log,real-browser-2.log,parent-home-real-360.png,parent-real.cjs,run-real.mjs}. The browser check reuses the preserved SCRUM-177 test launcher/production seeders, on separate ports 4188/18188/55440, and deletes its test route. Existing evidence is retained. Latest backend Maven verification on the same develop core: 1099 tests, 0 failures/errors, 2 skips, native PostgreSQL.
+
+All SCRUM-248 acceptance criteria are now locally verified against the real API. Submit the complete Parent Home PR to develop, request Majd's independent review (SCRUM-246), verify CI and only then move Jira to In Review. Do not merge without required approval. SCRUM-249 remains a separate preserved branch and must not be submitted with duplicate Parent Home changes before the accepted base is available.
+
+## Historical status — 30 October 2026
 
 **UI and contract-based tests implemented; real-backend acceptance blocked by SCRUM-240.** Jira SCRUM-248 is In Progress. No SCRUM-248 commit, push or PR has been created. Nothing was merged. SCRUM-250, its 65 tests, SCRUM-230 and all other ticket worktrees were left untouched.
 
