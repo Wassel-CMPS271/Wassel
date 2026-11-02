@@ -614,18 +614,18 @@ class RunControllerTests {
 	}
 
 	@Test
-	void theHeadsRunsDayCountsStayZeroForAbsentSinceItDoesNotFetchStops() throws Exception {
+	void theHeadsRunsDayCountsAbsentTheSameWayTheDriversRunDoes() throws Exception {
 		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
 		Student rami = studentRepository.findBySchoolIdAndRouteIdOrderByStopPositionAsc(schoolA, f.route().getId())
 				.get(0);
 		anAbsence(schoolA, rami.getId(), LocalDate.parse(WEDNESDAY_DATE), LocalDate.parse(WEDNESDAY_DATE));
 
-		// A RunSummary (no stops) has nothing to compute the absent count from; the head of
-		// transportation sees who is absent today through the absences module's own endpoint
-		// instead (docs/contracts/runs.md: GET /api/head-of-transport/absences).
+		// A RunSummary has no stops to filter (SCRUM-260), but counts.absent must still match what the driver's
+		// own run shows for the same route and day: it comes from the roster and a batched absence check instead.
 		mockMvc.perform(get(HEAD_URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
 				.andExpect(jsonPath("$.runs[0].stops").doesNotExist())
-				.andExpect(jsonPath("$.runs[0].counts.absent").value(0));
+				.andExpect(jsonPath("$.runs[0].counts.absent").value(1))
+				.andExpect(jsonPath("$.runs[1].counts.absent").value(1));
 	}
 
 	@Test
@@ -2011,6 +2011,20 @@ class RunControllerTests {
 		assertEquals(2, (int) JsonPath.read(head, "$.runs[1].counts.students"));
 		assertEquals((int) JsonPath.read(driverToday(schoolA, bus.f().userId()), "$.runs[0].counts.students"),
 				(int) JsonPath.read(head, "$.runs[0].counts.students"));
+	}
+
+	/** The contract: a confirmation always wins over absent — true on the head's count too (SCRUM-260). */
+	@Test
+	void theHeadsListDoesNotCountAConfirmedStudentAsAbsent() throws Exception {
+		Bus bus = aBusInProgress();
+		anAbsence(schoolA, bus.rami(), LocalDate.parse(WEDNESDAY_DATE), LocalDate.parse(WEDNESDAY_DATE));
+		assertEquals(1, (int) JsonPath.read(headRuns(schoolA, ""), "$.runs[0].counts.absent"));
+
+		confirm(bus, bus.rami(), "PICKED_UP").andExpect(status().isOk());
+
+		String head = headRuns(schoolA, "");
+		assertEquals(0, (int) JsonPath.read(head, "$.runs[0].counts.absent"), "a confirmation wins over absent");
+		assertEquals(1, (int) JsonPath.read(head, "$.runs[0].counts.pickedUp"));
 	}
 
 	@Test
