@@ -389,8 +389,11 @@ that's the structure this codebase moved away from.
   exists). `absent` (SCRUM-239) is this route's students with a live absence for today, from
   `AbsenceService.absentStudentIds` (one query for the whole roster, never the repository), read fresh on every fetch so a
   same-day report or cancellation shows on the next one. `counts.absent` is the stops with `absent: true` and no
-  confirmation (a confirmation wins, contract); it stays 0 on the head of transportation's stop-less `RunSummary`, which
-  has its own list instead (`GET /api/head-of-transport/absences`, from the `absences` module).
+  confirmation (a confirmation wins, contract), the same on the head of transportation's stop-less `RunSummary`
+  (SCRUM-260): `RunService.runsDay` has no stops to filter, so it reads each route's roster (one route with a run
+  today, one read each) and checks them against one batched `AbsenceService.absentStudentIds` call instead. The
+  head's separate list (`GET /api/head-of-transport/absences`, from the `absences` module) is its own endpoint,
+  unrelated to this count.
   Confirmations (SCRUM-235): `PUT /api/driver/runs/{runId}/students/{studentId}/confirmation` (`RunService.confirm`,
   `run_confirmations`, migration V8: unique on run + student + status, no foreign keys). One row per status, kept as
   history; the latest is the highest status (`ConfirmationStatus` is declared in rank order), not the newest row. `confirm`
