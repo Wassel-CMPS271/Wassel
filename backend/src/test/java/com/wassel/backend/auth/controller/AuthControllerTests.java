@@ -20,6 +20,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -157,6 +159,81 @@ class AuthControllerTests {
 		saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
 
 		assertGenericLoginFailure("hot@wassel.test", "wrong-password");
+	}
+
+	// --- lockout (SCRUM-171): 5 wrong passwords in a row lock the account for 15 minutes (application.yml)
+
+	private void wrongPasswordTimes(String email, int times) throws Exception {
+		for (int i = 0; i < times; i++) {
+			assertEquals(401, login(email, "wrong-password").getResponse().getStatus());
+		}
+	}
+
+	@Test
+	void fiveWrongPasswordsInARowLockTheAccountForFifteenMinutes() throws Exception {
+		User user = saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
+		Instant before = Instant.now();
+
+		wrongPasswordTimes("hot@wassel.test", 5);
+
+		// Locked: the right password gets the wrong-password answer, and no code is sent.
+		assertGenericLoginFailure("hot@wassel.test", PASSWORD);
+		User locked = userRepository.findById(user.getId()).orElseThrow();
+		assertTrue(locked.getLockedUntil().isAfter(before.plus(Duration.ofMinutes(15)).minusSeconds(1)),
+				String.valueOf(locked.getLockedUntil()));
+		assertTrue(locked.getLockedUntil().isBefore(Instant.now().plus(Duration.ofMinutes(15)).plusSeconds(1)),
+				String.valueOf(locked.getLockedUntil()));
+	}
+
+	@Test
+	void fourWrongPasswordsDoNotLockAndTheRightOneStartsTheCountOver() throws Exception {
+		saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
+
+		wrongPasswordTimes("hot@wassel.test", 4);
+		// Completed, so the second sign-in below isn't held back by the 60-second code cooldown.
+		loginAndGetToken("hot@wassel.test");
+
+		// Four more would be eight in total, but only four in a row.
+		wrongPasswordTimes("hot@wassel.test", 4);
+		assertEquals(204, login("hot@wassel.test", PASSWORD).getResponse().getStatus());
+	}
+
+	@Test
+	void theLockEndsByItselfAndTheCountStartsOver() throws Exception {
+		User user = saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
+		wrongPasswordTimes("hot@wassel.test", 5);
+		User locked = userRepository.findById(user.getId()).orElseThrow();
+		locked.setLockedUntil(Instant.now().minusSeconds(1));
+		userRepository.save(locked);
+
+		wrongPasswordTimes("hot@wassel.test", 1);
+
+		assertEquals(204, login("hot@wassel.test", PASSWORD).getResponse().getStatus());
+	}
+
+	/**
+	 * Attempts are counted before their password is checked, so guesses sent at the same moment can't all slip
+	 * past the limit: with five already counted and the account not locked yet, a sixth isn't checked at all.
+	 */
+	@Test
+	void anAttemptPastTheLimitIsRefusedEvenBeforeTheLockIsWritten() throws Exception {
+		User user = saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
+		user.setFailedSignIns(5);
+		userRepository.save(user);
+
+		assertGenericLoginFailure("hot@wassel.test", PASSWORD);
+	}
+
+	@Test
+	void aLockedAccountsAnswerIsTheSameAsAnUnknownEmails() throws Exception {
+		saveUser("hot@wassel.test", Role.HEAD_OF_TRANSPORT, true);
+		wrongPasswordTimes("hot@wassel.test", 5);
+
+		MvcResult locked = login("hot@wassel.test", PASSWORD);
+		MvcResult unknown = login("nobody@wassel.test", PASSWORD);
+
+		assertEquals(unknown.getResponse().getStatus(), locked.getResponse().getStatus());
+		assertEquals(unknown.getResponse().getContentAsString(), locked.getResponse().getContentAsString());
 	}
 
 	@Test

@@ -1,15 +1,21 @@
 package com.wassel.backend.auth.service;
 
+import com.wassel.backend.auth.config.LockoutProperties;
 import com.wassel.backend.auth.dto.AuthUserResponse;
 import com.wassel.backend.auth.dto.LoginRequest;
 import com.wassel.backend.auth.exception.InvalidCredentialsException;
 import com.wassel.backend.users.entity.User;
 import com.wassel.backend.users.service.UserService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
+import java.time.Instant;
+
 import java.util.Optional;
 
+@Slf4j
 @Service
 public class AuthService {
 
@@ -24,31 +30,59 @@ public class AuthService {
 
 	private final TwoFactorService twoFactorService;
 
-	// Checked when the email is unknown, so response time doesn't reveal which accounts exist.
+	private final LockoutProperties lockout;
+
+	private final Clock clock;
+
+	// Checked when the email is unknown or the account locked, so response time doesn't reveal either.
 	private final String unknownUserHash;
 
 	public AuthService(UserService userService, PasswordEncoder passwordEncoder, JwtService jwtService,
-			TwoFactorService twoFactorService) {
+			TwoFactorService twoFactorService, LockoutProperties lockout, Clock clock) {
 		this.userService = userService;
 		this.passwordEncoder = passwordEncoder;
 		this.jwtService = jwtService;
 		this.twoFactorService = twoFactorService;
+		this.lockout = lockout;
+		this.clock = clock;
 		this.unknownUserHash = passwordEncoder.encode("not-a-real-password");
 	}
 
 	/**
 	 * First step: checks the password and emails the code. Returns the pending token for the second
-	 * step, not a session. Unknown email, wrong password and disabled account all fail the same way.
+	 * step, not a session. Unknown email, wrong password, disabled account and locked account all fail
+	 * the same way.
+	 *
+	 * <p>Lockout (SCRUM-171): the attempt is counted before the password is checked, and refused unchecked
+	 * while the account is locked or the limit is already counted, so parallel guesses get no more than
+	 * the limit between them. The right password clears the count; a wrong one that reaches the limit
+	 * locks the account. Each step is its own short statement, so no lock is held during the password check.
 	 */
 	public String login(LoginRequest request) {
-		Optional<User> found = userService.findByEmail(request.email());
 		// An invited account has no password yet: treat it like an unknown email.
-		String hash = found.filter(User::hasPassword).map(User::getPasswordHash).orElse(unknownUserHash);
+		Optional<User> found = userService.findByEmail(request.email()).filter(User::hasPassword);
+		boolean mayTry = found
+				.map(candidate -> userService.countSignInAttempt(candidate.getId(), lockout.maxFailures(), clock.instant()))
+				.orElse(false);
+		String hash = mayTry ? found.get().getPasswordHash() : unknownUserHash;
 		boolean passwordMatches = passwordEncoder.matches(request.password(), hash);
+		if (!mayTry) {
+			throw new InvalidCredentialsException();
+		}
 
-		User user = found
-				.filter(candidate -> candidate.hasPassword() && passwordMatches && candidate.isEnabled())
-				.orElseThrow(InvalidCredentialsException::new);
+		User user = found.get();
+		if (!passwordMatches) {
+			Instant until = clock.instant().plus(lockout.duration());
+			if (userService.lockIfTooManyFailures(user.getId(), lockout.maxFailures(), until)) {
+				log.warn("Account {} locked until {} after {} wrong passwords in a row", user.getId(), until,
+						lockout.maxFailures());
+			}
+			throw new InvalidCredentialsException();
+		}
+		userService.clearSignInAttempts(user.getId());
+		if (!user.isEnabled()) {
+			throw new InvalidCredentialsException();
+		}
 		return twoFactorService.start(user);
 	}
 

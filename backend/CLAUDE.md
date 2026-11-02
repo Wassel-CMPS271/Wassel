@@ -15,7 +15,19 @@ that's the structure this codebase moved away from.
   reloads the `User` on every request (so disabling an account or changing a role is immediate)
   and sets the `User` entity as the principal, which is what controllers' `@AuthenticationPrincipal
   User` expects. Login failures are one generic 401 (unknown email, wrong password, disabled
-  account). No refresh tokens. The app refuses to start if `JWT_SECRET` is under 32 bytes.
+  account, locked account). No refresh tokens. The app refuses to start if `JWT_SECRET` is under 32 bytes.
+  Lockout (SCRUM-171): `wassel.auth.lockout.max-failures` wrong passwords in a row (`LOCKOUT_MAX_FAILURES`,
+  default 5) lock the account for `wassel.auth.lockout.duration` (`LOCKOUT_DURATION`, default 15m;
+  `config/LockoutProperties`), kept on `User` as `failedSignIns` and `lockedUntil` (migration V9). The lock ends
+  by itself and starts the count over; the right password clears the count; each lock is logged at WARN with the
+  user id and end time. `AuthService.login` counts the attempt *before* checking the password, with one
+  conditional update (`UserRepository.countSignInAttempt`: not locked and under the limit), and a refused attempt
+  is answered like an unknown email (the dummy hash is still checked, so the timing matches) without trying the
+  password. So guesses sent at the same moment get no more than the limit between them, and no row lock is held
+  during the BCrypt check. Lockout counts passwords only: wrong 2FA codes keep their own limit (below), and an
+  invited account (no password) or an unknown email has nothing to count.
+  The cost every lockout has: anyone who knows an email can keep that account locked by sending
+  wrong passwords every 15 minutes. There is no endpoint for an admin to lift a lock early.
   Two-factor (SCRUM-172): login is two steps and 2FA has no off switch. `POST /api/auth/login` checks
   the password, emails a 6-digit code through `Mailer` and answers 204 with a pending cookie
   (`wassel_2fa`, HttpOnly, `SameSite=Strict`, 15 min) and no session. `POST /api/auth/2fa/verify
@@ -71,8 +83,9 @@ that's the structure this codebase moved away from.
   anyone who knows an email can call forgot-password once a minute; each new link voids the
   previous one, so they can keep that person's link from working and fill their inbox. Someone who
   has a user's password can try 5 login codes a minute (about 7,200 a day against a million codes)
-  and, by logging in every minute, keep that user's code from being usable; the fix is account
-  lockout (SCRUM-171, skipped for now). Limits that real email adds:
+  and, by logging in every minute, keep that user's code from being usable. Account lockout
+  (SCRUM-171) does not change this, since it counts wrong passwords and this caller has the right
+  one. Limits that real email adds:
   - **Forgot-password reveals which emails have accounts.** An unknown email, or one in its cooldown,
     answers 204 at once; a registered one waits for the send (a second or so) and is a 500 if Gmail
     fails. The old "always 204, reveals nothing" held only because logging took no time. Accepted
