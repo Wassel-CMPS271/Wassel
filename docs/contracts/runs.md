@@ -190,7 +190,7 @@ So that the screens and their tests agree, these are defined here and not sent b
 - An absence is whole **days**, for one child, and covers the morning and the afternoon run. `toDate` is optional and defaults to `fromDate`.
 - `fromDate` must be **today or later**, and `toDate` must not be before `fromDate` (400). Date pickers may grey out past days using today in `Asia/Beirut`; the server still decides.
 - Any of the parent's children can be reported absent, with or without a route.
-- Reporting exactly the same `fromDate` and `toDate` (after `toDate` defaults to `fromDate`) as an absence **this child** already has returns that absence with **200** and changes nothing, so a POST retried after a lost answer is harmless, like start, end and confirm.
+- Reporting exactly the same `fromDate` and `toDate` (after `toDate` defaults to `fromDate`) as an absence **this child** already has returns that absence with **200** and changes nothing, so a POST retried after a lost answer is harmless, like start, end and confirm. This holds even when the two requests arrive at the same moment: they are handled one after the other.
 - Any other **overlap** with an absence the child already has is **rejected** (409), not merged. Absences that only touch (one ends 10 Nov, the next starts 11 Nov) are fine. A cancelled absence is gone and overlaps nothing.
 - The list returns absences whose `toDate` is today or later, ordered by `fromDate`.
 - **Cancel** deletes an absence whose `fromDate` is **today or later**. One that started **before today** is cut to end **yesterday**, so the days gone by stay recorded. Cancelling one that ended before today is 409.
