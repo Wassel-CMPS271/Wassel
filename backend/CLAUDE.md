@@ -187,8 +187,10 @@ that's the structure this codebase moved away from.
   case the manual-pin fallback exists for.
 - `students` — student roster. Real module: add (with an optional address, SCRUM-213), list,
   search/filter by query/status/grade/route (SCRUM-167), and editing address, map-pin location,
-  and parent-linking (SCRUM-166) are done. CSV import and the active/inactive toggle are not
-  built yet. The old `route` string column
+  and parent-linking (SCRUM-166) are done. The active/inactive toggle is not built yet. The
+  frontend's CSV import screen (SCRUM-160) calls this module's own create-student endpoint
+  once per row (SCRUM-193) — there is no bulk/batch endpoint, so a large file is one request
+  per row, sequential and not atomic: a failure partway through leaves a partial import. The old `route` string column
   exists for filtering only and is never written; real route membership (SCRUM-209) is
   `routeId`/`stopPosition`, a student is a stop on at most one route, and `stopPosition` is a
   watermark (next = current max + 1 on that route), not a compacted sequence — removing a stop
