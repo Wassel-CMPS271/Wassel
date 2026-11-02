@@ -88,7 +88,9 @@ jobs:
 
   routing-e2e:
     runs-on: ubuntu-latest
-    needs: [backend-build, frontend-build]
+    # This job compiles the backend and builds the frontend itself. Run it
+    # independently so an unrelated unit-test failure cannot hide its result.
+    # backend-build/frontend-build remain required checks and still fail CI.
     timeout-minutes: 20
     strategy:
       fail-fast: false
