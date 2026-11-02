@@ -1,5 +1,21 @@
 # SCRUM-250 — Independent driver frontend tests
 
+## Current independent verification — 3 November 2026
+
+Preserved the original seven test/report files first in local snapshot 2f958fa. Updated only the test branch by merging exact PR #103 head d11b762fb726c2c8825b6c544a44cadd48c87df5 and PR #93's later approved fix f525a8a1952ed0fe99bd5d47b23f3b1375f1db42. Correct stack: #103 → #93 → #89 → develop. PR #89 still conflicts with current develop. No Majd production implementation was edited by the tester.
+
+**Independent suite: 64 passed, 1 failed, 0 skips (65 total).** The unchanged onboard-child End Run warning now passes with the approved fix; all nine maps/call cases pass. The remaining reproducible failure is real-endpoint integration: the page still imports getDriverTodaySample/confirmStudentSample and RunAction still imports sample start/end calls, so an unmocked screen never GETs /api/driver/runs/today. Backend SCRUM-233/234/235/239 is now merged; this is an outstanding feature criterion, not an unavailable backend excuse. Findings are posted on #89 and #93. No expected-failure annotation, skip or weakened assertion was added.
+
+Maps/call test locators were adapted to the feature's valid descriptive accessible names ("Open directions to [name]'s stop" and "Call [name]'s parent"); coordinate, zero-coordinate, missing/partial pin, phone, empty-phone, keyboard and >=44px assertions are unchanged. Initial locator mismatches and a resource-starved authorization timeout are retained in earlier logs; the bounded rerun passes authorization and all link cases. No product defect was claimed for the descriptive labels.
+
+**Full regression: 605 passed, 1 failed (the same real-endpoint gate), 7 existing skipped**, 44 files. ESLint and serial production build passed. An earlier build was stopped only to relieve local memory pressure; its logs remain preserved. A Chromium 360px production-frontend UI check passed actual maps/tel hrefs, coordinates, >=44px geometry, keyboard focus, no horizontal overflow or page errors. The settled-animation screenshot was inspected. This browser check used an explicit session fixture and the feature's existing sample run source; it is **not** real backend E2E. Earlier animation-in-progress screenshots are retained.
+
+Ignored evidence: tmp/SCRUM-250-final/{independent-bounded.log,full-regression.log,lint.log,build-serial.log,mobile-check-settled-final.log,driver-360px-settled.png}. PR #103's exact two-file diff was reviewed and a formal COMMENT review posted; no automatic approval/merge. Existing P1 warning feedback on #93 was confirmed fixed, while the real-endpoint criterion remains explicitly open.
+
+Remaining: Majd must wire the real authenticated run client, remove the sample source, account for the current contract (including removedFromRoute), reconcile the stack with develop and pass feature checks/review. Retest the unchanged independent real-endpoint gate and actual browser/backend actions when available. Then transplant only the seven independent test/support/report files onto the accepted merged feature base, refresh all checks and submit a complete develop test PR. Until then keep SCRUM-250 In Progress, local and preserved; do not submit inherited unmerged feature code as a test PR. No teammate Jira status changed.
+
+## Historical verification — 30 October 2026
+
 Date: 2026-10-30, Asia/Beirut. Tester: Wassim Fawaz, independent of the feature author.
 
 ## Status and source

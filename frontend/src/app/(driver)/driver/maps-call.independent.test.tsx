@@ -33,39 +33,39 @@ function destination(link: HTMLElement) {
   return coordinates!.split(",").map(Number);
 }
 
-describe("SCRUM-245 delivery criteria (intentionally fail while feature is absent)", () => {
+describe("SCRUM-245 independent maps and call acceptance criteria", () => {
   it("provides a navigable maps link with this stop's exact coordinates", async () => {
     const row = await show({ latitude: 33.89876, longitude: 35.48765 });
-    const link = within(row).getByRole("link", { name: /open in maps/i });
+    const link = within(row).getByRole("link", { name: /open (in maps|directions to)/i });
     expect(destination(link)).toEqual([33.89876, 35.48765]);
   });
 
   it("accepts zero-valued coordinates as a valid location", async () => {
     const row = await show({ latitude: 0, longitude: 0 });
-    expect(destination(within(row).getByRole("link", { name: /open in maps/i }))).toEqual([0, 0]);
+    expect(destination(within(row).getByRole("link", { name: /open (in maps|directions to)/i }))).toEqual([0, 0]);
   });
 
   it.each([{ latitude: null, longitude: null }, { latitude: null, longitude: 35.48 }, { latitude: 33.89, longitude: null }])("hides maps when coordinates are incomplete: %j", async coordinates => {
     const row = await show(coordinates);
-    expect(within(row).queryByRole("link", { name: /open in maps/i })).not.toBeInTheDocument();
-    expect(within(row).queryByRole("button", { name: /open in maps/i })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("link", { name: /open (in maps|directions to)/i })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: /open (in maps|directions to)/i })).not.toBeInTheDocument();
   });
 
   it("provides a Call parent tel link for the student's actual guardian", async () => {
     const row = await show({ guardianPhone: "+961 71 987 654" });
-    const link = within(row).getByRole("link", { name: /call parent/i });
+    const link = within(row).getByRole("link", { name: /call .*parent/i });
     expect(link.getAttribute("href")?.replace(/[\s()-]/g, "")).toBe("tel:+96171987654");
   });
 
   it.each(["", "   "])("hides calling when the guardian phone is missing (%j)", async guardianPhone => {
     const row = await show({ guardianPhone });
-    expect(within(row).queryByRole("link", { name: /call parent/i })).not.toBeInTheDocument();
-    expect(within(row).queryByRole("button", { name: /call parent/i })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("link", { name: /call .*parent/i })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: /call .*parent/i })).not.toBeInTheDocument();
   });
 
   it("makes both native links keyboard-accessible and at least 44px tall", async () => {
     const row = await show();
-    for (const name of [/open in maps/i, /call parent/i]) {
+    for (const name of [/open (in maps|directions to)/i, /call .*parent/i]) {
       const link = within(row).getByRole("link", { name });
       expect(link).toHaveAttribute("href");
       expect(link.tabIndex).toBeGreaterThanOrEqual(0);
