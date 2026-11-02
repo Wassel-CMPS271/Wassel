@@ -295,20 +295,24 @@ it("gives each card a keyboard drag handle with instructions", async () => {
 
   const handle = screen.getByRole("button", { name: "Move Omar Nasser" });
   expect(handle).toHaveAttribute("aria-roledescription", "draggable");
-  expect(handle).toHaveAccessibleDescription(/press Space or Enter, then use the up and down arrow keys/);
+  // dnd-kit adds the hidden instructions element after the first render, so wait for it (the check failed
+  // now and then on slow runs, including CI on develop after #105, when it was read straight away).
+  await waitFor(() =>
+    expect(handle).toHaveAccessibleDescription(/press Space or Enter, then use the up and down arrow keys/),
+  );
 });
 
 it("picks a card up with Space on its handle and cancels with Escape", async () => {
   await renderPage();
   const handle = screen.getByRole("button", { name: "Move Omar Nasser" });
 
+  const listener = vi.spyOn(document, "addEventListener");
   fireEvent.keyDown(handle, { code: "Space" });
   expect(await screen.findByText("Picked up Omar Nasser from Not on a route.")).toBeInTheDocument();
 
-  // The keyboard sensor listens on the document from the next tick.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
+  // Wait for the sensor to register its listener rather than guessing a timer delay.
+  await waitFor(() => expect(listener.mock.calls.some(([type]) => type === "keydown")).toBe(true));
+  listener.mockRestore();
   fireEvent.keyDown(document, { code: "Escape" });
   expect(
     await screen.findByText("Moving Omar Nasser was cancelled. They stay in Not on a route."),

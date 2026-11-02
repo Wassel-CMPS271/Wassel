@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createWriteStream, readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { createWriteStream, readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, readdirSync } from "node:fs";
 import { dirname, resolve, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as pause } from "node:timers/promises";
@@ -10,6 +10,12 @@ const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const backend = resolve(frontend, "../backend");
 const artifacts = resolve(frontend, "e2e-artifacts");
 mkdirSync(artifacts, { recursive: true });
+const previous = readdirSync(artifacts).filter(name => name.endsWith(".log") || ["report", "results"].includes(name));
+if (previous.length) {
+  const archive = resolve(artifacts, "history", new Date().toISOString().replaceAll(":", "-"));
+  mkdirSync(archive, { recursive: true });
+  for (const name of previous) cpSync(resolve(artifacts, name), resolve(archive, name), { recursive: true, errorOnExist: true });
+}
 const windows = process.platform === "win32";
 const children = [];
 const env = {
@@ -17,8 +23,8 @@ const env = {
   WASSEL_E2E: "true",
   WASSEL_E2E_PASSWORD: randomBytes(24).toString("base64url"),
   JWT_SECRET: randomBytes(48).toString("base64url"),
-  DB_URL: process.env.E2E_DB_URL || "jdbc:h2:mem:wassel_e2e;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-  DB_USERNAME: process.env.E2E_DB_USERNAME || "sa",
+  DB_URL: process.env.E2E_DB_URL || "jdbc:postgresql://127.0.0.1:55437/wassel_e2e",
+  DB_USERNAME: process.env.E2E_DB_USERNAME || "postgres",
   DB_PASSWORD: process.env.E2E_DB_PASSWORD || "",
   ADMIN_EMAIL: "", ADMIN_PASSWORD: "", DEMO_DATA_ENABLED: "false",
   ORS_API_KEY: "", JWT_COOKIE_SECURE: "false",
@@ -28,10 +34,6 @@ const env = {
   NEXT_PUBLIC_API_BASE_URL: "", BACKEND_URL: "http://127.0.0.1:18080",
   MAIL_USERNAME: "", MAIL_PASSWORD: "",
 };
-const postgres = env.DB_URL.startsWith("jdbc:postgresql:");
-env.E2E_DDL_AUTO = postgres ? "validate" : "create-drop";
-env.E2E_FLYWAY_ENABLED = String(postgres);
-
 function launch(command, args, cwd, logfile) {
   // Only .cmd launchers require the Windows shell. Paths are quoted; no command
   // is built from credentials, datasource values, or browser input.
@@ -45,9 +47,11 @@ function launch(command, args, cwd, logfile) {
   if (logfile) writeFileSync(resolve(artifacts, logfile), "");
   const child = spawn(executable, spawnArgs, {
     cwd, env, shell: false, windowsVerbatimArguments: cmdScript, windowsHide: true,
-    stdio: logfile ? ["ignore", "pipe", "pipe"] : "inherit",
+    stdio: logfile ? [args.includes("--single") ? "pipe" : "ignore", "pipe", "pipe"] : "inherit",
   });
   children.push(child);
+  child.on("error", error => { child.launchError = error; });
+  if (args.includes("--single")) child.stdin.end("CREATE DATABASE wassel_e2e;\n");
   if (logfile) {
     const output = createWriteStream(resolve(artifacts, logfile));
     child.stdout.pipe(output); child.stderr.pipe(output);
@@ -71,6 +75,7 @@ async function unusedPort(port) {
 async function ready(label, check, child) {
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
+    if (child.launchError) throw child.launchError;
     if (child.exitCode !== null) throw new Error(`${label} exited before readiness; see e2e-artifacts logs`);
     if (await check()) return;
     await pause(250); // Bounded readiness polling, not a browser timing assumption.
@@ -95,6 +100,15 @@ for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, async () => {
 });
 try {
   await unusedPort(4173); await unusedPort(18080);
+  if (!process.env.E2E_DB_URL && process.env.E2E_POSTGRES_BIN) {
+    await unusedPort(55437);
+    const bin = process.env.E2E_POSTGRES_BIN;
+    const data = resolve(artifacts, `postgres-${randomBytes(6).toString("hex")}`);
+    await run(resolve(bin, "initdb.exe"), ["-D", data, "-U", "postgres", "-A", "trust", "--encoding=UTF8", "--locale=C"], frontend, "postgres-init.log");
+    await run(resolve(bin, "postgres.exe"), ["--single", "-D", data, "postgres"], frontend, "postgres-create.log");
+    const pg = launch(resolve(bin, "postgres.exe"), ["-D", data, "-h", "127.0.0.1", "-p", "55437"], frontend, "postgres.log");
+    await ready("PostgreSQL", async () => readFileSync(resolve(artifacts, "postgres.log"), "utf8").includes("database system is ready to accept connections"), pg);
+  } else if (!process.env.E2E_DB_URL) throw new Error("Set E2E_DB_URL to an empty loopback wassel_e2e database or E2E_POSTGRES_BIN to native Windows PostgreSQL binaries");
   const maven = process.env.E2E_MAVEN_CMD || (windows ? resolve(backend, "mvnw.cmd") : resolve(backend, "mvnw"));
   const mavenArgs = ["-B", "-ntp", "test-compile", "dependency:build-classpath", "-DincludeScope=test", "-Dmdep.outputFile=target/e2e-classpath.txt"];
   if (process.env.E2E_MAVEN_REPO) mavenArgs.push(`-Dmaven.repo.local=${process.env.E2E_MAVEN_REPO}`);
@@ -103,7 +117,7 @@ try {
   const java = process.env.JAVA_HOME ? resolve(process.env.JAVA_HOME, "bin", windows ? "java.exe" : "java") : "java";
   const api = launch(java, ["-cp", classpath, "com.wassel.backend.e2e.RoutingE2eApplication", "--spring.profiles.active=local,e2e", "--server.address=127.0.0.1", "--server.port=18080"], backend, "backend.log");
   await ready("backend seed", async () => existsSync(resolve(artifacts, "backend.log")) && readFileSync(resolve(artifacts, "backend.log"), "utf8").includes("E2E_SEED_READY"), api);
-  console.log(`E2E backend seeded (${postgres ? "PostgreSQL + Flyway" : "isolated H2 PostgreSQL mode"})`);
+  console.log("E2E backend seeded (PostgreSQL + Flyway)");
   const stamp = resolve(frontend, ".next/e2e-build.json");
   const buildConfig = { api: env.NEXT_PUBLIC_API_BASE_URL, backend: env.BACKEND_URL };
   if (process.env.E2E_REUSE_BUILD === "1") {

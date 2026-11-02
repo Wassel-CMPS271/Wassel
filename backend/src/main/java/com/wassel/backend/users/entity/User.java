@@ -59,10 +59,22 @@ public class User {
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
-	/** False when the account is suspended (manually or by the auto-suspend feature). */
+	/** False when an admin or head of transportation revoked access (SCRUM-98). The lockout below is separate. */
 	@Builder.Default
 	@Column(nullable = false)
 	private boolean enabled = true;
+
+	/**
+	 * Wrong passwords in a row (SCRUM-171), changed only by {@code UserRepository}'s conditional updates, never
+	 * through this field, so parallel sign-ins can't lose a count.
+	 */
+	@Builder.Default
+	@Column(name = "failed_sign_ins", nullable = false)
+	private int failedSignIns = 0;
+
+	/** When the current lock ends; a past time or null means not locked. */
+	@Column(name = "locked_until")
+	private Instant lockedUntil;
 
 	public boolean hasPassword() {
 		return !NO_PASSWORD_HASH.equals(passwordHash);

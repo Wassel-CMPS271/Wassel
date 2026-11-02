@@ -1,5 +1,9 @@
 package com.wassel.backend.common.exception;
 
+import com.wassel.backend.absences.exception.AbsenceNotCancellableException;
+import com.wassel.backend.absences.exception.AbsenceNotFoundException;
+import com.wassel.backend.absences.exception.AbsenceOverlapException;
+import com.wassel.backend.absences.exception.InvalidAbsenceDateException;
 import com.wassel.backend.auth.exception.CodeCooldownException;
 import com.wassel.backend.auth.exception.InvalidCodeException;
 import com.wassel.backend.auth.exception.InvalidCredentialsException;
@@ -9,11 +13,15 @@ import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
+import com.wassel.backend.routes.exception.ActiveRunConflictException;
 import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteCapacityExceededException;
 import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.routes.exception.RouteOptimizationConflictException;
+import com.wassel.backend.runs.exception.ConfirmationConflictException;
+import com.wassel.backend.runs.exception.RunNotFoundException;
+import com.wassel.backend.runs.exception.RunStateConflictException;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.HolidayNotFoundException;
@@ -23,8 +31,10 @@ import com.wassel.backend.students.exception.StudentAlreadyExistsException;
 import com.wassel.backend.students.exception.StudentNotActiveException;
 import com.wassel.backend.students.exception.StudentNotFoundException;
 import com.wassel.backend.users.exception.EmailAlreadyInUseException;
+import com.wassel.backend.users.exception.RevokeNotAllowedException;
 import com.wassel.backend.users.exception.UserNotFoundException;
 import com.wassel.backend.vehicles.exception.VehicleAlreadyExistsException;
+import com.wassel.backend.vehicles.exception.VehicleCapacityConflictException;
 import com.wassel.backend.vehicles.exception.VehicleNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -126,6 +136,12 @@ public class GlobalExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
 
+	@ExceptionHandler(VehicleCapacityConflictException.class)
+	public ProblemDetail handleVehicleCapacityConflict(VehicleCapacityConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
 	// Same shape again, keyed by whichever field conflicted (email or phone), for a duplicate
 	// driver within a school.
 	@ExceptionHandler(DriverAlreadyExistsException.class)
@@ -223,8 +239,48 @@ public class GlobalExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
 	}
 
+	// A plain detail, as the runs contract has it: it names the run (or the child on a bus) and what to wait for.
+	@ExceptionHandler(ActiveRunConflictException.class)
+	public ProblemDetail handleActiveRunConflict(ActiveRunConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
 	@ExceptionHandler(ProposalNotFoundException.class)
 	public ProblemDetail handleProposalNotFound(ProposalNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// Same "errors" shape as bean validation, keyed by whichever field was wrong (fromDate or
+	// toDate): a reported absence's dates don't make sense.
+	@ExceptionHandler(InvalidAbsenceDateException.class)
+	public ProblemDetail handleInvalidAbsenceDate(InvalidAbsenceDateException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
+		return problem;
+	}
+
+	// Same "errors" shape again, keyed by "fromDate" as the contract specifies: a reported
+	// absence overlaps another, non-cancelled one this child already has.
+	@ExceptionHandler(AbsenceOverlapException.class)
+	public ProblemDetail handleAbsenceOverlap(AbsenceOverlapException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Absence overlap");
+		problem.setProperty("errors", Map.of("fromDate", ex.getMessage()));
+		return problem;
+	}
+
+	// No "errors" map: the contract has this as a plain detail naming when the absence ended.
+	@ExceptionHandler(AbsenceNotCancellableException.class)
+	public ProblemDetail handleAbsenceNotCancellable(AbsenceNotCancellableException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	@ExceptionHandler(AbsenceNotFoundException.class)
+	public ProblemDetail handleAbsenceNotFound(AbsenceNotFoundException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
@@ -241,10 +297,38 @@ public class GlobalExceptionHandler {
 		return problem;
 	}
 
+	@ExceptionHandler(RunNotFoundException.class)
+	public ProblemDetail handleRunNotFound(RunNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// A plain detail naming the run's state, as the runs contract has it.
+	@ExceptionHandler(RunStateConflictException.class)
+	public ProblemDetail handleRunStateConflict(RunStateConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	// A plain detail naming the student's current status, as the runs contract has it.
+	@ExceptionHandler(ConfirmationConflictException.class)
+	public ProblemDetail handleConfirmationConflict(ConfirmationConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
 	@ExceptionHandler(UserNotFoundException.class)
 	public ProblemDetail handleUserNotFound(UserNotFoundException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// A 403 that keeps its own message (unlike the generic "Access denied"): the caller is allowed to use
+	// the endpoint, just not on themselves.
+	@ExceptionHandler(RevokeNotAllowedException.class)
+	public ProblemDetail handleRevokeNotAllowed(RevokeNotAllowedException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
 	}
 
 	// Same shape again, keyed by "email", for an account email that is already taken.

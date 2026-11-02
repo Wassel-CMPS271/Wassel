@@ -40,6 +40,14 @@ jobs:
           name: backend-test-reports
           path: backend/target/surefire-reports/
           if-no-files-found: ignore
+      # JaCoCo writes the HTML report during verify (SCRUM-151). A report only: nothing fails on a low number.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/target/site/jacoco/
+          if-no-files-found: ignore
 
   frontend-build:
     runs-on: ubuntu-latest
@@ -54,12 +62,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: frontend
+      # Known-vulnerability check (SCRUM-253). Fails the build on a high or critical finding in any npm
+      # dependency, dev ones included. A new advisory can turn an unrelated PR red: fix it by updating the
+      # package (or an override in package.json), not by removing this step.
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+        working-directory: frontend
       - name: Lint
         run: npm run lint
         working-directory: frontend
+      # Same run as `npm test` (a failing test still fails the job), plus a coverage report (SCRUM-151).
       - name: Test
-        run: npm test
+        run: npm run test:coverage
         working-directory: frontend
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          if-no-files-found: ignore
       - name: Build
         run: npm run build
         working-directory: frontend
@@ -71,7 +93,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [success, failure-probe]
+        scenario: [success, failure-probe, cleanup-probe]
     env:
       E2E_DB_URL: jdbc:postgresql://127.0.0.1:5432/wassel_e2e
       E2E_DB_USERNAME: postgres
@@ -133,6 +155,21 @@ jobs:
           node -e "const fs=require('node:fs'); const r=JSON.parse(fs.readFileSync('e2e-artifacts/results/.last-run.json')); if(r.status!=='failed'||r.failedTests.length!==1) process.exit(1)"
           test -n "$(find e2e-artifacts/results -name trace.zip -print -quit)"
           test -n "$(find e2e-artifacts/results -name 'test-failed-*.png' -print -quit)"
+          test ! -f e2e-artifacts/credentials.json
+      - name: Confirm unreleased assignments fail cleanup verification
+        if: matrix.scenario == 'cleanup-probe'
+        working-directory: frontend
+        env:
+          E2E_FAILURE_PROBE: cleanup
+        run: |
+          set +e
+          npm run test:e2e > e2e-cleanup-probe.log 2>&1
+          result=$?
+          set -e
+          cat e2e-cleanup-probe.log
+          test "$result" -eq 1
+          grep -F 'Cleanup must release every student routeId and stopPosition' e2e-cleanup-probe.log
+          grep -F 'E2E FAILED:' e2e-cleanup-probe.log
           test ! -f e2e-artifacts/credentials.json
       - name: Upload browser report and isolated stack logs
         if: always()

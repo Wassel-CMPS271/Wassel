@@ -1,6 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, delimiter } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { Proposal, Route, Stop } from "../src/lib/api/routes";
 
 const root = "/api/head-of-transport/routes";
@@ -30,6 +32,7 @@ test("Head of Transportation creates, assigns, optimizes, applies and reloads th
     if (new URL(r.url()).pathname.startsWith("/api/") && r.status() >= 400) badApi.push(`${r.status()} ${new URL(r.url()).pathname}`);
   });
   let id: string | undefined;
+  let primaryFailure: unknown;
   try {
     await test.step("Sign in through the real password and emailed-code flow", async () => {
       const credentials = JSON.parse(readFileSync(resolve("e2e-artifacts/credentials.json"), "utf8"));
@@ -164,20 +167,34 @@ test("Head of Transportation creates, assigns, optimizes, applies and reloads th
       expect(crashes, "No browser rendering errors").toEqual([]);
       expect(badApi, "No blocking API failures").toEqual([]);
     });
+  } catch (error) {
+    primaryFailure = error;
+    throw error;
   } finally {
     // The DB is disposable; delete the route as well so a failed assertion does
     // not leave assignments around during diagnosis. This is a real API call.
-    if (id) {
+    if (id) try {
+      // Deliberate negative control proves the membership oracle detects an
+      // undeleted route with assigned students. Never enabled in success runs.
+      if (process.env.E2E_FAILURE_PROBE !== "cleanup") {
       const removed = await page.request.delete(`${root}/${id}`);
       expect(removed.status(), "Cleanup must release the test route").toBe(204);
+      }
+      const classpath = [resolve("../backend/target/test-classes"), resolve("../backend/target/classes"), readFileSync(resolve("../backend/target/e2e-classpath.txt"), "utf8").trim()].join(delimiter);
+      const java = process.env.JAVA_HOME ? resolve(process.env.JAVA_HOME, "bin", process.platform === "win32" ? "java.exe" : "java") : "java";
+      await promisify(execFile)(java, ["-cp", classpath, "com.wassel.backend.e2e.RoutingCleanupCheck"]);
+      expect((await page.request.get(`${root}/${id}`)).status(), "Deleted route must be inaccessible").toBe(404);
       const remaining = await page.request.get(root);
       expect(remaining.status()).toBe(200);
       expect(await remaining.json(), "Cleanup must leave no routes").toEqual([]);
       const roster = await page.request.get("/api/head-of-transport/students");
       expect(roster.status()).toBe(200);
-      const students = await roster.json() as { route: string | null }[];
+      const students = await roster.json() as { id: string }[];
       expect(students).toHaveLength(3);
-      expect(students.every(student => student.route === null), "Cleanup must release every student assignment").toBe(true);
+    } catch (cleanupError) {
+      test.info().annotations.push({ type: "cleanup failure", description: String(cleanupError) });
+      if (!primaryFailure) throw cleanupError;
+      console.error("Cleanup also failed; preserving original scenario failure:", cleanupError);
     }
   }
 });

@@ -10,8 +10,8 @@ import java.util.stream.Collectors;
 
 /**
  * Stores an ordered list of ids as one comma-joined {@code text} column. Plain text rather than a
- * join table or {@code uuid[]} so the schema Hibernate builds for the tests (H2) and the Flyway one
- * (PostgreSQL) cannot differ.
+ * join table or {@code uuid[]}, so the column stays a plain type that Hibernate and the Flyway
+ * migrations describe the same way.
  */
 @Converter
 public class UuidListConverter implements AttributeConverter<List<UUID>, String> {

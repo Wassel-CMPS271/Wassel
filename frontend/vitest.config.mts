@@ -22,5 +22,17 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     globals: true,
+    // The default 5 seconds is not enough for the first test of a file that opens a dialog with a map when
+    // the whole suite runs at once (routing.independent and pin.independent timed out on busy machines and
+    // CI). A test that passes is not slower; this only gives a slow one room.
+    testTimeout: 15000,
+    // Only used by `npm run test:coverage` (SCRUM-151). A report, not a gate: no thresholds.
+    coverage: {
+      provider: "v8",
+      reporter: ["text-summary", "html"],
+      reportsDirectory: "coverage",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/test-support/**"],
+    },
   },
 });

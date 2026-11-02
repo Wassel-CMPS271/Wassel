@@ -3,9 +3,9 @@ spring:
   jpa:
     show-sql: false
     hibernate:
-      ddl-auto: ${E2E_DDL_AUTO:create-drop}
+      ddl-auto: validate
   flyway:
-    enabled: ${E2E_FLYWAY_ENABLED:false}
+    enabled: true
     baseline-on-migrate: false
 logging:
   level:

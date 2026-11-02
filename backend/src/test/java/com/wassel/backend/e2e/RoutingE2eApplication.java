@@ -28,14 +28,19 @@ import java.util.UUID;
 
 /** Test-classpath-only launcher: real server/security/services, isolated fixture database. */
 public class RoutingE2eApplication {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         if (!"true".equals(System.getenv("WASSEL_E2E"))) {
             throw new IllegalStateException("E2E launcher requires WASSEL_E2E=true");
         }
         String url = System.getenv("DB_URL");
-        if (url == null || !(url.equals("jdbc:h2:mem:wassel_e2e;MODE=PostgreSQL;DB_CLOSE_DELAY=-1")
-                || url.matches("jdbc:postgresql://(localhost|127\\.0\\.0\\.1):[0-9]+/wassel_e2e"))) {
-            throw new IllegalStateException("E2E launcher only accepts its in-memory DB or loopback wassel_e2e PostgreSQL");
+        if (url == null || !url.matches("jdbc:postgresql://(localhost|127\\.0\\.0\\.1):[0-9]+/wassel_e2e")) {
+            throw new IllegalStateException("E2E requires loopback disposable wassel_e2e PostgreSQL");
+        }
+        try (var connection = java.sql.DriverManager.getConnection(url, System.getenv("DB_USERNAME"), System.getenv("DB_PASSWORD"));
+             var statement = connection.createStatement();
+             var tables = statement.executeQuery("select count(*) from information_schema.tables where table_schema = 'public'")) {
+            tables.next();
+            if (tables.getLong(1) != 0) throw new IllegalStateException("E2E refuses a nonempty database before migrations");
         }
         new SpringApplication(WasselBackendApplication.class, Seed.class).run(args);
     }
@@ -53,6 +58,8 @@ public class RoutingE2eApplication {
                 }
                 String password = System.getenv("WASSEL_E2E_PASSWORD");
                 if (password == null || password.length() < 16) throw new IllegalStateException("Missing generated E2E password");
+                // Direct repository fixtures intentionally keep geometry/order deterministic
+                // and startup small; this test-only seed is not an application seeding template.
                 UUID school = UUID.randomUUID();
                 users.saveAndFlush(User.builder().email("routing-head@e2e.invalid").passwordHash(encoder.encode(password))
                         .role(Role.HEAD_OF_TRANSPORT).schoolId(school).build());

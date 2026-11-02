@@ -103,6 +103,7 @@ export function TwoFactorForm() {
   return (
     <AuthCard title="Verify your account" description="Enter the verification code to continue.">
       <form
+        method="post"
         onSubmit={handleSubmit}
         noValidate
         style={{
