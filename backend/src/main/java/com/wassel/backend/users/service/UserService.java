@@ -12,6 +12,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
@@ -49,6 +50,27 @@ public class UserService {
 	@Transactional(readOnly = true)
 	public boolean existsOtherThan(Collection<String> emails) {
 		return userRepository.existsByEmailNotIn(emails.stream().map(e -> e.trim().toLowerCase(Locale.ROOT)).toList());
+	}
+
+	/**
+	 * Sign-in lockout (SCRUM-171), for auth: counts this attempt before its password is checked. False when the
+	 * account is locked, or {@code maxFailures} attempts are already counted, so the password must not be tried.
+	 */
+	@Transactional
+	public boolean countSignInAttempt(UUID userId, int maxFailures, Instant now) {
+		return userRepository.countSignInAttempt(userId, maxFailures, now) == 1;
+	}
+
+	/** After the right password: the account's counted attempts are cleared. */
+	@Transactional
+	public void clearSignInAttempts(UUID userId) {
+		userRepository.clearSignInAttempts(userId);
+	}
+
+	/** After a wrong password: true if this one locked the account until {@code until}. */
+	@Transactional
+	public boolean lockIfTooManyFailures(UUID userId, int maxFailures, Instant until) {
+		return userRepository.lockIfTooManyFailures(userId, maxFailures, until) == 1;
 	}
 
 	@Transactional(readOnly = true)
