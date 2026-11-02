@@ -34,6 +34,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -65,6 +66,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class AbsenceControllerTests {
+
+	// Use the same school clock as AbsenceService; the CI JVM may be in UTC.
+	@Autowired
+	private Clock clock;
 
 	private final UUID schoolId = UUID.randomUUID();
 
@@ -158,7 +163,7 @@ class AbsenceControllerTests {
 	void parentCanReportAnAbsenceAndSeeItInTheList() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(1);
+		LocalDate from = LocalDate.now(clock).plusDays(1);
 		LocalDate to = from.plusDays(2);
 
 		mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId()))
@@ -178,7 +183,7 @@ class AbsenceControllerTests {
 	void toDateDefaultsToFromDateForASingleDay() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate day = LocalDate.now().plusDays(1);
+		LocalDate day = LocalDate.now(clock).plusDays(1);
 
 		mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId()))
 						.contentType(MediaType.APPLICATION_JSON).content(absence(day.toString(), null)))
@@ -190,7 +195,7 @@ class AbsenceControllerTests {
 	void reportingTheExactSameRangeAgainIsIdempotent() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(1);
+		LocalDate from = LocalDate.now(clock).plusDays(1);
 		LocalDate to = from.plusDays(1);
 
 		String firstId = mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId()))
@@ -204,7 +209,7 @@ class AbsenceControllerTests {
 				.andExpect(jsonPath("$.id").value(idOf(firstId)));
 
 		assertEquals(1, absenceRepository.findBySchoolIdAndStudentIdAndCancelledFalseAndToDateGreaterThanEqualOrderByFromDateAsc(
-				schoolId, child.id(), LocalDate.now()).size());
+				schoolId, child.id(), LocalDate.now(clock)).size());
 	}
 
 	/**
@@ -218,7 +223,7 @@ class AbsenceControllerTests {
 	void reportingTheSameRangeTwiceAtOnceCreatesOneAndAnswersTheOtherWithIt() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(10);
+		LocalDate from = LocalDate.now(clock).plusDays(10);
 		LocalDate to = from.plusDays(1);
 		ReportAbsenceRequest request = new ReportAbsenceRequest(from, to);
 		CountDownLatch start = new CountDownLatch(1);
@@ -288,7 +293,7 @@ class AbsenceControllerTests {
 	void aReportWaitsForTheChildsLockAndThenAnswersAnExactRepeatWith200() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate day = LocalDate.now().plusDays(12);
+		LocalDate day = LocalDate.now(clock).plusDays(12);
 		Absence meanwhile = anAbsence(parent, child, day, day);
 
 		MockHttpServletResponse answer = reportedWhileChildLocked(parent, child, meanwhile, absence(day.toString(), null));
@@ -301,7 +306,7 @@ class AbsenceControllerTests {
 	void aReportWaitsForTheChildsLockAndThenRejectsAnOverlapNamingIt() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(14);
+		LocalDate from = LocalDate.now(clock).plusDays(14);
 		Absence meanwhile = anAbsence(parent, child, from, from.plusDays(1));
 
 		MockHttpServletResponse answer = reportedWhileChildLocked(parent, child, meanwhile,
@@ -316,7 +321,7 @@ class AbsenceControllerTests {
 	void reportingAnOverlappingDifferentRangeIsRejected() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(5);
+		LocalDate from = LocalDate.now(clock).plusDays(5);
 		LocalDate to = from.plusDays(3);
 		mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId()))
 						.contentType(MediaType.APPLICATION_JSON).content(absence(from.toString(), to.toString())))
@@ -335,7 +340,7 @@ class AbsenceControllerTests {
 		StudentResponse child = newChildOf(parent);
 
 		mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId())).contentType(MediaType.APPLICATION_JSON)
-						.content(absence(LocalDate.now().minusDays(1).toString(), null)))
+						.content(absence(LocalDate.now(clock).minusDays(1).toString(), null)))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errors.fromDate").isNotEmpty());
 	}
@@ -344,7 +349,7 @@ class AbsenceControllerTests {
 	void toDateBeforeFromDateIsRejected() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(5);
+		LocalDate from = LocalDate.now(clock).plusDays(5);
 
 		mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId())).contentType(MediaType.APPLICATION_JSON)
 						.content(absence(from.toString(), from.minusDays(1).toString())))
@@ -376,7 +381,7 @@ class AbsenceControllerTests {
 	void cancellingAFutureAbsenceRemovesItFromTheList() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(3);
+		LocalDate from = LocalDate.now(clock).plusDays(3);
 		String body = mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId()))
 						.contentType(MediaType.APPLICATION_JSON).content(absence(from.toString(), null)))
 				.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
@@ -397,7 +402,7 @@ class AbsenceControllerTests {
 		// The reporting endpoint itself refuses a past fromDate, so an already-ended absence is
 		// seeded directly, the same way a test seeds a state the API can't produce on its own.
 		Absence ended = absenceRepository.saveAndFlush(Absence.builder().schoolId(schoolId).studentId(child.id())
-				.fromDate(LocalDate.now().minusDays(10)).toDate(LocalDate.now().minusDays(5))
+				.fromDate(LocalDate.now(clock).minusDays(10)).toDate(LocalDate.now(clock).minusDays(5))
 				.createdBy(parent.getId()).build());
 
 		mockMvc.perform(delete(childUrl(child.id()) + "/" + ended.getId()).with(loggedInAsParent(parent.getId())))
@@ -408,8 +413,8 @@ class AbsenceControllerTests {
 	void cancellingAnInProgressAbsenceShortensItInsteadOfDeletingIt() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().minusDays(2);
-		LocalDate to = LocalDate.now().plusDays(5);
+		LocalDate from = LocalDate.now(clock).minusDays(2);
+		LocalDate to = LocalDate.now(clock).plusDays(5);
 		Absence inProgress = absenceRepository.saveAndFlush(Absence.builder().schoolId(schoolId).studentId(child.id())
 				.fromDate(from).toDate(to).createdBy(parent.getId()).build());
 
@@ -418,7 +423,7 @@ class AbsenceControllerTests {
 
 		Absence reloaded = absenceRepository.findById(inProgress.getId()).orElseThrow();
 		assertTrue(!reloaded.isCancelled(), "an in-progress absence is shortened, not marked cancelled");
-		assertEquals(LocalDate.now().minusDays(1), reloaded.getToDate());
+		assertEquals(LocalDate.now(clock).minusDays(1), reloaded.getToDate());
 
 		// Shortened to end yesterday, so it's gone from the upcoming list (toDate < today).
 		mockMvc.perform(get(childUrl(child.id())).with(loggedInAsParent(parent.getId())))
@@ -432,7 +437,7 @@ class AbsenceControllerTests {
 	void headOfTransportSeesAStudentWithNoRouteAsNullRouteAndPosition() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate today = LocalDate.now();
+		LocalDate today = LocalDate.now(clock);
 		absenceRepository.saveAndFlush(Absence.builder().schoolId(schoolId).studentId(child.id())
 				.fromDate(today).toDate(today).createdBy(parent.getId()).build());
 
@@ -452,7 +457,7 @@ class AbsenceControllerTests {
 		StudentResponse child = newChildOf(parent);
 		RouteResponse route = newRouteWithOneSeat();
 		routeService.addStudent(schoolId, route.id(), new com.wassel.backend.routes.dto.AssignStudentRequest(child.id()));
-		LocalDate today = LocalDate.now();
+		LocalDate today = LocalDate.now(clock);
 		absenceRepository.saveAndFlush(Absence.builder().schoolId(schoolId).studentId(child.id())
 				.fromDate(today).toDate(today).createdBy(parent.getId()).build());
 
