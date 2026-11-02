@@ -101,6 +101,8 @@ class RoleAccessMatrixTests {
 
 		// admin
 		TABLE.put("POST /api/admin/head-of-transport", Access.ADMIN_ONLY);
+		TABLE.put("PATCH /api/admin/head-of-transport/{id}/revoke", Access.ADMIN_ONLY);
+		TABLE.put("PATCH /api/admin/head-of-transport/{id}/restore", Access.ADMIN_ONLY);
 		TABLE.put("GET /api/admin/school-calendar/half-days", Access.ADMIN_ONLY);
 		TABLE.put("POST /api/admin/school-calendar/half-days", Access.ADMIN_ONLY);
 		TABLE.put("GET /api/admin/school-calendar/holidays", Access.ADMIN_ONLY);
@@ -112,10 +114,14 @@ class RoleAccessMatrixTests {
 		// head of transportation
 		TABLE.put("GET /api/head-of-transport/parents", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("POST /api/head-of-transport/parents", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("PATCH /api/head-of-transport/parents/{id}/revoke", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("PATCH /api/head-of-transport/parents/{id}/restore", Access.HEAD_OF_TRANSPORT_ONLY);
 
 		TABLE.put("GET /api/head-of-transport/drivers", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("POST /api/head-of-transport/drivers", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("PATCH /api/head-of-transport/drivers/{id}/resend-invite", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("PATCH /api/head-of-transport/drivers/{id}/revoke", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("PATCH /api/head-of-transport/drivers/{id}/restore", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("PATCH /api/head-of-transport/drivers/{id}/vehicle", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("DELETE /api/head-of-transport/drivers/{id}/vehicle", Access.HEAD_OF_TRANSPORT_ONLY);
 
@@ -145,6 +151,21 @@ class RoleAccessMatrixTests {
 		TABLE.put("POST /api/head-of-transport/routes/generation", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("POST /api/head-of-transport/routes/generation/{proposalId}/apply", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("DELETE /api/head-of-transport/routes/generation/{proposalId}", Access.HEAD_OF_TRANSPORT_ONLY);
+
+		TABLE.put("GET /api/driver/runs/today", Access.DRIVER_ONLY);
+		TABLE.put("POST /api/driver/runs/{runId}/start", Access.DRIVER_ONLY);
+		TABLE.put("POST /api/driver/runs/{runId}/end", Access.DRIVER_ONLY);
+		TABLE.put("PUT /api/driver/runs/{runId}/students/{studentId}/confirmation", Access.DRIVER_ONLY);
+		TABLE.put("GET /api/head-of-transport/runs", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("GET /api/head-of-transport/absences", Access.HEAD_OF_TRANSPORT_ONLY);
+
+		// parent (SCRUM-238)
+		TABLE.put("GET /api/parent/children/{studentId}/absences", Access.PARENT_ONLY);
+		TABLE.put("POST /api/parent/children/{studentId}/absences", Access.PARENT_ONLY);
+		TABLE.put("DELETE /api/parent/children/{studentId}/absences/{absenceId}", Access.PARENT_ONLY);
+
+		// parent (SCRUM-240)
+		TABLE.put("GET /api/parent/children", Access.PARENT_ONLY);
 	}
 
 	// Path variables are all ids, so one UUID fits every {name}; the service then answers 404 or 400.
@@ -168,6 +189,7 @@ class RoleAccessMatrixTests {
 		VALID_BODIES.put("POST /api/head-of-transport/drivers", "{\"firstName\":\"Test\",\"lastName\":\"Driver\","
 				+ "\"phone\":\"+961 3 123 456\",\"email\":\"driver@wassel.test\"}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/drivers/{id}/vehicle", "{\"vehicleId\":\"" + SOME_ID + "\"}");
+		VALID_BODIES.put("PUT /api/driver/runs/{runId}/students/{studentId}/confirmation", "{\"status\":\"PICKED_UP\"}");
 		VALID_BODIES.put("POST /api/head-of-transport/vehicles", "{\"plateNumber\":\"A 123\",\"capacity\":10}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/vehicles/{id}/capacity", "{\"capacity\":10}");
 		VALID_BODIES.put("POST /api/head-of-transport/students", "{\"firstName\":\"Test\",\"lastName\":\"Student\","
@@ -180,6 +202,7 @@ class RoleAccessMatrixTests {
 		VALID_BODIES.put("PUT /api/head-of-transport/routes/{id}", route);
 		VALID_BODIES.put("POST /api/head-of-transport/routes/{id}/students", "{\"studentId\":\"" + SOME_ID + "\"}");
 		VALID_BODIES.put("PUT /api/head-of-transport/routes/{id}/stops", "{\"studentIds\":[]}");
+		VALID_BODIES.put("POST /api/parent/children/{studentId}/absences", "{\"fromDate\":\"2030-01-04\"}");
 	}
 
 	@Autowired

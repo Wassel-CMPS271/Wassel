@@ -12,16 +12,18 @@ const artifacts = resolve(frontend, "e2e-artifacts");
 mkdirSync(artifacts, { recursive: true });
 const windows = process.platform === "win32";
 const children = [];
+const postgresPort = Number(process.env.E2E_POSTGRES_PORT || 55439);
+if (!Number.isInteger(postgresPort) || postgresPort < 1024 || postgresPort > 65535) throw new Error("Invalid E2E_POSTGRES_PORT");
 const env = {
   ...process.env,
   WASSEL_E2E: "true",
   WASSEL_E2E_PASSWORD: randomBytes(24).toString("base64url"),
   JWT_SECRET: randomBytes(48).toString("base64url"),
-  DB_URL: process.env.E2E_DB_URL || "jdbc:postgresql://127.0.0.1:55437/wassel_e2e",
+  DB_URL: process.env.E2E_DB_URL || `jdbc:postgresql://127.0.0.1:${postgresPort}/wassel_e2e`,
   DB_USERNAME: process.env.E2E_DB_USERNAME || "postgres",
   DB_PASSWORD: process.env.E2E_DB_PASSWORD || "",
   ADMIN_EMAIL: "admin@auth-e2e.invalid", ADMIN_PASSWORD: "", DEMO_DATA_ENABLED: "true", DEMO_EMAIL_BASE: "auth@auth-e2e.invalid", SCHOOL_ID: randomUUID(),
-  ORS_API_KEY: "", JWT_COOKIE_SECURE: "false",
+  ORS_API_KEY: "", JWT_COOKIE_SECURE: "false", LOCKOUT_MAX_FAILURES: "5", LOCKOUT_DURATION: "15m",
   SCHOOL_LATITUDE: "33.896", SCHOOL_LONGITUDE: "35.484",
   CORS_ALLOWED_ORIGINS: "http://127.0.0.1:4180",
   FRONTEND_BASE_URL: "http://127.0.0.1:4180",
@@ -101,12 +103,12 @@ for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, async () => {
 try {
   await unusedPort(4180); await unusedPort(18177);
   if (!process.env.E2E_DB_URL && process.env.E2E_POSTGRES_BIN) {
-    await unusedPort(55437);
+    await unusedPort(postgresPort);
     const bin = process.env.E2E_POSTGRES_BIN;
     const data = resolve(artifacts, `postgres-${randomBytes(6).toString("hex")}`);
     await run(resolve(bin, "initdb.exe"), ["-D", data, "-U", "postgres", "-A", "trust", "--encoding=UTF8", "--locale=C"], frontend, "postgres-init.log");
     await run(resolve(bin, "postgres.exe"), ["--single", "-D", data, "postgres"], frontend, "postgres-create.log");
-    const pg = launch(resolve(bin, "postgres.exe"), ["-D", data, "-h", "127.0.0.1", "-p", "55437"], frontend, "postgres.log");
+    const pg = launch(resolve(bin, "postgres.exe"), ["-D", data, "-h", "127.0.0.1", "-p", String(postgresPort)], frontend, "postgres.log");
     await ready("PostgreSQL", async () => readFileSync(resolve(artifacts, "postgres.log"), "utf8").includes("database system is ready to accept connections"), pg);
   } else if (!process.env.E2E_DB_URL) { throw new Error("Set E2E_DB_URL to an empty disposable loopback PostgreSQL wassel_e2e, or E2E_POSTGRES_BIN for local Windows binaries"); }
   const maven = process.env.E2E_MAVEN_CMD || (windows ? resolve(backend, "mvnw.cmd") : resolve(backend, "mvnw"));

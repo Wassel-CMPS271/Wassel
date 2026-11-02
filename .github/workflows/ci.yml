@@ -52,10 +52,10 @@ jobs:
         working-directory: frontend
       - run: npm run test:e2e:install -- --with-deps
         working-directory: frontend
-      # Core real-browser auth only. Revocation remains gated on SCRUM-98.
+      # All real-browser authentication, revocation and account-lockout cases.
       # No continue-on-error: compilation, migrations, seed or browser errors fail.
       - name: PostgreSQL authentication browser tests
-        run: npm run test:e2e -- auth.e2e.ts
+        run: npm run test:e2e
         working-directory: frontend
         env:
           E2E_MAVEN_CMD: mvn

@@ -1,5 +1,19 @@
 # SCRUM-177 — Authentication browser tests
 
+## Current verification — 3 November 2026
+
+Integrated origin/develop `1785ad89aa9b1cbcdf22cbeb83fc76ace3c0fddd` by merge. SCRUM-98's actual revoke/restore endpoints and SCRUM-171's account lockout are present. Both former revocation skips are removed; they are required in the normal and CI suite. Added a real five-wrong-password lockout case that verifies even the correct password is then rejected without pending/session cookies.
+
+**Current-source real browser result: 10 passed, 0 failed, 0 skipped (19.4s)** on fresh native PostgreSQL/Flyway, production seeders and production frontend. Revoked-parent sign-in and next-request session rejection both passed, with actual authorized restore cleanup. All four role/password/2FA/home/logout cases and incorrect credentials still pass. No mocked production responses, forged JWTs or SQL enabled toggles. Frontend **572 passed, 6 existing skips**; lint, production build, dependency audit at high severity and PR diff checks pass. Current full backend **1099 tests, 0 failures/errors, 2 skips**, native PostgreSQL. Earlier resource-starved startup evidence is retained and not counted as success.
+
+Fresh evidence: tmp/SCRUM-177-final/{browser-serial.log,frontend-tests.log,lint.log,audit.log,backend-verify-native.log,backend-verify-console.log}; production build log and final browser report are in ignored frontend/e2e-artifacts. Prior evidence was copied before reexecution.
+
+The attempted common Playwright runner/config reconciliation across SCRUM-230/177 was rejected by automatic approval review. The user explicitly chose **defer until PR #85 merges**. Keep the existing verified runner intact; the complete authentication branch may be pushed for PostgreSQL CI, but do not open a conflicting/duplicated infrastructure PR until #85 is merged and the integration is reconciled. No shared history rewrite or force push. Jira stays In Progress until the complete PR and required checks are ready.
+
+Cloud CI also exposed an unchanged develop absence-test timezone bug (UTC LocalDate.now versus the production Beirut Clock); it is reported to the owner on PR #97. Local passing native PostgreSQL results are not a claim that that cloud check passes. Refresh the old dependency and next-step notes below against this current section.
+
+## Historical verification and preservation
+
 30 October 2026. Jira: In Progress. No implementation commit, push or PR: SCRUM-98 remains incomplete.
 
 Preservation update, 31 October 2026: the user authorized a local-only commit of this verified implementation, tests and report. All 14 files matched the saved verification manifest before this note was added. The 30 October results and blockers below remain historical evidence; no tests were rerun for preservation. This local commit does not complete SCRUM-177 or authorize a push/PR. Raw evidence stays local and ignored.

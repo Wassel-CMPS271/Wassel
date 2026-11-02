@@ -43,3 +43,17 @@ test("a Parent cannot open the Admin home after authentication", async ({ page }
   await expect(page).toHaveURL(/\/parent$/);
   expect((await page.request.get("/api/admin/school-settings/times")).status()).toBe(403);
 });
+
+test("five incorrect passwords lock the account and reject a subsequent correct password", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByLabel("Email", { exact: true }).fill(credentials().accounts.DRIVER);
+  for (let attempt = 0; attempt < 6; attempt++) {
+    await page.getByLabel("Password", { exact: true }).fill(attempt === 5 ? credentials().password : "incorrect-lockout-probe-password");
+    const denied = page.waitForResponse(r => new URL(r.url()).pathname === "/api/auth/login" && r.request().method() === "POST");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    expect((await denied).status()).toBe(401);
+    await expect(page.getByRole("alert").filter({ hasText: "Invalid email or password." })).toHaveText("Invalid email or password.");
+  }
+  expect((await page.context().cookies()).some(c => ["wassel_token", "wassel_2fa"].includes(c.name))).toBe(false);
+  expect((await page.request.get("/api/auth/me")).status()).toBe(401);
+});

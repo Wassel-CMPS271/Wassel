@@ -6,7 +6,8 @@
     "route": null,
     "driver": null,
     "vehicle": null,
-    "expectedPickupTime": null
+    "expectedPickupTime": null,
+    "todayRun": null
   },
   {
     "studentId": "40000000-0000-4000-8000-000000000003",
@@ -26,6 +27,11 @@
       "id": "20000000-0000-4000-8000-000000000001",
       "plateNumber": "A 123456"
     },
-    "expectedPickupTime": "07:21"
+    "expectedPickupTime": "07:21",
+    "todayRun": {
+      "direction": "MORNING",
+      "state": "IN_PROGRESS",
+      "stopsLeft": null
+    }
   }
 ]

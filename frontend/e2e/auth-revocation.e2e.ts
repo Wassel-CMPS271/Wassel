@@ -1,10 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { credentials, signIn } from "./auth-helpers";
 
-// Explicit dependency gate. npm run test:e2e -- --revocation enables these
-// against the actual SCRUM-98 endpoints; no test mutates enabled in SQL or adds
-// a test-only revocation API. They remain visible pending cases until #95 lands.
-test.skip(process.env.E2E_AUTH_REVOCATION !== "true", "SCRUM-98/#95 is unmerged; revocation is not verified");
+// SCRUM-98 is merged. Both scenarios are required in every normal and CI run.
+// Real revoke/restore endpoints only; no SQL enabled toggles or test-only API.
 
 test("a genuinely revoked Parent cannot sign in", async ({ browser }) => {
   const head = await browser.newPage(); const parent = await browser.newPage();
