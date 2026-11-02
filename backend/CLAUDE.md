@@ -187,8 +187,10 @@ that's the structure this codebase moved away from.
   case the manual-pin fallback exists for.
 - `students` — student roster. Real module: add (with an optional address, SCRUM-213), list,
   search/filter by query/status/grade/route (SCRUM-167), and editing address, map-pin location,
-  and parent-linking (SCRUM-166) are done. CSV import and the active/inactive toggle are not
-  built yet. The old `route` string column
+  and parent-linking (SCRUM-166) are done. The active/inactive toggle is not built yet. The
+  frontend's CSV import screen (SCRUM-160) calls this module's own create-student endpoint
+  once per row (SCRUM-193) — there is no bulk/batch endpoint, so a large file is one request
+  per row, sequential and not atomic: a failure partway through leaves a partial import. The old `route` string column
   exists for filtering only and is never written; real route membership (SCRUM-209) is
   `routeId`/`stopPosition`, a student is a stop on at most one route, and `stopPosition` is a
   watermark (next = current max + 1 on that route), not a compacted sequence — removing a stop
@@ -389,8 +391,11 @@ that's the structure this codebase moved away from.
   exists). `absent` (SCRUM-239) is this route's students with a live absence for today, from
   `AbsenceService.absentStudentIds` (one query for the whole roster, never the repository), read fresh on every fetch so a
   same-day report or cancellation shows on the next one. `counts.absent` is the stops with `absent: true` and no
-  confirmation (a confirmation wins, contract); it stays 0 on the head of transportation's stop-less `RunSummary`, which
-  has its own list instead (`GET /api/head-of-transport/absences`, from the `absences` module).
+  confirmation (a confirmation wins, contract), the same on the head of transportation's stop-less `RunSummary`
+  (SCRUM-260): `RunService.runsDay` has no stops to filter, so it reads each route's roster (one route with a run
+  today, one read each) and checks them against one batched `AbsenceService.absentStudentIds` call instead. The
+  head's separate list (`GET /api/head-of-transport/absences`, from the `absences` module) is its own endpoint,
+  unrelated to this count.
   Confirmations (SCRUM-235): `PUT /api/driver/runs/{runId}/students/{studentId}/confirmation` (`RunService.confirm`,
   `run_confirmations`, migration V8: unique on run + student + status, no foreign keys). One row per status, kept as
   history; the latest is the highest status (`ConfirmationStatus` is declared in rank order), not the newest row. `confirm`
