@@ -20,13 +20,30 @@ export function actionError(error: unknown): string {
   return error instanceof ApiError && error.status < 500 ? error.message : GENERIC_ERROR;
 }
 
-// Stops on an in-progress run that are still "next" or "pending" — not done,
-// and not settled as a skip either (see "Every stop on this run is done or
-// skipped" in page.tsx). Ending the run with any of these asks for a
-// confirmation first.
-function unconfirmedCount(run: Run): number {
-  if (run.state !== "IN_PROGRESS") return 0;
-  return stopStates(run).filter((state) => state === "next" || state === "pending").length;
+interface UnconfirmedSummary {
+  // How many stops or onboard children the End run confirm step should warn
+  // about. 0 means End run can fire straight away.
+  count: number;
+  // true when `count` counts children still onboard (picked up, not dropped
+  // off) rather than literal unconfirmed stops — the dialog copy must say so,
+  // since an onboard stop already has a confirmation.
+  onboardOnly: boolean;
+}
+
+// Stops on an in-progress run that are still "next" or "pending" (not done,
+// and not settled as a skip either — see "Every stop on this run is done or
+// skipped" in page.tsx) warn before Ending the run. So does a morning run
+// where every stop is done but some are still onboard: isDone() in today.ts
+// marks a morning stop done as soon as it has any confirmation, including
+// PICKED_UP, so "no next/pending stops left" doesn't by itself mean nobody is
+// still on the bus (docs/contracts/runs.md: "Ending is allowed while students
+// are still on the bus … the screens should warn using counts").
+function unconfirmedSummary(run: Run): UnconfirmedSummary {
+  if (run.state !== "IN_PROGRESS") return { count: 0, onboardOnly: false };
+  const pending = stopStates(run).filter((state) => state === "next" || state === "pending").length;
+  if (pending > 0) return { count: pending, onboardOnly: false };
+  const onboard = run.counts.pickedUp - run.counts.droppedOff;
+  return onboard > 0 ? { count: onboard, onboardOnly: true } : { count: 0, onboardOnly: false };
 }
 
 // Start run / End run for the current run (SCRUM-244). One button whose label
@@ -47,6 +64,7 @@ export function RunAction({ run, onRunChange }: { run: Run; onRunChange: (run: R
   // it is back and enabled (after the call, if Confirm was pressed).
   const refocusMain = useRef(false);
   const promptId = useId();
+  const { count: unconfirmed, onboardOnly } = unconfirmedSummary(run);
 
   useEffect(() => {
     if (confirming) confirmButton.current?.focus();
@@ -60,9 +78,21 @@ export function RunAction({ run, onRunChange }: { run: Run; onRunChange: (run: R
     }
   });
 
+  function closeConfirm() {
+    refocusMain.current = true;
+    setConfirming(false);
+  }
+
+  // A delayed confirmation can resolve while the confirm step is open and
+  // bring the count to 0 (e.g. the last onboard child gets dropped off while
+  // the driver is looking at the dialog). Close it the same way Cancel does
+  // rather than show "0 stops aren't confirmed yet".
+  useEffect(() => {
+    if (confirming && unconfirmed === 0) closeConfirm();
+  }, [confirming, unconfirmed]);
+
   if (run.state === "FINISHED") return null;
   const action = ACTIONS[run.state];
-  const unconfirmed = unconfirmedCount(run);
 
   async function submit() {
     if (busy.current) return;
@@ -89,11 +119,6 @@ export function RunAction({ run, onRunChange }: { run: Run; onRunChange: (run: R
     }
   }
 
-  function closeConfirm() {
-    refocusMain.current = true;
-    setConfirming(false);
-  }
-
   function confirm() {
     closeConfirm();
     submit();
@@ -112,9 +137,13 @@ export function RunAction({ run, onRunChange }: { run: Run; onRunChange: (run: R
           }}
         >
           <p id={promptId} className="text-sm" style={{ color: darkTheme.text.primary }}>
-            {unconfirmed === 1
-              ? "1 stop isn't confirmed yet. End the run anyway?"
-              : `${unconfirmed} stops aren't confirmed yet. End the run anyway?`}
+            {onboardOnly
+              ? unconfirmed === 1
+                ? "1 child is still on the bus, not dropped off yet. End the run anyway?"
+                : `${unconfirmed} children are still on the bus, not dropped off yet. End the run anyway?`
+              : unconfirmed === 1
+                ? "1 stop isn't confirmed yet. End the run anyway?"
+                : `${unconfirmed} stops aren't confirmed yet. End the run anyway?`}
           </p>
           <div className="flex items-center flex-wrap" style={{ gap: spacing.sm }}>
             <Button
