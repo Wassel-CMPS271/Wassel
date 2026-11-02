@@ -24,7 +24,7 @@ class RouteVehicleOccupancyGuard implements VehicleOccupancyGuard {
 
 	@Override
 	public long studentCountOnVehiclesRoute(UUID schoolId, UUID vehicleId) {
-		return routeRepository.findBySchoolIdAndVehicleId(schoolId, vehicleId)
+		return routeRepository.findLockedBySchoolIdAndVehicleId(schoolId, vehicleId)
 				.map(Route::getId)
 				.map(routeId -> studentService.countOnRoute(schoolId, routeId))
 				.orElse(0L);

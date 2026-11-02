@@ -1,5 +1,7 @@
 package com.wassel.backend.vehicles.controller;
 
+import com.jayway.jsonpath.JsonPath;
+import com.wassel.backend.common.WhileLocked;
 import com.wassel.backend.drivers.dto.CreateDriverRequest;
 import com.wassel.backend.drivers.dto.DriverResponse;
 import com.wassel.backend.drivers.repository.DriverRepository;
@@ -22,11 +24,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.UUID;
@@ -75,6 +79,9 @@ class VehicleControllerTests {
 	@Autowired
 	private StudentService studentService;
 
+	@Autowired
+	private TransactionTemplate transactionTemplate;
+
 	@BeforeEach
 	void cleanDatabase() {
 		routeRepository.deleteAll();
@@ -104,8 +111,8 @@ class VehicleControllerTests {
 		return matcher.group(1);
 	}
 
-	/** A route on this vehicle with {@code studentCount} students already assigned (SCRUM-241 fixtures). */
-	private void aRouteWithStudents(UUID schoolId, UUID vehicleId, int studentCount) {
+	/** A route on this vehicle with {@code studentCount} students already assigned (SCRUM-241 fixtures); its id. */
+	private UUID aRouteWithStudents(UUID schoolId, UUID vehicleId, int studentCount) {
 		DriverResponse driver = driverService.addDriver(schoolId, new CreateDriverRequest("Karim", "Haddad",
 				"+961 3 " + (100000 + (int) (Math.random() * 900000)), UUID.randomUUID() + "@wassel.test"));
 		RouteResponse route = routeService.createRoute(schoolId,
@@ -115,6 +122,13 @@ class VehicleControllerTests {
 					"Number" + i, "3", "Guardian", "+961 3 " + (200000 + i), null));
 			routeService.addStudent(schoolId, route.id(), new AssignStudentRequest(student.id()));
 		}
+		return route.id();
+	}
+
+	private MockHttpServletResponse setCapacityAs(UUID schoolId, String vehicleId, int capacity) throws Exception {
+		return mockMvc.perform(patch(URL + "/" + vehicleId + "/capacity").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolId))
+						.contentType(MediaType.APPLICATION_JSON).content("{\"capacity\":%d}".formatted(capacity)))
+				.andReturn().getResponse();
 	}
 
 	@Test
@@ -233,6 +247,50 @@ class VehicleControllerTests {
 				.andExpect(jsonPath("$.detail").value("The route has 2 students but this vehicle would seat 1."));
 
 		assertEquals(5, (int) vehicleRepository.findById(UUID.fromString(id)).orElseThrow().getCapacity());
+	}
+
+	/**
+	 * A student added while the seat change waits for the route's lock must be counted (SCRUM-259). Counted before
+	 * the lock, the change passes on the old count and leaves the route overfull: SCRUM-236's BUG-2.
+	 */
+	@Test
+	void loweringCapacityWaitsForTheRouteLockAndCountsAStudentAddedMeanwhile() throws Exception {
+		String id = addAs(schoolA, "A 123456", 3);
+		UUID routeId = aRouteWithStudents(schoolA, UUID.fromString(id), 1);
+		StudentResponse next = studentService.addStudent(schoolA,
+				new CreateStudentRequest("Student", "Next", "3", "Guardian", "+961 3 299999", null));
+
+		MockHttpServletResponse answer = WhileLocked.send(transactionTemplate, () -> {
+			routeRepository.findLockedBySchoolIdAndId(schoolA, routeId);
+			routeService.addStudent(schoolA, routeId, new AssignStudentRequest(next.id()));
+		}, () -> setCapacityAs(schoolA, id, 1));
+
+		assertEquals(409, answer.getStatus(), answer.getContentAsString());
+		assertEquals("The route has 2 students but this vehicle would seat 1.",
+				JsonPath.read(answer.getContentAsString(), "$.detail"));
+		assertEquals(3, (int) vehicleRepository.findById(UUID.fromString(id)).orElseThrow().getCapacity());
+	}
+
+	/**
+	 * The vehicle put on a route while the seat change waits for the vehicle's lock: the change must count that
+	 * route's students, not the "no route" it would have seen before the lock (SCRUM-259).
+	 */
+	@Test
+	void loweringCapacityWaitsForTheVehicleLockAndCountsTheRouteItWasPutOnMeanwhile() throws Exception {
+		String first = addAs(schoolA, "A 123456", 5);
+		UUID routeId = aRouteWithStudents(schoolA, UUID.fromString(first), 2);
+		UUID second = UUID.fromString(addAs(schoolA, "B 234567", 5));
+		UUID driverId = routeRepository.findById(routeId).orElseThrow().getDriverId();
+
+		MockHttpServletResponse answer = WhileLocked.send(transactionTemplate, () -> {
+			vehicleRepository.findLockedBySchoolIdAndId(schoolA, second);
+			routeService.editRoute(schoolA, routeId, new RouteRequest("Hamra morning run", second, driverId));
+		}, () -> setCapacityAs(schoolA, second.toString(), 1));
+
+		assertEquals(409, answer.getStatus(), answer.getContentAsString());
+		assertEquals("The route has 2 students but this vehicle would seat 1.",
+				JsonPath.read(answer.getContentAsString(), "$.detail"));
+		assertEquals(5, (int) vehicleRepository.findById(second).orElseThrow().getCapacity());
 	}
 
 	@Test

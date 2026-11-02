@@ -121,6 +121,14 @@ that's the structure this codebase moved away from.
   (`RouteVehicleOccupancyGuard`), so `vehicles` never imports `routes` — which already imports
   `vehicles` for the reverse check, and both importing each other would be a cycle. The same
   pattern `routes.service.ActiveRunGuard`/`runs.service.RunActiveRunGuard` use.
+  **Capacity locks (SCRUM-259).** Every change that can leave a route with more students than seats
+  locks rows before its check, always vehicle first, then route, so two of them wait for each other
+  instead of both passing on stale numbers (SCRUM-236's BUG-2), and never deadlock: `setCapacity`
+  locks the vehicle, then its route (the guard, `RouteRepository.findLockedBySchoolIdAndVehicleId`);
+  `RouteService.editRoute` locks the requested vehicle (`VehicleService.lockVehicles`), then the route;
+  `addStudent` locks the route; generated-routes apply locks the planned vehicles in id order, then
+  every route of the school, before its comparison. Removing, reordering and deleting take no lock,
+  since they never add a student or remove a seat.
 - `drivers` — driver roster: add/invite, resend invite, assign/unassign a vehicle, with
   validation (SCRUM-164). Real module. Depends on `vehicles` (via its service) to check a
   vehicle exists and is active before assigning a driver to it. Adding a driver also creates an
@@ -374,7 +382,7 @@ that's the structure this codebase moved away from.
   `run_confirmations`, migration V8: unique on run + student + status, no foreign keys). One row per status, kept as
   history; the latest is the highest status (`ConfirmationStatus` is declared in rank order), not the newest row. `confirm`
   finds the route outside any transaction (like `move`), then in one `TransactionTemplate` locks the run row
-  (`RunRepository.findLockedBySchoolIdAndId`, the codebase's only row lock: it orders a confirmation against another
+  (`RunRepository.findLockedBySchoolIdAndId`, the codebase's first row lock: it orders a confirmation against another
   of the same student and against the run ending), checks the student, the state and the transition table, and inserts with
   `ConfirmationRepository.insertIfMissing` (`ON CONFLICT DO NOTHING`). The time is read after the lock. A status the student
   already has is 200 with no change even if a later one exists. A student confirmed on a run who has left the route is
