@@ -41,11 +41,11 @@ import java.util.UUID;
  * constraint ({@code V6__absences.sql}) is the race-condition backstop: it is what actually
  * guarantees no two overlapping, non-cancelled absences ever exist for one student, across
  * however many app instances are running, the same way a unique constraint backs the holiday and
- * route checks. The check below can still race (read, then a concurrent insert wins before this
- * one writes); PostgreSQL aborts the whole transaction once a statement fails (see
- * {@code RouteService#lostRace}), so the losing request in {@link #reportAbsence} must not query
- * again in the same transaction — it answers a plain 409 asking the client to retry, the same
- * race-loss pattern {@code RouteService#propose} uses for two optimizations of a route at once.
+ * route checks. Reporting and cancelling first take a per-child lock
+ * ({@link AbsenceRepository#lockStudent}, SCRUM-258), so two requests for one child at the same
+ * moment run one after the other and the second gets the answer it would get alone (200 for an
+ * exact repeat, 409 naming the overlap). Without the lock, PostgreSQL could resolve two racing
+ * inserts as a deadlock, which answered 500.
  */
 @Service
 @RequiredArgsConstructor
@@ -96,6 +96,7 @@ public class AbsenceService {
 			throw new InvalidAbsenceDateException("toDate", "The last day can't be before the first day.");
 		}
 
+		absenceRepository.lockStudent(studentId);
 		Optional<ReportResult> existing = resolveOverlap(schoolId, studentId, fromDate, toDate);
 		if (existing.isPresent()) {
 			return existing.get();
@@ -106,12 +107,10 @@ public class AbsenceService {
 		try {
 			return new ReportResult(toResponse(absenceRepository.saveAndFlush(absence)), true);
 		} catch (DataIntegrityViolationException e) {
-			// Lost the race: another request for an overlapping range committed first, and the
-			// exclusion constraint is what caught it, not the check above. PostgreSQL has already
-			// aborted this transaction, so nothing here may query before this is thrown (same
-			// constraint RouteService#lostRace documents) — the client's retry runs in a fresh
-			// transaction and will resolve correctly (200 for an exact repeat, 409 naming the
-			// real conflict otherwise).
+			// Backstop only: the child's lock above already orders reports, so the constraint
+			// should never be what catches an overlap. PostgreSQL has already aborted this
+			// transaction, so nothing here may query before this is thrown (same constraint
+			// RouteService#lostRace documents).
 			throw new AbsenceOverlapException(
 					"Another absence for overlapping dates was just reported for this child. Try again.");
 		}
@@ -127,6 +126,7 @@ public class AbsenceService {
 	@Transactional
 	public void cancelAbsence(UUID schoolId, UUID parentUserId, UUID studentId, UUID absenceId) {
 		requireChild(schoolId, parentUserId, studentId);
+		absenceRepository.lockStudent(studentId);
 		Absence absence = absenceRepository.findBySchoolIdAndStudentIdAndIdAndCancelledFalse(schoolId, studentId, absenceId)
 				.orElseThrow(() -> new AbsenceNotFoundException(ABSENCE_NOT_FOUND_MESSAGE));
 		LocalDate today = LocalDate.now(clock);

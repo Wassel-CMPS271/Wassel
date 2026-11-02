@@ -1,8 +1,8 @@
 package com.wassel.backend.absences.controller;
 
+import com.jayway.jsonpath.JsonPath;
 import com.wassel.backend.absences.dto.ReportAbsenceRequest;
 import com.wassel.backend.absences.entity.Absence;
-import com.wassel.backend.absences.exception.AbsenceOverlapException;
 import com.wassel.backend.absences.repository.AbsenceRepository;
 import com.wassel.backend.absences.service.AbsenceService;
 import com.wassel.backend.drivers.dto.CreateDriverRequest;
@@ -26,11 +26,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -40,8 +42,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -86,6 +91,9 @@ class AbsenceControllerTests {
 
 	@Autowired
 	private UserService userService;
+
+	@Autowired
+	private TransactionTemplate transactionTemplate;
 
 	// --- fixtures -----------------------------------------------------------------------------
 
@@ -200,17 +208,14 @@ class AbsenceControllerTests {
 	}
 
 	/**
-	 * The race the overlap check alone can't close (see {@link AbsenceService#reportAbsence}):
-	 * two requests for the exact same range at once. Calls the service directly, the same way
-	 * {@code PasswordControllerTests.twoRequestsWithTheSameTokenSucceedExactlyOnce} drives its
-	 * own race, so both attempts are genuinely concurrent rather than serialized by one MockMvc
-	 * request at a time. Whichever loses either sees the winner's committed row and returns a
-	 * graceful 200 (not a new row), or hits the database's exclusion constraint and is caught as
-	 * {@link AbsenceOverlapException} (409, "try again") — either way, exactly one row must ever
-	 * get created; this is what would fail if the migration's constraint were missing or wrong.
+	 * Two requests for the exact same range at once (BUG-1 of SCRUM-236, SCRUM-258). Calls the service directly, the
+	 * same way {@code PasswordControllerTests.twoRequestsWithTheSameTokenSucceedExactlyOnce} drives its own race, so
+	 * both attempts are genuinely concurrent rather than serialized by one MockMvc request at a time. The child's lock
+	 * makes the second one wait for the first, so it sees the committed row and gets the contract's 200 for an exact
+	 * repeat: never an exception, and never a second row.
 	 */
 	@Test
-	void reportingTheSameRangeTwiceAtOnceCreatesExactlyOneAbsence() throws Exception {
+	void reportingTheSameRangeTwiceAtOnceCreatesOneAndAnswersTheOtherWithIt() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
 		LocalDate from = LocalDate.now().plusDays(10);
@@ -218,27 +223,93 @@ class AbsenceControllerTests {
 		ReportAbsenceRequest request = new ReportAbsenceRequest(from, to);
 		CountDownLatch start = new CountDownLatch(1);
 
-		Callable<Boolean> attempt = () -> {
+		Callable<AbsenceService.ReportResult> attempt = () -> {
 			start.await();
-			try {
-				return absenceService.reportAbsence(schoolId, parent.getId(), child.id(), request).created();
-			} catch (AbsenceOverlapException e) {
-				return false;
-			}
+			return absenceService.reportAbsence(schoolId, parent.getId(), child.id(), request);
 		};
 
 		ExecutorService pool = Executors.newFixedThreadPool(2);
 		try {
-			Future<Boolean> first = pool.submit(attempt);
-			Future<Boolean> second = pool.submit(attempt);
+			Future<AbsenceService.ReportResult> first = pool.submit(attempt);
+			Future<AbsenceService.ReportResult> second = pool.submit(attempt);
 			start.countDown();
-			long createdCount = List.of(first.get(), second.get()).stream().filter(created -> created).count();
-			assertEquals(1, createdCount, "exactly one of the two concurrent requests should have created a new absence");
+			List<AbsenceService.ReportResult> results = List.of(first.get(), second.get());
+			assertEquals(1, results.stream().filter(AbsenceService.ReportResult::created).count(), results.toString());
+			assertEquals(results.get(0).absence().id(), results.get(1).absence().id());
 		} finally {
 			pool.shutdown();
 		}
 
 		assertEquals(1, absenceRepository.findOverlapping(schoolId, child.id(), from, to).size());
+	}
+
+	/**
+	 * Holds the child's lock in another transaction and saves {@code meanwhile} in it, then sends the report. The
+	 * report must still be waiting a second later, and is answered once the lock is let go, which is returned.
+	 */
+	private MockHttpServletResponse reportedWhileChildLocked(User parent, StudentResponse child, Absence meanwhile,
+			String body) throws Exception {
+		CountDownLatch locked = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		ExecutorService pool = Executors.newFixedThreadPool(2);
+		try {
+			pool.submit(() -> transactionTemplate.execute(tx -> {
+				absenceRepository.lockStudent(child.id());
+				absenceRepository.saveAndFlush(meanwhile);
+				locked.countDown();
+				try {
+					release.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+				return null;
+			}));
+			assertTrue(locked.await(10, TimeUnit.SECONDS));
+			Future<MockHttpServletResponse> sent = pool.submit(() -> mockMvc.perform(post(childUrl(child.id()))
+							.with(loggedInAsParent(parent.getId())).contentType(MediaType.APPLICATION_JSON).content(body))
+					.andReturn().getResponse());
+
+			assertThrows(TimeoutException.class, () -> sent.get(1, TimeUnit.SECONDS));
+			release.countDown();
+			return sent.get(10, TimeUnit.SECONDS);
+		} finally {
+			release.countDown();
+			pool.shutdownNow();
+		}
+	}
+
+	private Absence anAbsence(User parent, StudentResponse child, LocalDate from, LocalDate to) {
+		return Absence.builder().schoolId(schoolId).studentId(child.id()).fromDate(from).toDate(to)
+				.createdBy(parent.getId()).build();
+	}
+
+	/** What makes the race safe: the overlap check runs only once the report holds the child's lock. */
+	@Test
+	void aReportWaitsForTheChildsLockAndThenAnswersAnExactRepeatWith200() throws Exception {
+		User parent = newParent();
+		StudentResponse child = newChildOf(parent);
+		LocalDate day = LocalDate.now().plusDays(12);
+		Absence meanwhile = anAbsence(parent, child, day, day);
+
+		MockHttpServletResponse answer = reportedWhileChildLocked(parent, child, meanwhile, absence(day.toString(), null));
+
+		assertEquals(200, answer.getStatus(), answer.getContentAsString());
+		assertEquals(meanwhile.getId().toString(), JsonPath.read(answer.getContentAsString(), "$.id"));
+	}
+
+	@Test
+	void aReportWaitsForTheChildsLockAndThenRejectsAnOverlapNamingIt() throws Exception {
+		User parent = newParent();
+		StudentResponse child = newChildOf(parent);
+		LocalDate from = LocalDate.now().plusDays(14);
+		Absence meanwhile = anAbsence(parent, child, from, from.plusDays(1));
+
+		MockHttpServletResponse answer = reportedWhileChildLocked(parent, child, meanwhile,
+				absence(from.plusDays(1).toString(), from.plusDays(2).toString()));
+
+		assertEquals(409, answer.getStatus(), answer.getContentAsString());
+		assertEquals("Overlaps an absence already reported from %s to %s.".formatted(from, from.plusDays(1)),
+				JsonPath.read(answer.getContentAsString(), "$.errors.fromDate"));
 	}
 
 	@Test
