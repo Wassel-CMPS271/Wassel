@@ -13,6 +13,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -66,10 +67,16 @@ public class VehicleService {
 	 * assigned to (SCRUM-241) is a 409: the route has no seats to lose. Equal to the current count
 	 * is allowed (seats left reaches zero, never negative); a vehicle on no route can be set to
 	 * any valid capacity.
+	 *
+	 * <p>The vehicle's row is locked first, then (through the guard) its route's row, before
+	 * counting (SCRUM-259): vehicle, then route, the order every capacity check takes its locks
+	 * in. So a seat change and an added student, or a vehicle being put on a route, wait for each
+	 * other instead of both passing on numbers the other is about to change.
 	 */
 	@Transactional
 	public VehicleResponse setCapacity(UUID schoolId, UUID vehicleId, SetVehicleCapacityRequest request) {
-		Vehicle vehicle = findOwned(schoolId, vehicleId);
+		Vehicle vehicle = vehicleRepository.findLockedBySchoolIdAndId(schoolId, vehicleId)
+				.orElseThrow(() -> new VehicleNotFoundException(NOT_FOUND_MESSAGE));
 		long currentCount = occupancyGuard.studentCountOnVehiclesRoute(schoolId, vehicleId);
 		if (currentCount > request.capacity()) {
 			throw new VehicleCapacityConflictException(
@@ -91,6 +98,19 @@ public class VehicleService {
 		Vehicle vehicle = findOwned(schoolId, vehicleId);
 		vehicle.setActive(true);
 		return toResponse(vehicle);
+	}
+
+	/**
+	 * Locks these vehicles' rows until the caller's transaction ends (SCRUM-259), for the routes
+	 * module: a change that puts a vehicle on a route, or students on a vehicle's route, takes
+	 * the same lock {@link #setCapacity} takes before its capacity check, so the two cannot both
+	 * pass. Ids that are not this school's vehicles are skipped.
+	 */
+	@Transactional
+	public void lockVehicles(UUID schoolId, Collection<UUID> vehicleIds) {
+		if (!vehicleIds.isEmpty()) {
+			vehicleRepository.findLockedBySchoolIdAndIdInOrderByIdAsc(schoolId, vehicleIds);
+		}
 	}
 
 	/** For other modules (e.g. drivers, assigning a driver to a vehicle) to look up one vehicle. */

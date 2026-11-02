@@ -157,6 +157,10 @@ public class RouteGenerationService {
 		if (proposalRepository.claim(schoolId, proposalId) == 0) {
 			throw new ProposalNotFoundException(PROPOSAL_NOT_FOUND_MESSAGE);
 		}
+		// The planned vehicles, then every route: the locks, in the order, every capacity check takes (SCRUM-259),
+		// so no seat change or added student can commit between the comparison below and the write.
+		vehicleService.lockVehicles(schoolId, planned.stream().map(FleetProposalRoute::getVehicleId).toList());
+		routeRepository.findLockedBySchoolIdOrderByIdAsc(schoolId);
 		Snapshot now = collect(schoolId);
 		String changed = changedParts(proposal.getFingerprint(), fingerprint(now));
 		if (!changed.isEmpty()) {

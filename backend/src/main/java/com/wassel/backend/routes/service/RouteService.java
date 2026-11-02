@@ -192,7 +192,10 @@ public class RouteService {
 
 	@Transactional
 	public RouteResponse editRoute(UUID schoolId, UUID routeId, RouteRequest request) {
-		Route route = findOwned(schoolId, routeId);
+		// Vehicle, then route: the order every capacity check locks in (SCRUM-259), so a seat change
+		// on the vehicle being put here waits for this, or this for it.
+		vehicleService.lockVehicles(schoolId, List.of(request.vehicleId()));
+		Route route = findLockedOwned(schoolId, routeId);
 		if (!request.vehicleId().equals(route.getVehicleId()) || !request.driverId().equals(route.getDriverId())) {
 			activeRunGuard.blockReasonForRouteChange(schoolId, routeId, route.getName()).ifPresent(reason -> {
 				throw new ActiveRunConflictException(reason);
@@ -248,10 +251,12 @@ public class RouteService {
 	 * to another school, or isn't active; it also moves a student off any other route they were
 	 * already on, so no seat is held on two routes at once. Moving a student who is on a bus today
 	 * (a confirmation on a run in progress) off their route is a 409 ({@link ActiveRunConflictException}).
+	 * The route's row is locked before anything is counted (SCRUM-259), so two adds, or an add and
+	 * a seat change, cannot both pass the capacity check on the same count.
 	 */
 	@Transactional
 	public RouteResponse addStudent(UUID schoolId, UUID routeId, AssignStudentRequest request) {
-		Route route = findOwned(schoolId, routeId);
+		Route route = findLockedOwned(schoolId, routeId);
 		if (!studentService.isOnRoute(schoolId, request.studentId(), routeId)) {
 			VehicleResponse vehicle = vehicleService.getOwnedVehicle(schoolId, route.getVehicleId());
 			long currentCount = studentService.countOnRoute(schoolId, routeId);
@@ -522,6 +527,11 @@ public class RouteService {
 
 	private Route findOwned(UUID schoolId, UUID routeId) {
 		return routeRepository.findBySchoolIdAndId(schoolId, routeId)
+				.orElseThrow(() -> new RouteNotFoundException(NOT_FOUND_MESSAGE));
+	}
+
+	private Route findLockedOwned(UUID schoolId, UUID routeId) {
+		return routeRepository.findLockedBySchoolIdAndId(schoolId, routeId)
 				.orElseThrow(() -> new RouteNotFoundException(NOT_FOUND_MESSAGE));
 	}
 

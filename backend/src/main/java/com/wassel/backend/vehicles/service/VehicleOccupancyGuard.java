@@ -11,6 +11,10 @@ import java.util.UUID;
  */
 public interface VehicleOccupancyGuard {
 
-	/** Students on the route this vehicle is on now, or 0 if it is not on one. */
+	/**
+	 * Students on the route this vehicle is on now, or 0 if it is not on one. Locks that route's
+	 * row until the transaction ends (SCRUM-259), so no student can be added to it before the
+	 * caller's capacity change commits.
+	 */
 	long studentCountOnVehiclesRoute(UUID schoolId, UUID vehicleId);
 }
