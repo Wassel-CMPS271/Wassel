@@ -72,6 +72,12 @@ wassel:
     # emails a code, so on a deployed environment set this to a real mailbox that supports "+" tags
     # (Gmail does) to receive the codes. The default only works where the code is logged (local).
     email-base: ${DEMO_EMAIL_BASE:demo@wassel.local}
+  # Account lockout (SCRUM-171): this many wrong passwords in a row lock the account for this long. The lock
+  # ends by itself; while it lasts, sign-in fails with the same error as a wrong password.
+  auth:
+    lockout:
+      max-failures: ${LOCKOUT_MAX_FAILURES:5}
+      duration: ${LOCKOUT_DURATION:15m}
   # Must be overridden in every deployed environment: the MVP serves one school, and every
   # route response includes its location.
   school:

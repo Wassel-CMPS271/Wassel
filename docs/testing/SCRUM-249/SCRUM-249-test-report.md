@@ -1,5 +1,19 @@
 # SCRUM-249 — Parent absences
 
+## Current verification — 3 November 2026
+
+Integrated the finished SCRUM-248 implementation by merge while retaining the original snapshot 8167c2a8630dd5290ad35cd97076441058416b45 and existing absence commit 0f218224c9dddcb535f43be980c3bb4a1878026b. The real SCRUM-238 API is present. Parent Home's temporary sample adapter is deleted; absence requests already used the authenticated real endpoint and have no sample fallback. No absence screen was recreated.
+
+Current complete frontend regression: **666 passed, 6 existing skipped**, 49 files; all 43 independent absence tests retained. ESLint, production build with the real same-origin API proxy and the absence-only PR diff check passed. An initial test invocation mistakenly inherited deployment-only NEXT_PUBLIC_API_BASE_URL="", causing 63 existing API URL expectations to fail; rerunning the unchanged suite in its normal default environment passed. No test/assertion was weakened.
+
+**Real PostgreSQL/Flyway browser workflow passed without API interception:** actual Parent/Head password and emailed-code authentication; choosing an owned child with no route; single-day 201; exact-repeat 200 with no duplicate; inclusive-range 201; overlapping range 409 with visible field/plain-language errors; Keep versus confirmed DELETE 204; in-place updates; persistence after reload; client and server past-date rejection; server inverted-range 400; foreign-child GET/POST/DELETE 404; switching siblings without leaking records; actual session revocation returning 401 with a sign-in link, restore and successful retry; cleanup to an empty persisted list. 360px real browser geometry had no overflow or page crashes; the screenshot was visually inspected. Ongoing historical truncation remains component- and backend-test covered rather than fabricated through the public API.
+
+Ignored evidence: tmp/SCRUM-249-final/{tests-default-env.log,tests.log,lint.log,build.log,real-browser.log,absence-real-360.png,absence-real.cjs,run-real.mjs}. The real harness reuses the existing SCRUM-177 isolated seed/launcher on separate ports 4189/18189/55441. Old fixture-only screenshots/results are retained separately as historical evidence, not used to claim backend integration. The historical focus bug was fixed in this ticket's own panel; no teammate product code was modified.
+
+Remaining delivery gate: Parent Home PR #119 is not yet merged. Preserve this complete absence implementation locally and do not submit a develop PR containing duplicate Parent Home changes. Once the accepted base is merged, reconcile it without rewriting shared history, confirm only the eight absence files differ, refresh checks, push the branch, submit the complete absence PR, request Majd's independent review and verify CI before Jira In Review. The backend dependency itself is no longer blocked. Required cloud CI's unrelated test-clock issue was fixed upstream in PR #117; refresh the base before final submission.
+
+## Historical verification and preservation
+
 30 October 2026. Jira: In Progress. Local implementation; no push or PR.
 
 Preservation update, 31 October 2026: the user authorized a local-only commit of this verified UI, tests and report. All eight files matched the saved verification manifest before this note was added. The commit directly follows SCRUM-248 snapshot `8167c2a8630dd5290ad35cd97076441058416b45`, preserving that dependency. No tests were rerun for preservation; real backend integration remains blocked as recorded below. Raw evidence stays local and ignored. No push or PR is authorized.

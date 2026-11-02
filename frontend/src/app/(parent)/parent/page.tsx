@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { focusRingClass, focusRingStyle } from "@/components/ui/focusRing";
 import { ApiError } from "@/lib/api/errors";
 import type { Child } from "@/lib/api/myChildren";
-import { isParentHomePreview, loadParentChildren } from "@/lib/api/parentChildrenSource";
+import { loadParentChildren } from "@/lib/api/parentChildrenSource";
 import { colors, darkTheme, sizing, spacing } from "@/styles/tokens";
 import { ChildTransportCard } from "./ChildTransportCard";
 import { AbsencesPanel } from "./AbsencesPanel";
@@ -27,7 +27,6 @@ export default function ParentHome() {
   const [attempt, setAttempt] = useState(0);
   const [selectedChild, setSelectedChild] = useState<Child | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  const preview = isParentHomePreview();
 
   useEffect(() => {
     let active = true;
@@ -51,7 +50,6 @@ export default function ParentHome() {
         <p className="text-base" style={{ color: darkTheme.text.secondary }}>School transport, at a glance.</p>
       </header>
 
-      {preview && <p role="status" className="text-sm font-medium" style={{ color: colors.warning[500] }}>Development preview — sample children, not live school records.</p>}
 
       {state.kind === "loading" && (
         <div role="status" aria-live="polite" className="flex flex-col" style={{ gap: spacing.md }}>

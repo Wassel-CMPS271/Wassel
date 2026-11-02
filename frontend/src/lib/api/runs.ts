@@ -1,7 +1,7 @@
 // Runs API types — SCRUM-232, written from docs/contracts/runs.md (the source of
-// truth for every type and path here). Types only: the calls are added with the
-// screens that use them (SCRUM-243/244 for the driver, SCRUM-255 for the head of
-// transportation), through request() in client.ts.
+// truth for every type and path here). The calls are added with the screens that
+// use them, through request() in client.ts: the head of transportation's two reads
+// are below (SCRUM-255); the driver's calls come with SCRUM-243/244.
 //
 //   GET  /api/driver/runs/today                                  -> DriverDay (creates today's runs)
 //   POST /api/driver/runs/{runId}/start                          -> Run
@@ -13,6 +13,7 @@
 // Dates are "YYYY-MM-DD" and times of day "HH:mm", both school-local (Asia/Beirut).
 // Moments (startedAt, endedAt, confirmation.at) are ISO-8601 UTC with a "Z".
 
+import { request } from "./client";
 import type { RouteDriver, RouteVehicle, Stop } from "./routes";
 
 export type RunDirection = "MORNING" | "AFTERNOON";
@@ -106,4 +107,19 @@ export interface AbsentStudent {
   toDate: string;
   route: RunRoute | null;
   position: number | null;
+}
+
+// The head of transportation's Today screen (SCRUM-255). Today when `date` is omitted; asking for another
+// date only reads runs that already exist. Until SCRUM-233 and SCRUM-239 are merged the screen uses
+// runsSample.ts instead; the PR that switches to these deletes it.
+export function getRunsDay(date?: string): Promise<RunsDay> {
+  return request<RunsDay>(`/api/head-of-transport/runs${dateQuery(date)}`);
+}
+
+export function getAbsentStudents(date?: string): Promise<AbsentStudent[]> {
+  return request<AbsentStudent[]>(`/api/head-of-transport/absences${dateQuery(date)}`);
+}
+
+function dateQuery(date?: string): string {
+  return date === undefined ? "" : `?date=${encodeURIComponent(date)}`;
 }

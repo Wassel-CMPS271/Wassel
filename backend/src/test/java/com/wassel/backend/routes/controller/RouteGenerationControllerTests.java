@@ -1,6 +1,7 @@
 package com.wassel.backend.routes.controller;
 
 import com.jayway.jsonpath.JsonPath;
+import com.wassel.backend.common.WhileLocked;
 import com.wassel.backend.drivers.entity.Driver;
 import com.wassel.backend.drivers.entity.DriverStatus;
 import com.wassel.backend.drivers.repository.DriverRepository;
@@ -26,12 +27,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -110,6 +113,9 @@ class RouteGenerationControllerTests {
 
 	@Autowired
 	private SchoolSettingsRepository schoolSettingsRepository;
+
+	@Autowired
+	private TransactionTemplate transactionTemplate;
 
 	/** A vehicle and the driver assigned to it. */
 	private record Ready(UUID vehicleId, UUID driverId) {
@@ -717,6 +723,27 @@ class RouteGenerationControllerTests {
 		vehicleRepository.save(vehicle);
 
 		assertRefused(id, "vehicles");
+	}
+
+	/**
+	 * The same change made while apply waits for the planned vehicle's lock (SCRUM-259): compared before the lock,
+	 * apply would pass and write routes for seats that are about to be gone.
+	 */
+	@Test
+	void applyingWaitsForAPlannedVehiclesLockAndIsRefusedWhenItsCapacityChangedMeanwhile() throws Exception {
+		List<Ready> vehicles = new ArrayList<>();
+		fullFleetOfFour(vehicles);
+		String id = idOf(generated(schoolA));
+
+		MockHttpServletResponse answer = WhileLocked.send(transactionTemplate,
+				() -> vehicleRepository.findLockedBySchoolIdAndId(schoolA, vehicles.get(0).vehicleId()).orElseThrow()
+						.setCapacity(3),
+				() -> applyAs(schoolA, id).andReturn().getResponse());
+
+		assertEquals(409, answer.getStatus(), answer.getContentAsString());
+		assertEquals("The vehicles changed since these routes were generated. Generate them again.",
+				JsonPath.read(answer.getContentAsString(), "$.detail"));
+		assertEquals(1, fleetProposalRepository.count());
 	}
 
 	@Test
