@@ -505,6 +505,55 @@ class RouteControllerTests {
 	}
 
 	@Test
+	void swappingInASmallerVehicleBelowTheRoutesStudentsIsAConflict() throws Exception {
+		UUID driver = aDriver(schoolA);
+		UUID bigVehicle = aVehicle(schoolA, true, 5);
+		String id = createAs(schoolA, "Verdun morning run", bigVehicle, driver);
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		UUID smallVehicle = aVehicle(schoolA, true, 1);
+
+		mockMvc.perform(put(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(route("Verdun morning run", smallVehicle, driver)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value("The route has 2 students but the vehicle seats 1."));
+
+		assertEquals(bigVehicle, routeRepository.findById(UUID.fromString(id)).orElseThrow().getVehicleId());
+	}
+
+	@Test
+	void swappingInASmallerVehicleAtExactlyTheStudentCountIsAllowed() throws Exception {
+		UUID driver = aDriver(schoolA);
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true, 5), driver);
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		UUID exactVehicle = aVehicle(schoolA, true, 2);
+
+		mockMvc.perform(put(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(route("Verdun morning run", exactVehicle, driver)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.vehicle.capacity").value(2));
+	}
+
+	@Test
+	void renamingAnAlreadyOverCapacityRouteWithTheSameVehicleIsNotRechecked() throws Exception {
+		UUID driver = aDriver(schoolA);
+		UUID vehicle = aVehicle(schoolA, true, 2);
+		String id = createAs(schoolA, "Verdun morning run", vehicle, driver);
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		lowerCapacityTo(id, 1);
+
+		mockMvc.perform(put(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(route("Verdun afternoon run", vehicle, driver)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.name").value("Verdun afternoon run"));
+	}
+
+	@Test
 	void addingAnInactiveStudentIsRejected() throws Exception {
 		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true), aDriver(schoolA));
 		UUID studentId = aStudent(schoolA, StudentStatus.INACTIVE);

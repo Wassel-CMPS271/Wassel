@@ -114,7 +114,13 @@ that's the structure this codebase moved away from.
 - `common` — cross-cutting code that belongs to no single feature:
   `config/SecurityConfig`, `exception/GlobalExceptionHandler`.
 - `vehicles` — fleet vehicles: create, set capacity, deactivate/reactivate, with
-  validation (SCRUM-163). Real module.
+  validation (SCRUM-163). Real module. Lowering a vehicle's capacity below the number of students
+  already on the route it is assigned to is a 409 (SCRUM-241, equal to the count is allowed,
+  `VehicleCapacityConflictException`); declares `service/VehicleOccupancyGuard` (how many students
+  are on this vehicle's route now, or 0) for `routes` to implement
+  (`RouteVehicleOccupancyGuard`), so `vehicles` never imports `routes` — which already imports
+  `vehicles` for the reverse check, and both importing each other would be a cycle. The same
+  pattern `routes.service.ActiveRunGuard`/`runs.service.RunActiveRunGuard` use.
 - `drivers` — driver roster: add/invite, resend invite, assign/unassign a vehicle, with
   validation (SCRUM-164). Real module. Depends on `vehicles` (via its service) to check a
   vehicle exists and is active before assigning a driver to it. Adding a driver also creates an
@@ -193,7 +199,10 @@ that's the structure this codebase moved away from.
   route's current occupants before resolving the student (so a full route 409s even for an
   unknown student id, and re-adding a student already on this exact route skips the check — no
   new seat taken), then only an active student can be added, and a student already on another
-  route is moved rather than rejected. Deleting a route releases its students
+  route is moved rather than rejected. Putting a smaller vehicle on a route that already has more
+  students than its new seats is the same 409 (SCRUM-241, `editRoute`, checked only when the
+  vehicle actually changes — a rename or driver-only change never rechecks it, so a route that
+  somehow is already over capacity can still be renamed). Deleting a route releases its students
   (`StudentService.clearRoute`) so none are left pointing at a dead route id.
   `studentCount`/`seatsLeft`/`stops` are computed fresh from `StudentService` on every response,
   never cached on `Route`. Each stop's `arrivalTime` (`RouteService.schedule`) uses

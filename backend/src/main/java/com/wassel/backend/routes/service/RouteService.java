@@ -207,6 +207,15 @@ public class RouteService {
 				? driverService.getOwnedDriver(schoolId, request.driverId())
 				: requireUsableDriver(schoolId, request.driverId());
 		checkNoConflict(schoolId, vehicle.id(), driver.id(), routeId);
+		// A smaller vehicle swapped in must still fit the students already on the route (SCRUM-241); a vehicle
+		// kept as it is needs no recheck, since its own capacity change already went through this same rule.
+		if (!request.vehicleId().equals(route.getVehicleId())) {
+			long currentCount = studentService.countOnRoute(schoolId, routeId);
+			if (currentCount > vehicle.capacity()) {
+				throw new RouteCapacityExceededException(
+						"The route has %d students but the vehicle seats %d.".formatted(currentCount, vehicle.capacity()));
+			}
+		}
 
 		route.setName(request.name());
 		route.setVehicleId(vehicle.id());
