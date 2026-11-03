@@ -22,6 +22,15 @@ const pillStyle: CSSProperties = {
   color: darkTheme.text.secondary,
 };
 
+// Matches Button's dark "secondary" variant, so the maps/call links read as
+// buttons without duplicating Button's own tap-handler-free rendering.
+const secondaryButtonStyle: CSSProperties = {
+  backgroundColor: "rgba(100, 64, 255, 0.16)",
+  color: darkTheme.text.primary,
+  border: `1px solid ${darkTheme.surface.inputBorder}`,
+  outlineColor: colors.primary[500],
+};
+
 // Card overrides per state. The next stop stands out (primary border, tint,
 // halo); done and skippable stops recede (translucent fill, no shadow; dashed
 // border for skip). A pending stop is the plain Card.
@@ -101,6 +110,8 @@ export function StopCard({
   const isDone = state === "done";
   const name = `${stop.firstName} ${stop.lastName}`;
   const pending = pendingStatus !== null;
+  const hasPin = stop.latitude !== null && stop.longitude !== null;
+  const hasPhone = stop.guardianPhone.trim().length > 0;
 
   // The tapped button goes away when its move is recorded (Picked up becomes
   // Dropped off, or the row empties), so once the request settles focus moves
@@ -171,6 +182,43 @@ export function StopCard({
           <p className="text-sm break-words" style={{ color: darkTheme.text.secondary }}>
             {stop.address}
           </p>
+
+          {(hasPin || hasPhone) && (
+            <div className="flex flex-wrap" style={{ gap: spacing.sm, marginTop: spacing.xs }}>
+              {hasPin && (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${stop.latitude},${stop.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Open directions to ${name}'s stop`}
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                  style={{
+                    ...secondaryButtonStyle,
+                    minHeight: sizing.tapTarget,
+                    padding: `${spacing.sm} ${spacing.md}`,
+                    borderRadius: radius.md,
+                  }}
+                >
+                  Open in maps
+                </a>
+              )}
+              {hasPhone && (
+                <a
+                  href={`tel:${stop.guardianPhone.trim()}`}
+                  aria-label={`Call ${name}'s parent`}
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                  style={{
+                    ...secondaryButtonStyle,
+                    minHeight: sizing.tapTarget,
+                    padding: `${spacing.sm} ${spacing.md}`,
+                    borderRadius: radius.md,
+                  }}
+                >
+                  Call parent
+                </a>
+              )}
+            </div>
+          )}
 
           {(stop.absent || stop.confirmation || state === "skip") && (
             <div
