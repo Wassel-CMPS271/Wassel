@@ -1,3 +1,31 @@
+# SCRUM-177 — isolated stacked integration, 3 November 2026
+
+Base: test/SCRUM-230-routing-e2e at c9918ee (PR #85 is unmerged).
+Integration branch: codex/SCRUM-177-auth-integration. The original branch, all ten
+browser test bodies/helpers, reports and evidence remain preserved unchanged.
+
+One shared runner/config/dependency installation serves both suites. The original
+routing command remains `npm run test:e2e`; auth uses `npm run test:e2e:auth`.
+Only suite selection, launcher/ports, generated credentials and auth CI are added.
+No duplicate routing launcher, Playwright dependency or configuration is introduced.
+
+Executed on this integrated source:
+- Full frontend regression: **572 passed, 6 existing skips**; ESLint passed.
+- Production frontend build passed inside the shared runner.
+- Fresh PostgreSQL/Flyway/validation, real backend/browser: **10 passed, 0 failed,
+  0 skipped (54.4s)**. Includes real revoke/restore, next-request session rejection
+  and five-incorrect-password account lockout. No intercepted production responses.
+- Auth test/helper files are byte-identical to the saved auth branch.
+
+Final pushed-head CI must verify backend/frontend, auth PostgreSQL and routing's
+success/negative controls. This is a stacked PR; retarget after #85 merges.
+Logs remain ignored in frontend/tmp/verification and frontend/e2e-artifacts.
+Credential/mail logs and generated data are excluded from commits and auth uploads.
+
+Historical results and startup attempts are preserved below.
+
+---
+
 # SCRUM-177 — Authentication browser tests
 
 ## Current verification — 3 November 2026
