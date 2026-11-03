@@ -1,4 +1,4 @@
-import type { DriverDay, Run, RunStop } from "@/lib/api/runs";
+import type { ConfirmationStatus, DriverDay, Run, RunStop } from "@/lib/api/runs";
 
 // The rules from the comments on DriverDay and RunStop in lib/api/runs.ts.
 
@@ -34,4 +34,22 @@ export function stopStates(run: Run): StopState[] {
     nextFound = true;
     return "next";
   });
+}
+
+// The confirmations the driver can still record for a stop, in button order:
+// the moves docs/contracts/runs.md#confirmations allows, and nothing while the
+// run isn't in progress (the server refuses every one with a 409). The same
+// status again is a no-op, so it isn't offered either; there is no undo.
+export function nextConfirmations(run: Run, stop: RunStop): ConfirmationStatus[] {
+  if (run.state !== "IN_PROGRESS") return [];
+  switch (stop.confirmation?.status ?? null) {
+    case null:
+      return ["PICKED_UP", "NOT_PRESENT"];
+    case "NOT_PRESENT":
+      return ["PICKED_UP"];
+    case "PICKED_UP":
+      return ["DROPPED_OFF"];
+    case "DROPPED_OFF":
+      return [];
+  }
 }

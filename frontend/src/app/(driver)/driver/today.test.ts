@@ -7,7 +7,7 @@ import type {
   RunState,
   RunStop,
 } from "@/lib/api/runs";
-import { currentRun, isDone, isSkippable, stopStates } from "./today";
+import { currentRun, isDone, isSkippable, nextConfirmations, stopStates } from "./today";
 
 function stop(position: number, absent = false, status: ConfirmationStatus | null = null): RunStop {
   return {
@@ -88,4 +88,18 @@ it("has no next stop when every stop is done or skippable", () => {
     "done",
     "skip",
   ]);
+});
+
+it("offers only the confirmations the contract allows from each status", () => {
+  const inProgress = run("MORNING", []);
+  expect(nextConfirmations(inProgress, stop(1))).toEqual(["PICKED_UP", "NOT_PRESENT"]);
+  expect(nextConfirmations(inProgress, stop(1, true))).toEqual(["PICKED_UP", "NOT_PRESENT"]);
+  expect(nextConfirmations(inProgress, stop(1, false, "NOT_PRESENT"))).toEqual(["PICKED_UP"]);
+  expect(nextConfirmations(inProgress, stop(1, false, "PICKED_UP"))).toEqual(["DROPPED_OFF"]);
+  expect(nextConfirmations(inProgress, stop(1, false, "DROPPED_OFF"))).toEqual([]);
+});
+
+it("offers no confirmations unless the run is in progress", () => {
+  expect(nextConfirmations(run("MORNING", [], "NOT_STARTED"), stop(1))).toEqual([]);
+  expect(nextConfirmations(run("MORNING", [], "FINISHED"), stop(1))).toEqual([]);
 });
