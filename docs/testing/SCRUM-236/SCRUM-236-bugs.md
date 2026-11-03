@@ -32,7 +32,7 @@ Caused by: org.postgresql.util.PSQLException: ERROR: deadlock detected
 
 ```bash
 cd backend
-sh ./mvnw test -Dknown-bug.SCRUM-238-race=true -Dtest=AbsenceRaceCriteriaTests
+sh ./mvnw test -Dtest=AbsenceRaceCriteriaTests
 ```
 
 `AbsenceRaceCriteriaTests` sends two requests at the same instant (a barrier releases both threads), 25 rounds, once identical and once overlapping. It fails with, for example, `17 of 25 rounds wrong: [2027-01-11 [201, 500]: [a request answered 5xx ...` (identical reports) and `13 of 25 rounds wrong` (overlapping). The first rounds in a fresh JVM may pass, because a cold connection pool serialises the two requests, so keep the 25 rounds.
@@ -59,7 +59,7 @@ Over 25 tries on the packaged jar: identical reports gave `201 + 500` in 15 and 
 
 **Paste-ready comment.**
 
-> **Bug (SCRUM-238, found by the SCRUM-236 tests):** two reports for the same child at the same instant can answer **500**. PostgreSQL can resolve the clash between the two inserts as a deadlock (`40P01`), Spring throws `CannotAcquireLockException`, and `AbsenceService.reportAbsence` (line 107) only catches `DataIntegrityViolationException`, so it falls to `GlobalExceptionHandler` as an unhandled exception. 15 of 25 tries for two identical reports, 17 of 25 for overlapping ones. Exactly one row is stored every time, so only the answer is wrong. Repro: `sh ./mvnw test -Dknown-bug.SCRUM-238-race=true -Dtest=AbsenceRaceCriteriaTests`. Suggested: also catch `ConcurrencyFailureException` and throw the same `AbsenceOverlapException`, or lock the child before the overlap check. Please decide whether the loser of an exact-repeat race should be 409 (as now) or the contract's 200.
+> **Bug (SCRUM-238, found by the SCRUM-236 tests):** two reports for the same child at the same instant can answer **500**. PostgreSQL can resolve the clash between the two inserts as a deadlock (`40P01`), Spring throws `CannotAcquireLockException`, and `AbsenceService.reportAbsence` (line 107) only catches `DataIntegrityViolationException`, so it falls to `GlobalExceptionHandler` as an unhandled exception. 15 of 25 tries for two identical reports, 17 of 25 for overlapping ones. Exactly one row is stored every time, so only the answer is wrong. Repro: `sh ./mvnw test -Dtest=AbsenceRaceCriteriaTests`. Suggested: also catch `ConcurrencyFailureException` and throw the same `AbsenceOverlapException`, or lock the child before the overlap check. Please decide whether the loser of an exact-repeat race should be 409 (as now) or the contract's 200.
 
 ---
 
@@ -81,7 +81,7 @@ The same happens when `editRoute` puts a smaller vehicle on the route at the sam
 
 ```bash
 cd backend
-sh ./mvnw test -Dpending.SCRUM-241=true -Dknown-bug.SCRUM-241-race=true -Dtest=VehicleCapacityRaceCriteriaTests
+sh ./mvnw test -Dtest=VehicleCapacityRaceCriteriaTests
 ```
 
 `VehicleCapacityRaceCriteriaTests`: a route with 7 students on an 8-seat bus; one request lowers the seats to 7 (or puts a 7-seat vehicle on the route) while another adds an eighth student. It fails with `9 of 10 rounds overfull: [round 1: statuses [200, 200] left 8 students on 7 seats ...` and `10 of 10` for the smaller-vehicle case. (Round 0 can pass on a cold pool.) The companion `VehicleCapacityCriteriaTests` (9 tests, including two simultaneous reductions) passes on #107.
@@ -104,7 +104,7 @@ wait; curl -s -b "wassel_token=$HEAD" "$BASE/api/head-of-transport/routes/$ROUTE
 
 **Paste-ready comment.**
 
-> **Bug (SCRUM-241, found by the SCRUM-236 tests):** the rule holds for one request at a time (the 9 tests in `VehicleCapacityCriteriaTests` pass on this PR), but a reduction and an added student sent at the same instant leave the route overfull: with 7 students on 8 seats, one request lowers the seats to 7 while another adds an eighth student, and the route ends with 8 students on 7 seats (`seatsLeft: -1`), in 9 of 10 rounds in tests and 25 of 25 by hand; the same for `PUT /routes/{id}` with a smaller vehicle. `setCapacity`, `editRoute` and `addStudent` each check against a value the other is about to change and write different rows, so nothing makes one wait for the other. Repro: `sh ./mvnw test -Dpending.SCRUM-241=true -Dknown-bug.SCRUM-241-race=true -Dtest=VehicleCapacityRaceCriteriaTests` (needs this PR's code). Suggested: lock the route row in all three paths (the lock `CLAUDE.md` already describes for 203/207), or word the criterion as single-request and note it as a known limit. Also: `docs/contracts/routing.md:52` says `seatsLeft` can be negative; please update it in this PR.
+> **Bug (SCRUM-241, found by the SCRUM-236 tests):** the rule holds for one request at a time (the 9 tests in `VehicleCapacityCriteriaTests` pass on this PR), but a reduction and an added student sent at the same instant leave the route overfull: with 7 students on 8 seats, one request lowers the seats to 7 while another adds an eighth student, and the route ends with 8 students on 7 seats (`seatsLeft: -1`), in 9 of 10 rounds in tests and 25 of 25 by hand; the same for `PUT /routes/{id}` with a smaller vehicle. `setCapacity`, `editRoute` and `addStudent` each check against a value the other is about to change and write different rows, so nothing makes one wait for the other. Repro: `sh ./mvnw test -Dtest=VehicleCapacityRaceCriteriaTests` (needs this PR's code). Suggested: lock the route row in all three paths (the lock `CLAUDE.md` already describes for 203/207), or word the criterion as single-request and note it as a known limit. Also: `docs/contracts/routing.md:52` says `seatsLeft` can be negative; please update it in this PR.
 
 ---
 

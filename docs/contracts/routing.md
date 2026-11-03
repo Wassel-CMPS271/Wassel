@@ -49,7 +49,7 @@ What the list returns.
 | `vehicle` | `{ id, plateNumber, capacity }` | |
 | `driver` | `{ id, firstName, lastName }` | |
 | `studentCount` | integer | stops on the route |
-| `seatsLeft` | integer | `capacity - studentCount`. **Negative when the route is over capacity**, which happens if the vehicle's capacity is lowered after students were assigned. The screen should warn |
+| `seatsLeft` | integer | `capacity - studentCount`. Never negative for a route changed since SCRUM-241: lowering the seats, or swapping in a smaller vehicle, below the students on the route is a 409, also when it happens at the same moment as a student being added (SCRUM-259). A route already over capacity before that can still show a negative number. The screen should warn |
 
 ### Route
 

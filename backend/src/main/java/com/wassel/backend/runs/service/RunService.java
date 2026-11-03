@@ -235,8 +235,9 @@ public class RunService {
 	}
 
 	/**
-	 * {@code absent} is the stops with {@code absent: true} and no confirmation (contract: a confirmation wins); 0
-	 * where no stops were fetched (the head of transportation's {@code RunSummary}).
+	 * {@code absent} is the caller's own count of stops with {@code absent: true} and no confirmation (contract: a
+	 * confirmation wins) — {@link #driverRun} filters its real stops for it; {@link #runsDay} has no stops for its
+	 * {@code RunSummary} (SCRUM-260) and passes the same count computed from the route's roster instead.
 	 */
 	private static RunCountsResponse countsOf(int students, int absent, Collection<Confirmation> latest) {
 		int droppedOff = countOf(latest, ConfirmationStatus.DROPPED_OFF);
@@ -308,7 +309,9 @@ public class RunService {
 	/**
 	 * Every run of the school on the date, without stops, routes in the order of {@code GET /routes} and each
 	 * route's morning run before its afternoon run. Today's runs are created first; any other date only reads.
-	 * {@code date} is null for today.
+	 * {@code date} is null for today. {@code counts.absent} (SCRUM-260) needs the roster of every route that has a
+	 * run on the date, one read each, and one batched absence query over all of them — the same shape
+	 * {@link #todayRunStatus} uses for its own roster and absence reads.
 	 */
 	@Transactional
 	public RunsDayResponse runsDay(UUID schoolId, LocalDate date) {
@@ -330,18 +333,28 @@ public class RunService {
 		// A confirmed student who has left the route stays on its run (contract), so they count as one of its students.
 		Map<UUID, UUID> routeOfStudent = studentService.findRouteIds(schoolId, confirmed.values().stream()
 				.flatMap(List::stream).map(Confirmation::getStudentId).collect(Collectors.toSet()));
+		// Only routes with a run today need their roster. One batched absence query over all of them, not one per
+		// route: a removed-but-confirmed student never needs checking here, since they always have a confirmation
+		// (that's why appendRemoved keeps them), so they can never count as "absent and no confirmation" anyway.
+		Map<UUID, List<UUID>> rosters = runs.keySet().stream().collect(Collectors.toMap(Function.identity(),
+				routeId -> studentService.listOnRoute(schoolId, routeId).stream().map(StudentResponse::id).toList()));
+		Set<UUID> absentToday = absenceService.absentStudentIds(schoolId,
+				rosters.values().stream().flatMap(List::stream).collect(Collectors.toSet()), day);
 		SchoolTimesResponse times = schoolSettingsService.getTimes(schoolId);
 		List<RunResponse> result = new ArrayList<>();
 		for (RouteSummaryResponse route : routes) {
 			Map<RunDirection, Run> ofRoute = runs.getOrDefault(route.id(), Map.of());
+			List<UUID> roster = rosters.getOrDefault(route.id(), List.of());
 			for (RunDirection direction : RunDirection.values()) {
 				Run run = ofRoute.get(direction);
 				if (run != null) {
 					Map<UUID, Confirmation> latest = latestOf(confirmed.getOrDefault(run.getId(), List.of()));
 					long left = latest.keySet().stream().filter(id -> !route.id().equals(routeOfStudent.get(id))).count();
+					int absent = (int) roster.stream()
+							.filter(id -> absentToday.contains(id) && !latest.containsKey(id)).count();
 					result.add(toResponse(run, new RunRouteResponse(route.id(), route.name()), route.vehicle(),
 							route.driver(), schoolTimeOf(direction, dayType, times), null,
-							countsOf(route.studentCount() + (int) left, 0, latest.values())));
+							countsOf(route.studentCount() + (int) left, absent, latest.values())));
 				}
 			}
 		}

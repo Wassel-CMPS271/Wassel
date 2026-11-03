@@ -6,7 +6,6 @@ import com.wassel.backend.students.entity.Student;
 import com.wassel.backend.users.entity.Role;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.http.MediaType;
 
 import java.time.LocalDate;
@@ -21,17 +20,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * KNOWN BUG in SCRUM-238 (merged): see docs/testing/SCRUM-236/SCRUM-236-bugs.md, BUG-1. Skipped by default because it
- * fails today. Run with {@code sh ./mvnw test -Dknown-bug.SCRUM-238-race=true -Dtest=AbsenceRaceCriteriaTests} and delete
- * the {@code @EnabledIfSystemProperty} line once it is fixed.
+ * Regression test for a bug found in SCRUM-238 and fixed in SCRUM-258 (PR #109): see
+ * docs/testing/SCRUM-236/SCRUM-236-bugs.md, BUG-1.
  *
  * <p>Criterion (contract, "Absences"): reporting is idempotent for an exact repeat and an overlap is a 409. Two reports
  * of the same child that arrive at the same instant are the case the PostgreSQL exclusion constraint exists for. What
  * must hold, whichever request wins: neither answers 5xx, at most one creates the absence (201), the other is a 200
  * (the repeat) or a 409 (an overlap, or a lost race the client may retry), and exactly one absence is stored.
  */
-@EnabledIfSystemProperty(named = "known-bug.SCRUM-238-race", matches = "true",
-		disabledReason = "KNOWN BUG in SCRUM-238 (SCRUM-236-bugs.md BUG-1). Run with -Dknown-bug.SCRUM-238-race=true")
 class AbsenceRaceCriteriaTests extends CriteriaTestSupport {
 
 	private static final int ROUNDS = 25;

@@ -15,7 +15,19 @@ that's the structure this codebase moved away from.
   reloads the `User` on every request (so disabling an account or changing a role is immediate)
   and sets the `User` entity as the principal, which is what controllers' `@AuthenticationPrincipal
   User` expects. Login failures are one generic 401 (unknown email, wrong password, disabled
-  account). No refresh tokens. The app refuses to start if `JWT_SECRET` is under 32 bytes.
+  account, locked account). No refresh tokens. The app refuses to start if `JWT_SECRET` is under 32 bytes.
+  Lockout (SCRUM-171): `wassel.auth.lockout.max-failures` wrong passwords in a row (`LOCKOUT_MAX_FAILURES`,
+  default 5) lock the account for `wassel.auth.lockout.duration` (`LOCKOUT_DURATION`, default 15m;
+  `config/LockoutProperties`), kept on `User` as `failedSignIns` and `lockedUntil` (migration V9). The lock ends
+  by itself and starts the count over; the right password clears the count; each lock is logged at WARN with the
+  user id and end time. `AuthService.login` counts the attempt *before* checking the password, with one
+  conditional update (`UserRepository.countSignInAttempt`: not locked and under the limit), and a refused attempt
+  is answered like an unknown email (the dummy hash is still checked, so the timing matches) without trying the
+  password. So guesses sent at the same moment get no more than the limit between them, and no row lock is held
+  during the BCrypt check. Lockout counts passwords only: wrong 2FA codes keep their own limit (below), and an
+  invited account (no password) or an unknown email has nothing to count.
+  The cost every lockout has: anyone who knows an email can keep that account locked by sending
+  wrong passwords every 15 minutes. There is no endpoint for an admin to lift a lock early.
   Two-factor (SCRUM-172): login is two steps and 2FA has no off switch. `POST /api/auth/login` checks
   the password, emails a 6-digit code through `Mailer` and answers 204 with a pending cookie
   (`wassel_2fa`, HttpOnly, `SameSite=Strict`, 15 min) and no session. `POST /api/auth/2fa/verify
@@ -71,8 +83,9 @@ that's the structure this codebase moved away from.
   anyone who knows an email can call forgot-password once a minute; each new link voids the
   previous one, so they can keep that person's link from working and fill their inbox. Someone who
   has a user's password can try 5 login codes a minute (about 7,200 a day against a million codes)
-  and, by logging in every minute, keep that user's code from being usable; the fix is account
-  lockout (SCRUM-171, skipped for now). Limits that real email adds:
+  and, by logging in every minute, keep that user's code from being usable. Account lockout
+  (SCRUM-171) does not change this, since it counts wrong passwords and this caller has the right
+  one. Limits that real email adds:
   - **Forgot-password reveals which emails have accounts.** An unknown email, or one in its cooldown,
     answers 204 at once; a registered one waits for the send (a second or so) and is a 500 if Gmail
     fails. The old "always 204, reveals nothing" held only because logging took no time. Accepted
@@ -114,7 +127,21 @@ that's the structure this codebase moved away from.
 - `common` — cross-cutting code that belongs to no single feature:
   `config/SecurityConfig`, `exception/GlobalExceptionHandler`.
 - `vehicles` — fleet vehicles: create, set capacity, deactivate/reactivate, with
-  validation (SCRUM-163). Real module.
+  validation (SCRUM-163). Real module. Lowering a vehicle's capacity below the number of students
+  already on the route it is assigned to is a 409 (SCRUM-241, equal to the count is allowed,
+  `VehicleCapacityConflictException`); declares `service/VehicleOccupancyGuard` (how many students
+  are on this vehicle's route now, or 0) for `routes` to implement
+  (`RouteVehicleOccupancyGuard`), so `vehicles` never imports `routes` — which already imports
+  `vehicles` for the reverse check, and both importing each other would be a cycle. The same
+  pattern `routes.service.ActiveRunGuard`/`runs.service.RunActiveRunGuard` use.
+  **Capacity locks (SCRUM-259).** Every change that can leave a route with more students than seats
+  locks rows before its check, always vehicle first, then route, so two of them wait for each other
+  instead of both passing on stale numbers (SCRUM-236's BUG-2), and never deadlock: `setCapacity`
+  locks the vehicle, then its route (the guard, `RouteRepository.findLockedBySchoolIdAndVehicleId`);
+  `RouteService.editRoute` locks the requested vehicle (`VehicleService.lockVehicles`), then the route;
+  `addStudent` locks the route; generated-routes apply locks the planned vehicles in id order, then
+  every route of the school, before its comparison. Removing, reordering and deleting take no lock,
+  since they never add a student or remove a seat.
 - `drivers` — driver roster: add/invite, resend invite, assign/unassign a vehicle, with
   validation (SCRUM-164). Real module. Depends on `vehicles` (via its service) to check a
   vehicle exists and is active before assigning a driver to it. Adding a driver also creates an
@@ -160,8 +187,10 @@ that's the structure this codebase moved away from.
   case the manual-pin fallback exists for.
 - `students` — student roster. Real module: add (with an optional address, SCRUM-213), list,
   search/filter by query/status/grade/route (SCRUM-167), and editing address, map-pin location,
-  and parent-linking (SCRUM-166) are done. CSV import and the active/inactive toggle are not
-  built yet. The old `route` string column
+  and parent-linking (SCRUM-166) are done. The active/inactive toggle is not built yet. The
+  frontend's CSV import screen (SCRUM-160) calls this module's own create-student endpoint
+  once per row (SCRUM-193) — there is no bulk/batch endpoint, so a large file is one request
+  per row, sequential and not atomic: a failure partway through leaves a partial import. The old `route` string column
   exists for filtering only and is never written; real route membership (SCRUM-209) is
   `routeId`/`stopPosition`, a student is a stop on at most one route, and `stopPosition` is a
   watermark (next = current max + 1 on that route), not a compacted sequence — removing a stop
@@ -193,7 +222,10 @@ that's the structure this codebase moved away from.
   route's current occupants before resolving the student (so a full route 409s even for an
   unknown student id, and re-adding a student already on this exact route skips the check — no
   new seat taken), then only an active student can be added, and a student already on another
-  route is moved rather than rejected. Deleting a route releases its students
+  route is moved rather than rejected. Putting a smaller vehicle on a route that already has more
+  students than its new seats is the same 409 (SCRUM-241, `editRoute`, checked only when the
+  vehicle actually changes — a rename or driver-only change never rechecks it, so a route that
+  somehow is already over capacity can still be renamed). Deleting a route releases its students
   (`StudentService.clearRoute`) so none are left pointing at a dead route id.
   `studentCount`/`seatsLeft`/`stops` are computed fresh from `StudentService` on every response,
   never cached on `Route`. Each stop's `arrivalTime` (`RouteService.schedule`) uses
@@ -359,13 +391,16 @@ that's the structure this codebase moved away from.
   exists). `absent` (SCRUM-239) is this route's students with a live absence for today, from
   `AbsenceService.absentStudentIds` (one query for the whole roster, never the repository), read fresh on every fetch so a
   same-day report or cancellation shows on the next one. `counts.absent` is the stops with `absent: true` and no
-  confirmation (a confirmation wins, contract); it stays 0 on the head of transportation's stop-less `RunSummary`, which
-  has its own list instead (`GET /api/head-of-transport/absences`, from the `absences` module).
+  confirmation (a confirmation wins, contract), the same on the head of transportation's stop-less `RunSummary`
+  (SCRUM-260): `RunService.runsDay` has no stops to filter, so it reads each route's roster (one route with a run
+  today, one read each) and checks them against one batched `AbsenceService.absentStudentIds` call instead. The
+  head's separate list (`GET /api/head-of-transport/absences`, from the `absences` module) is its own endpoint,
+  unrelated to this count.
   Confirmations (SCRUM-235): `PUT /api/driver/runs/{runId}/students/{studentId}/confirmation` (`RunService.confirm`,
   `run_confirmations`, migration V8: unique on run + student + status, no foreign keys). One row per status, kept as
   history; the latest is the highest status (`ConfirmationStatus` is declared in rank order), not the newest row. `confirm`
   finds the route outside any transaction (like `move`), then in one `TransactionTemplate` locks the run row
-  (`RunRepository.findLockedBySchoolIdAndId`, the codebase's only row lock: it orders a confirmation against another
+  (`RunRepository.findLockedBySchoolIdAndId`, the codebase's first row lock: it orders a confirmation against another
   of the same student and against the run ending), checks the student, the state and the transition table, and inserts with
   `ConfirmationRepository.insertIfMissing` (`ON CONFLICT DO NOTHING`). The time is read after the lock. A status the student
   already has is 200 with no change even if a later one exists. A student confirmed on a run who has left the route is
@@ -405,12 +440,13 @@ that's the structure this codebase moved away from.
   instances race to insert one — is a PostgreSQL exclusion constraint (`V6__absences.sql`,
   `EXCLUDE USING gist` over `student_id` and `daterange(from_date, to_date)`, needing the
   `btree_gist` extension the migration creates), the same backstop role the unique constraints on
-  `routes`/`school_holidays` play for their own check-then-insert races. PostgreSQL aborts the
-  whole transaction once a statement fails, so the losing request can't safely query again in the
-  same transaction (as `RouteService#lostRace` documents for its own races); `AbsenceService`
-  catches the constraint's `DataIntegrityViolationException` and answers a plain 409 asking the
-  client to retry, the same pattern `RouteService#propose` uses for two optimizations of a route
-  at once. `AbsenceService.absentStudentIds` (SCRUM-239) is for `runs`: which of a route's students
+  `routes`/`school_holidays` play for their own check-then-insert races. Reporting and cancelling
+  first take a per-child PostgreSQL advisory lock (`AbsenceRepository.lockStudent`, SCRUM-258;
+  advisory because there may be no row to lock yet), so two requests for one child at once run one
+  after the other and the second gets its normal answer (200 for an exact repeat, 409 naming the
+  overlap). Without it, two racing inserts could deadlock on the constraint and answer 500
+  (SCRUM-236's BUG-1). The `DataIntegrityViolationException` catch (a plain 409 asking the client
+  to retry) stays as a backstop. `AbsenceService.absentStudentIds` (SCRUM-239) is for `runs`: which of a route's students
   have a live absence on a given date, one query for the whole roster rather than one per student.
   Depends on `students`
   (`StudentService.findChildOf` for parent ownership of a `studentId` path variable,
@@ -551,17 +587,12 @@ not from the authors' own suites: `AbsenceCriteriaTests` (238), `AbsentOnRunCrit
 `ParentChildrenCriteriaTests` (240), `VehicleCapacityCriteriaTests` (241) and `AccountLockoutCriteriaTests` (171). All but the
 lockout class extend `common/CriteriaTestSupport` (the real app on the PostgreSQL container, `MondayClockConfig` pinning "today"
 to Monday 2026-11-02, random school ids, no deleting, `inParallel` for requests at the same instant) and assert on HTTP
-responses; the lockout class stands alone because it also watches the `Mailer` and the log. Three kinds of switch keep a class
-out of the default build, and a skipped test is reported as skipped, never as passed:
-- **Pending the merge of a story** (`VehicleCapacityCriteriaTests`, `AccountLockoutCriteriaTests`): `-Dpending.SCRUM-241=true` or
-  `-Dpending.SCRUM-171=true`. When the story merges, delete that one `@EnabledIfSystemProperty` line. The lockout class's
-  `@Nested WithAShortLock` uses **assumed** setting names (`wassel.auth.lockout.*`); fix them to the real keys. Removing the
-  guard adds two Spring contexts to the shared test database (`print = NONE`, a `Mailer` spy and the nested property source
-  each make a distinct one); if "too many clients" appears, as in SCRUM-237, lower `hikari.maximum-pool-size` for the test profile.
-- **Known bugs** (`AbsenceRaceCriteriaTests`, `VehicleCapacityRaceCriteriaTests`): `-Dknown-bug.SCRUM-238-race=true` /
-  `-Dknown-bug.SCRUM-241-race=true`. They fail today; the write-up with repros is `docs/testing/SCRUM-236/SCRUM-236-bugs.md`.
-  Delete the guard when the bug is fixed.
-Run any of them with `sh ./mvnw test -D<switch>=true -Dtest=<Class>` (`mvnw` is not marked executable). Report and bugs:
+responses; the lockout class stands alone because it also watches the `Mailer` and the log. The classes that waited on a
+story (241, 171) or on a bug fix (the two race classes) run in CI like the rest now that #107, #109, #110 and #111 are
+merged. The lockout class's `@Nested WithAShortLock` sets `wassel.auth.lockout.*`, so it, `print = NONE` and the `Mailer`
+spy each make a distinct Spring context on the shared test database; if "too many clients" appears, as in SCRUM-237, lower
+`hikari.maximum-pool-size` for the test profile. Run one with `sh ./mvnw test -Dtest=<Class>` (`mvnw` is not marked
+executable). Report and bugs:
 `docs/testing/SCRUM-236/`.
 
 Tests mirror the main package structure: a test for

@@ -8,7 +8,6 @@ import com.wassel.backend.students.entity.Student;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.vehicles.entity.Vehicle;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.http.MediaType;
 
 import java.util.ArrayList;
@@ -24,19 +23,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * KNOWN BUG, raised on PR #107 (SCRUM-241): see docs/testing/SCRUM-236/SCRUM-236-bugs.md, BUG-2. Skipped by default
- * because it fails today. Run with {@code sh ./mvnw test -Dpending.SCRUM-241=true -Dknown-bug.SCRUM-241-race=true
- * -Dtest=VehicleCapacityRaceCriteriaTests} and delete the {@code @EnabledIfSystemProperty} lines once it is fixed.
+ * Regression test for a bug found in SCRUM-241 and fixed in SCRUM-259 (PR #110): see
+ * docs/testing/SCRUM-236/SCRUM-236-bugs.md, BUG-2.
  *
  * <p>Criterion: "seats left on a route can never be negative". Sent one after the other, the reduction and the added
  * student never overfill the route (the second request gets 409). Sent at the same instant, both pass their check
  * before either writes, and the route ends with more students than seats. Each round is a fresh route with 7 students;
  * whichever way the requests interleave, afterwards the students must not outnumber the seats.
  */
-@EnabledIfSystemProperty(named = "pending.SCRUM-241", matches = "true",
-		disabledReason = "PENDING MERGE: SCRUM-241 is in review (PR #107)")
-@EnabledIfSystemProperty(named = "known-bug.SCRUM-241-race", matches = "true",
-		disabledReason = "KNOWN BUG on PR #107 (SCRUM-236-bugs.md BUG-2). Run with -Dknown-bug.SCRUM-241-race=true")
 class VehicleCapacityRaceCriteriaTests extends CriteriaTestSupport {
 
 	private static final int ROUNDS = 10;

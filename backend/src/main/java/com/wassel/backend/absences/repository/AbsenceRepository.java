@@ -19,6 +19,16 @@ import java.util.UUID;
  */
 public interface AbsenceRepository extends JpaRepository<Absence, UUID> {
 
+	/**
+	 * Takes a PostgreSQL advisory lock on this student until the transaction ends (SCRUM-258), so two reports or
+	 * cancellations for one child run one after the other: the second one's overlap check sees the first one's row.
+	 * Without it, two inserts racing on the exclusion constraint could deadlock instead of failing cleanly. An
+	 * advisory lock, not a row lock, because there may be no absence row to lock yet.
+	 */
+	@Query(value = "SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(CAST(:studentId AS text), 0))",
+			nativeQuery = true)
+	int lockStudent(@Param("studentId") UUID studentId);
+
 	Optional<Absence> findBySchoolIdAndStudentIdAndIdAndCancelledFalse(UUID schoolId, UUID studentId, UUID id);
 
 	/** A child's upcoming absences (contract: {@code toDate} today or later), earliest first. */

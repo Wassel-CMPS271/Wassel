@@ -8,7 +8,6 @@ import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.vehicles.entity.Vehicle;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -26,24 +25,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * PENDING MERGE of SCRUM-241 (PR #107, in review at the time of writing). Skipped by default, because on {@code develop}
- * the refusals fail: lowering a vehicle's seats below its route's students is still allowed. Run them against the PR with
- * {@code sh ./mvnw test -Dpending.SCRUM-241=true -Dtest=VehicleCapacityCriteriaTests}, and delete the
- * {@code @EnabledIfSystemProperty} line below once #107 is merged so they run in CI like the rest.
- *
- * <p>SCRUM-241 (vehicle seats cannot drop below the students on its route), written for SCRUM-236 from the ticket's
+ * SCRUM-241 (vehicle seats cannot drop below the students on its route), written for SCRUM-236 from the ticket's
  * acceptance criteria and the 409 row of docs/contracts/routing.md ("Adding beyond capacity"), not from the PR. Both
  * paths of the ticket: {@code PATCH /vehicles/{id}/capacity} and {@code PUT /routes/{id}} with a smaller vehicle. The
  * route has 7 students and the too-small capacity is 2, so a message that "includes the count and the capacity" is
  * matched on whole numbers (7 and 2), which a plate, an id or a date in the text cannot satisfy by accident.
  *
- * <p>The two races (a reduction against an added student) are in {@link VehicleCapacityRaceCriteriaTests}, which fails
- * today on a known bug. Not asserted, because the sources disagree (see the SCRUM-236 report): routing.md says
+ * <p>The two races (a reduction against an added student) are in {@link VehicleCapacityRaceCriteriaTests}, which
+ * covers a bug found and fixed in SCRUM-259. Not asserted, because the sources disagree (see the SCRUM-236 report): routing.md says
  * {@code seatsLeft} "is negative when the route is over capacity"; the ticket says it can never be. These tests assert
  * the ticket, which is what the new rule enforces.
  */
-@EnabledIfSystemProperty(named = "pending.SCRUM-241", matches = "true",
-		disabledReason = "PENDING MERGE: SCRUM-241 is in review (PR #107). Run with -Dpending.SCRUM-241=true")
 class VehicleCapacityCriteriaTests extends CriteriaTestSupport {
 
 	static final int STUDENTS = 7;

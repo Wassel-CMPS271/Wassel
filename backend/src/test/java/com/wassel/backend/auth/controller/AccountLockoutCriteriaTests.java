@@ -7,7 +7,6 @@ import com.wassel.backend.users.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,12 +42,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * PENDING MERGE of SCRUM-171 (account lockout, To Do: no branch or code yet). Skipped by default, because without the
- * feature the lock tests fail. Run them on the SCRUM-171 branch with
- * {@code sh ./mvnw test -Dpending.SCRUM-171=true -Dtest=AccountLockoutCriteriaTests}, and delete the
- * {@code @EnabledIfSystemProperty} line once 171 is merged.
- *
- * <p>SCRUM-171, written for SCRUM-236 from the ticket's acceptance criteria only: lock after 5 failed sign-ins in a row
+ * SCRUM-171, written for SCRUM-236 from the ticket's acceptance criteria only: lock after 5 failed sign-ins in a row
  * for 15 minutes, a locked account fails even with the right password and with the same generic error as a wrong one,
  * a successful sign-in resets the count, the lock ends by itself, every lock is logged without a password. Everything goes
  * through {@code POST /api/auth/login} and {@code /2fa/verify}; the {@link Mailer} is watched because a locked account
@@ -57,13 +51,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>This class is standalone (not a {@code CriteriaTestSupport}): besides the HTTP answers it watches the
  * {@link Mailer} and the captured log, which is what the criteria about codes and log lines are about.
  *
- * <p>Assumptions to confirm against the real PR (the ticket leaves them open; see the SCRUM-236 report):
+ * <p>Choices the ticket leaves open (see the SCRUM-236 report):
  * <ul>
  * <li>"Successful sign-in" is tested as a <em>completed</em> sign-in (password and code), which is a success under either
  * reading; a password-only success is not relied on for the reset.</li>
  * <li>Whether wrong 2FA codes, failures on unknown emails and invited accounts count towards the five is not tested: the
  * criteria do not say. (An unknown email's <em>answer</em> is compared with a locked account's below.)</li>
- * <li>{@link WithAShortLock} uses <b>assumed</b> setting names and units; fix them to the names in application.yml.</li>
  * </ul>
  */
 @SpringBootTest
@@ -72,8 +65,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @ActiveProfiles("test")
 @ExtendWith(OutputCaptureExtension.class)
-@EnabledIfSystemProperty(named = "pending.SCRUM-171", matches = "true",
-		disabledReason = "PENDING MERGE: SCRUM-171 (account lockout) is not built yet. Run with -Dpending.SCRUM-171=true")
 class AccountLockoutCriteriaTests {
 
 	private static final String RIGHT = "correct-horse-1";
@@ -246,8 +237,7 @@ class AccountLockoutCriteriaTests {
 	// ---- both numbers are settings, and the lock ends by itself ----
 
 	/**
-	 * ASSUMED setting names and units ({@code wassel.auth.lockout.max-failures}, {@code wassel.auth.lockout.duration} as
-	 * a Spring duration). Replace them with the real keys from SCRUM-171's application.yml before relying on this class.
+	 * The settings from application.yml ({@code wassel.auth.lockout.max-failures}, {@code wassel.auth.lockout.duration}).
 	 */
 	@Nested
 	@TestPropertySource(properties = {

@@ -1,8 +1,8 @@
 package com.wassel.backend.absences.controller;
 
+import com.jayway.jsonpath.JsonPath;
 import com.wassel.backend.absences.dto.ReportAbsenceRequest;
 import com.wassel.backend.absences.entity.Absence;
-import com.wassel.backend.absences.exception.AbsenceOverlapException;
 import com.wassel.backend.absences.repository.AbsenceRepository;
 import com.wassel.backend.absences.service.AbsenceService;
 import com.wassel.backend.drivers.dto.CreateDriverRequest;
@@ -26,14 +26,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.support.TransactionTemplate;
 
-import java.time.LocalDate;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -41,8 +43,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -55,7 +60,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * SCRUM-238, written from the ticket's acceptance criteria and {@code docs/contracts/runs.md},
  * not from {@link com.wassel.backend.absences.service.AbsenceService}'s own code. Every test uses
  * its own fresh school id, so tests never collide on the unique constraints of the fixtures they
- * create (vehicles, drivers, routes, students all live within one school).
+ * create (vehicles, drivers, routes, students all live within one school). Dates are read through
+ * the injected {@link Clock} bean, not a bare {@code LocalDate.now()}: the service decides "today"
+ * in {@code Asia/Beirut} (`ClockConfig`), two hours ahead of the CI runner's UTC clock, so for two
+ * hours out of every day a test computing its own "today" independently would disagree with the
+ * service about which day it is.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -87,6 +96,9 @@ class AbsenceControllerTests {
 
 	@Autowired
 	private UserService userService;
+
+	@Autowired
+	private TransactionTemplate transactionTemplate;
 
 	@Autowired
 	private Clock clock;
@@ -154,7 +166,7 @@ class AbsenceControllerTests {
 	void parentCanReportAnAbsenceAndSeeItInTheList() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(1);
+		LocalDate from = LocalDate.now(clock).plusDays(1);
 		LocalDate to = from.plusDays(2);
 
 		mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId()))
@@ -174,7 +186,7 @@ class AbsenceControllerTests {
 	void toDateDefaultsToFromDateForASingleDay() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate day = LocalDate.now().plusDays(1);
+		LocalDate day = LocalDate.now(clock).plusDays(1);
 
 		mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId()))
 						.contentType(MediaType.APPLICATION_JSON).content(absence(day.toString(), null)))
@@ -186,7 +198,7 @@ class AbsenceControllerTests {
 	void reportingTheExactSameRangeAgainIsIdempotent() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(1);
+		LocalDate from = LocalDate.now(clock).plusDays(1);
 		LocalDate to = from.plusDays(1);
 
 		String firstId = mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId()))
@@ -200,44 +212,38 @@ class AbsenceControllerTests {
 				.andExpect(jsonPath("$.id").value(idOf(firstId)));
 
 		assertEquals(1, absenceRepository.findBySchoolIdAndStudentIdAndCancelledFalseAndToDateGreaterThanEqualOrderByFromDateAsc(
-				schoolId, child.id(), LocalDate.now()).size());
+				schoolId, child.id(), LocalDate.now(clock)).size());
 	}
 
 	/**
-	 * The race the overlap check alone can't close (see {@link AbsenceService#reportAbsence}):
-	 * two requests for the exact same range at once. Calls the service directly, the same way
-	 * {@code PasswordControllerTests.twoRequestsWithTheSameTokenSucceedExactlyOnce} drives its
-	 * own race, so both attempts are genuinely concurrent rather than serialized by one MockMvc
-	 * request at a time. Whichever loses either sees the winner's committed row and returns a
-	 * graceful 200 (not a new row), or hits the database's exclusion constraint and is caught as
-	 * {@link AbsenceOverlapException} (409, "try again") — either way, exactly one row must ever
-	 * get created; this is what would fail if the migration's constraint were missing or wrong.
+	 * Two requests for the exact same range at once (BUG-1 of SCRUM-236, SCRUM-258). Calls the service directly, the
+	 * same way {@code PasswordControllerTests.twoRequestsWithTheSameTokenSucceedExactlyOnce} drives its own race, so
+	 * both attempts are genuinely concurrent rather than serialized by one MockMvc request at a time. The child's lock
+	 * makes the second one wait for the first, so it sees the committed row and gets the contract's 200 for an exact
+	 * repeat: never an exception, and never a second row.
 	 */
 	@Test
-	void reportingTheSameRangeTwiceAtOnceCreatesExactlyOneAbsence() throws Exception {
+	void reportingTheSameRangeTwiceAtOnceCreatesOneAndAnswersTheOtherWithIt() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(10);
+		LocalDate from = LocalDate.now(clock).plusDays(10);
 		LocalDate to = from.plusDays(1);
 		ReportAbsenceRequest request = new ReportAbsenceRequest(from, to);
 		CountDownLatch start = new CountDownLatch(1);
 
-		Callable<Boolean> attempt = () -> {
+		Callable<AbsenceService.ReportResult> attempt = () -> {
 			start.await();
-			try {
-				return absenceService.reportAbsence(schoolId, parent.getId(), child.id(), request).created();
-			} catch (AbsenceOverlapException e) {
-				return false;
-			}
+			return absenceService.reportAbsence(schoolId, parent.getId(), child.id(), request);
 		};
 
 		ExecutorService pool = Executors.newFixedThreadPool(2);
 		try {
-			Future<Boolean> first = pool.submit(attempt);
-			Future<Boolean> second = pool.submit(attempt);
+			Future<AbsenceService.ReportResult> first = pool.submit(attempt);
+			Future<AbsenceService.ReportResult> second = pool.submit(attempt);
 			start.countDown();
-			long createdCount = List.of(first.get(), second.get()).stream().filter(created -> created).count();
-			assertEquals(1, createdCount, "exactly one of the two concurrent requests should have created a new absence");
+			List<AbsenceService.ReportResult> results = List.of(first.get(), second.get());
+			assertEquals(1, results.stream().filter(AbsenceService.ReportResult::created).count(), results.toString());
+			assertEquals(results.get(0).absence().id(), results.get(1).absence().id());
 		} finally {
 			pool.shutdown();
 		}
@@ -245,11 +251,80 @@ class AbsenceControllerTests {
 		assertEquals(1, absenceRepository.findOverlapping(schoolId, child.id(), from, to).size());
 	}
 
+	/**
+	 * Holds the child's lock in another transaction and saves {@code meanwhile} in it, then sends the report. The
+	 * report must still be waiting a second later, and is answered once the lock is let go, which is returned.
+	 */
+	private MockHttpServletResponse reportedWhileChildLocked(User parent, StudentResponse child, Absence meanwhile,
+			String body) throws Exception {
+		CountDownLatch locked = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		ExecutorService pool = Executors.newFixedThreadPool(2);
+		try {
+			pool.submit(() -> transactionTemplate.execute(tx -> {
+				absenceRepository.lockStudent(child.id());
+				absenceRepository.saveAndFlush(meanwhile);
+				locked.countDown();
+				try {
+					release.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+				return null;
+			}));
+			assertTrue(locked.await(10, TimeUnit.SECONDS));
+			Future<MockHttpServletResponse> sent = pool.submit(() -> mockMvc.perform(post(childUrl(child.id()))
+							.with(loggedInAsParent(parent.getId())).contentType(MediaType.APPLICATION_JSON).content(body))
+					.andReturn().getResponse());
+
+			assertThrows(TimeoutException.class, () -> sent.get(1, TimeUnit.SECONDS));
+			release.countDown();
+			return sent.get(10, TimeUnit.SECONDS);
+		} finally {
+			release.countDown();
+			pool.shutdownNow();
+		}
+	}
+
+	private Absence anAbsence(User parent, StudentResponse child, LocalDate from, LocalDate to) {
+		return Absence.builder().schoolId(schoolId).studentId(child.id()).fromDate(from).toDate(to)
+				.createdBy(parent.getId()).build();
+	}
+
+	/** What makes the race safe: the overlap check runs only once the report holds the child's lock. */
+	@Test
+	void aReportWaitsForTheChildsLockAndThenAnswersAnExactRepeatWith200() throws Exception {
+		User parent = newParent();
+		StudentResponse child = newChildOf(parent);
+		LocalDate day = LocalDate.now(clock).plusDays(12);
+		Absence meanwhile = anAbsence(parent, child, day, day);
+
+		MockHttpServletResponse answer = reportedWhileChildLocked(parent, child, meanwhile, absence(day.toString(), null));
+
+		assertEquals(200, answer.getStatus(), answer.getContentAsString());
+		assertEquals(meanwhile.getId().toString(), JsonPath.read(answer.getContentAsString(), "$.id"));
+	}
+
+	@Test
+	void aReportWaitsForTheChildsLockAndThenRejectsAnOverlapNamingIt() throws Exception {
+		User parent = newParent();
+		StudentResponse child = newChildOf(parent);
+		LocalDate from = LocalDate.now(clock).plusDays(14);
+		Absence meanwhile = anAbsence(parent, child, from, from.plusDays(1));
+
+		MockHttpServletResponse answer = reportedWhileChildLocked(parent, child, meanwhile,
+				absence(from.plusDays(1).toString(), from.plusDays(2).toString()));
+
+		assertEquals(409, answer.getStatus(), answer.getContentAsString());
+		assertEquals("Overlaps an absence already reported from %s to %s.".formatted(from, from.plusDays(1)),
+				JsonPath.read(answer.getContentAsString(), "$.errors.fromDate"));
+	}
+
 	@Test
 	void reportingAnOverlappingDifferentRangeIsRejected() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(5);
+		LocalDate from = LocalDate.now(clock).plusDays(5);
 		LocalDate to = from.plusDays(3);
 		mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId()))
 						.contentType(MediaType.APPLICATION_JSON).content(absence(from.toString(), to.toString())))
@@ -268,7 +343,7 @@ class AbsenceControllerTests {
 		StudentResponse child = newChildOf(parent);
 
 		mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId())).contentType(MediaType.APPLICATION_JSON)
-						.content(absence(LocalDate.now().minusDays(1).toString(), null)))
+						.content(absence(LocalDate.now(clock).minusDays(1).toString(), null)))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errors.fromDate").isNotEmpty());
 	}
@@ -277,7 +352,7 @@ class AbsenceControllerTests {
 	void toDateBeforeFromDateIsRejected() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(5);
+		LocalDate from = LocalDate.now(clock).plusDays(5);
 
 		mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId())).contentType(MediaType.APPLICATION_JSON)
 						.content(absence(from.toString(), from.minusDays(1).toString())))
@@ -309,7 +384,7 @@ class AbsenceControllerTests {
 	void cancellingAFutureAbsenceRemovesItFromTheList() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate from = LocalDate.now().plusDays(3);
+		LocalDate from = LocalDate.now(clock).plusDays(3);
 		String body = mockMvc.perform(post(childUrl(child.id())).with(loggedInAsParent(parent.getId()))
 						.contentType(MediaType.APPLICATION_JSON).content(absence(from.toString(), null)))
 				.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
@@ -330,7 +405,7 @@ class AbsenceControllerTests {
 		// The reporting endpoint itself refuses a past fromDate, so an already-ended absence is
 		// seeded directly, the same way a test seeds a state the API can't produce on its own.
 		Absence ended = absenceRepository.saveAndFlush(Absence.builder().schoolId(schoolId).studentId(child.id())
-				.fromDate(LocalDate.now().minusDays(10)).toDate(LocalDate.now().minusDays(5))
+				.fromDate(LocalDate.now(clock).minusDays(10)).toDate(LocalDate.now(clock).minusDays(5))
 				.createdBy(parent.getId()).build());
 
 		mockMvc.perform(delete(childUrl(child.id()) + "/" + ended.getId()).with(loggedInAsParent(parent.getId())))
@@ -341,9 +416,8 @@ class AbsenceControllerTests {
 	void cancellingAnInProgressAbsenceShortensItInsteadOfDeletingIt() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate today = LocalDate.now(clock);
-		LocalDate from = today.minusDays(2);
-		LocalDate to = today.plusDays(5);
+		LocalDate from = LocalDate.now(clock).minusDays(2);
+		LocalDate to = LocalDate.now(clock).plusDays(5);
 		Absence inProgress = absenceRepository.saveAndFlush(Absence.builder().schoolId(schoolId).studentId(child.id())
 				.fromDate(from).toDate(to).createdBy(parent.getId()).build());
 
@@ -352,7 +426,7 @@ class AbsenceControllerTests {
 
 		Absence reloaded = absenceRepository.findById(inProgress.getId()).orElseThrow();
 		assertTrue(!reloaded.isCancelled(), "an in-progress absence is shortened, not marked cancelled");
-		assertEquals(today.minusDays(1), reloaded.getToDate());
+		assertEquals(LocalDate.now(clock).minusDays(1), reloaded.getToDate());
 
 		// Shortened to end yesterday, so it's gone from the upcoming list (toDate < today).
 		mockMvc.perform(get(childUrl(child.id())).with(loggedInAsParent(parent.getId())))
@@ -366,7 +440,7 @@ class AbsenceControllerTests {
 	void headOfTransportSeesAStudentWithNoRouteAsNullRouteAndPosition() throws Exception {
 		User parent = newParent();
 		StudentResponse child = newChildOf(parent);
-		LocalDate today = LocalDate.now();
+		LocalDate today = LocalDate.now(clock);
 		absenceRepository.saveAndFlush(Absence.builder().schoolId(schoolId).studentId(child.id())
 				.fromDate(today).toDate(today).createdBy(parent.getId()).build());
 
@@ -386,7 +460,7 @@ class AbsenceControllerTests {
 		StudentResponse child = newChildOf(parent);
 		RouteResponse route = newRouteWithOneSeat();
 		routeService.addStudent(schoolId, route.id(), new com.wassel.backend.routes.dto.AssignStudentRequest(child.id()));
-		LocalDate today = LocalDate.now();
+		LocalDate today = LocalDate.now(clock);
 		absenceRepository.saveAndFlush(Absence.builder().schoolId(schoolId).studentId(child.id())
 				.fromDate(today).toDate(today).createdBy(parent.getId()).build());
 

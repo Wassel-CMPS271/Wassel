@@ -21,21 +21,14 @@ Written by Hashem, the independent tester of Moustafa's SCRUM-238, 239, 240, 241
 | Story | Jira on 2026-11-02 | In `develop`? | Tests | Result |
 |---|---|---|---|---|
 | 238 absences | Done | yes (#97) | `AbsenceCriteriaTests` (29) | 29 pass |
-| 238, two reports at once | | | `AbsenceRaceCriteriaTests` (2) | **known bug (BUG-1)**: fails today, skipped in CI |
+| 238, two reports at once | | | `AbsenceRaceCriteriaTests` (2) | BUG-1, fixed in #109: 2 pass |
 | 239 absent on the run | Done | yes (#98) | `AbsentOnRunCriteriaTests` (13) | 13 pass |
 | 240 parent API | Done | yes (#100) | `ParentChildrenCriteriaTests` (13) | 13 pass |
-| 241 seats vs students | In Review | **no**, PR #107 open | `VehicleCapacityCriteriaTests` (9) | **pending the merge**: skipped in CI; 9 of 9 pass on `develop` + #107 merged locally |
-| 241, a reduction racing an added student | | | `VehicleCapacityRaceCriteriaTests` (2) | **known bug (BUG-2)**: fails on `develop` + #107, skipped in CI |
-| 171 account lockout | To Do | **no**, no branch or code | `AccountLockoutCriteriaTests` (10: 7 plus a nested group of 3) | **pending the merge**: skipped in CI (the build counts the nested group as one skip, so 8); not yet run against an implementation |
+| 241 seats vs students | Done | yes (#107) | `VehicleCapacityCriteriaTests` (9) | 9 pass |
+| 241, a reduction racing an added student | | | `VehicleCapacityRaceCriteriaTests` (2) | BUG-2, fixed in #110: 2 pass |
+| 171 account lockout | Done | yes (#111) | `AccountLockoutCriteriaTests` (10: 7 plus a nested group of 3) | 10 pass on #111 |
 
-Three switches keep classes out of the build; a skipped test is reported as skipped, never as passed:
-
-| Switch | Classes | Meaning |
-|---|---|---|
-| `-Dpending.SCRUM-241=true` / `-Dpending.SCRUM-171=true` | `VehicleCapacityCriteriaTests`, `VehicleCapacityRaceCriteriaTests` / `AccountLockoutCriteriaTests` | the story is not merged. Delete the `@EnabledIfSystemProperty` line when it is |
-| `-Dknown-bug.SCRUM-238-race=true` / `-Dknown-bug.SCRUM-241-race=true` | `AbsenceRaceCriteriaTests` / `VehicleCapacityRaceCriteriaTests` | the test fails today on a bug in `SCRUM-236-bugs.md`. Delete the line when it is fixed |
-
-Run one with `sh ./mvnw test -D<switch>=true -Dtest=<Class>`.
+The skip switches (`pending.*`, `known-bug.*`) are gone: #107, #109, #110 and #111 are merged, so every class runs in CI. Run one with `sh ./mvnw test -Dtest=<Class>`.
 
 **The guarded tests were also checked the other way**, to prove they can fail:
 
