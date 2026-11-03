@@ -123,7 +123,7 @@ that's the structure this codebase moved away from.
   `+tag` (`demo+head@...`), so on a deployed environment, where sign-in emails a code, pointing the base
   at a real Gmail-style mailbox lets every demo account receive its code. Accounts are unique across the
   platform, so the seeder serves one school (the seeded admin's). Needs `DEMO_PASSWORD` (10+ characters).
-  Setup is in the README ("Demo data"). Depends on `users`, `schools`, `vehicles`, `drivers`, `students`.
+  Setup is in docs/operations.md ("Demo data"). Depends on `users`, `schools`, `vehicles`, `drivers`, `students`.
 - `common` — cross-cutting code that belongs to no single feature:
   `config/SecurityConfig`, `exception/GlobalExceptionHandler`.
 - `vehicles` — fleet vehicles: create, set capacity, deactivate/reactivate, with

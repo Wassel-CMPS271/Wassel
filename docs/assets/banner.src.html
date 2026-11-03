@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  /* Tokens mirror frontend/src/styles/tokens.ts: brand.badge #fbbf24, brand.ink #061847, brand.sun #fef3c7. */
+  :root { --badge:#fbbf24; --ink:#061847; --sun:#fef3c7; --amber300:#fcd34d; --base:#05060a; }
+  * { box-sizing:border-box; margin:0; }
+  html,body { width:1600px; height:560px; background:var(--base); }
+  .banner {
+    position:relative; width:1600px; height:560px; overflow:hidden;
+    background:
+      radial-gradient(1000px 380px at 50% 112%, rgba(251,191,36,.7) 0%, rgba(217,119,6,.28) 45%, transparent 72%),
+      radial-gradient(900px 500px at 12% -10%, rgba(26,86,255,.28) 0%, transparent 60%),
+      radial-gradient(800px 480px at 92% -5%, rgba(100,64,255,.22) 0%, transparent 60%),
+      linear-gradient(180deg, #05060a 0%, #081039 62%, #0b1646 100%);
+    font-family:"Liberation Serif","Times New Roman",Times,serif; color:#f4f4f5;
+  }
+  /* sunrise arc: the same shape as the logo's pale arc, scaled up */
+  .arc { position:absolute; left:50%; bottom:-330px; width:980px; height:980px; margin-left:-490px; border-radius:50%;
+    background:radial-gradient(circle at 50% 50%, rgba(251,191,36,.34) 0%, rgba(245,158,11,.14) 42%, transparent 62%); }
+  .horizon { position:absolute; left:0; right:0; bottom:0; height:2px; background:linear-gradient(90deg, transparent, rgba(252,211,77,.7), transparent); }
+  .content { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding-bottom:30px; }
+  .lockup { display:flex; align-items:center; gap:34px; }
+  .lockup svg { width:132px; height:132px; filter:drop-shadow(0 10px 30px rgba(251,191,36,.35)); }
+  .en { font-size:132px; font-weight:700; letter-spacing:.02em; line-height:1; color:#fff; }
+  .bar { width:3px; height:104px; background:var(--amber300); border-radius:2px; opacity:.85; }
+  .ar { font-family:"Noto Naskh Arabic","Noto Sans Arabic",serif; font-size:128px; font-weight:700; line-height:1.1; color:var(--amber300); direction:rtl; }
+  .tag { margin-top:34px; font-size:44px; font-weight:400; color:#fff; letter-spacing:.01em; }
+  .sub { margin-top:10px; font-size:26px; color:#c3c8e6; letter-spacing:.14em; text-transform:uppercase; font-weight:400; }
+</style>
+</head>
+<body>
+<div class="banner">
+  <div class="arc"></div>
+  <div class="content">
+    <div class="lockup">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#fbbf24"/>
+        <path d="M4 21a12 12 0 0 1 24 0z" fill="#fef3c7"/>
+        <g fill="#061847">
+          <rect x="7.1" y="12.6" width="1.8" height="3.6" rx="0.8"/>
+          <rect x="23.1" y="12.6" width="1.8" height="3.6" rx="0.8"/>
+          <rect x="8.4" y="13.6" width="1.6" height="0.9"/>
+          <rect x="22" y="13.6" width="1.6" height="0.9"/>
+          <rect x="9.5" y="10" width="13" height="14.5" rx="2.6"/>
+          <rect x="10.8" y="23.4" width="2.6" height="3.2" rx="0.8"/>
+          <rect x="18.6" y="23.4" width="2.6" height="3.2" rx="0.8"/>
+        </g>
+        <rect x="11" y="11.6" width="10" height="1.3" rx="0.65" fill="#fbbf24"/>
+        <rect x="11" y="14.2" width="10" height="5.2" rx="1" fill="#fef3c7"/>
+        <circle cx="12.7" cy="21.8" r="1.1" fill="#fef3c7"/>
+        <circle cx="19.3" cy="21.8" r="1.1" fill="#fef3c7"/>
+      </svg>
+      <span class="en">Wassel</span>
+      <span class="bar"></span>
+      <span class="ar">واصل</span>
+    </div>
+    <div class="tag">Every school run, on the record.</div>
+    <div class="sub">School transport platform</div>
+  </div>
+  <div class="horizon"></div>
+</div>
+</body>
+</html>

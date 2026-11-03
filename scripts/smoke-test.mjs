@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Smoke test of the deployed app (SCRUM-217): run it after every deploy. See "Smoke test after a deploy" in the README.
+// Smoke test of the deployed app (SCRUM-217): run it after every deploy. See "Smoke test after a deploy" in docs/operations.md.
 //
 //   SMOKE_PASSWORD=... \
 //   SMOKE_ADMIN_EMAIL=... SMOKE_HEAD_EMAIL=... SMOKE_DRIVER_EMAIL=... SMOKE_PARENT_EMAIL=... \

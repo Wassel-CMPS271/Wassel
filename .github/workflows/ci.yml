@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 # The job ids below are the check names branch protection requires and the developer
-# setup guide refers to (see "Continuous Integration" in the README). Renaming a job
+# setup guide refers to (see "Continuous Integration" in docs/operations.md). Renaming a job
 # means updating the required checks too.
 jobs:
   backend-build:
