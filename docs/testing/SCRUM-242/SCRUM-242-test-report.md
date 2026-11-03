@@ -77,13 +77,13 @@ Each line of `RunService` was broken on its own, the two classes run, and the li
 
 ## Findings
 
-### F-1: the head of transportation's runs always show `counts.absent` as 0 (raised as SCRUM-260)
+### F-1: the head of transportation's runs always show `counts.absent` as 0 (SCRUM-260, fixed)
 
-A child reported absent today is `counts.absent: 1` on the driver's run and **0** on the same run in `GET /api/head-of-transport/runs`. The contract defines `counts.absent` once, for every run, and a `RunSummary` is "a `Run` without `stops`"; its own sample `samples/runs/hot-runs.json` has `"absent": 1` on summaries. `backend/CLAUDE.md` describes the 0 as intended, so the code and the contract disagree.
+A child reported absent today was `counts.absent: 1` on the driver's run and **0** on the same run in `GET /api/head-of-transport/runs`. The contract defines `counts.absent` once, for every run, and a `RunSummary` is "a `Run` without `stops`"; its own sample `samples/runs/hot-runs.json` has `"absent": 1` on summaries. `backend/CLAUDE.md` described the 0 as intended, so the code and the contract disagreed.
 
-It matters: the head's Today screen (SCRUM-255) shows "N absent" from `counts.absent` and works out progress as `students - absent`, so it never shows the absent children on a run, and its progress total includes children who won't ride.
+It mattered: the head's Today screen (SCRUM-255) shows "N absent" from `counts.absent` and works out progress as `students - absent`, so it never showed the absent children on a run, and its progress total included children who wouldn't ride.
 
-`theHeadsSummaryCountsAbsentStopsLikeTheDriversRun` reproduces it and is skipped by default, because it fails today: run it with `-Dfinding.SCRUM-242-F1=true` (it answers "expected: <1> but was: <0>"). The ticket's rule is that failing tests are raised, not fixed by the tester, and Hashem's PRs are already merged, so it is a bug ticket: **SCRUM-260**, with the switch to remove once it is fixed.
+`theHeadsSummaryCountsAbsentStopsLikeTheDriversRun` reproduced it and was skipped by default behind `-Dfinding.SCRUM-242-F1=true` (it answered "expected: <1> but was: <0>"). The ticket's rule is that failing tests are raised, not fixed by the tester, so it was raised as a bug ticket, **SCRUM-260**, fixed in `RunService.runsDay` (PR #118): the switch is removed and the test now runs unconditionally, passing.
 
 ### Not covered
 
