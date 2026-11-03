@@ -49,7 +49,7 @@ What the list returns.
 | `vehicle` | `{ id, plateNumber, capacity }` | |
 | `driver` | `{ id, firstName, lastName }` | |
 | `studentCount` | integer | stops on the route |
-| `seatsLeft` | integer | `capacity - studentCount`. **Negative when the route is over capacity**, which happens if the vehicle's capacity is lowered after students were assigned. The screen should warn |
+| `seatsLeft` | integer | `capacity - studentCount`. Never negative for a route changed since SCRUM-241: lowering the seats, or swapping in a smaller vehicle, below the students on the route is a 409, also when it happens at the same moment as a student being added (SCRUM-259). A route already over capacity before that can still show a negative number. The screen should warn |
 
 ### Route
 
@@ -225,6 +225,7 @@ The same `ProblemDetail` the other modules return, so the existing `request()` h
 | Inactive vehicle or driver | 409 | `errors: { vehicleId: message }` or `{ driverId: message }` |
 | Adding beyond capacity | 409 | `detail`, including the current count and the capacity |
 | Adding an inactive student | 409 | `errors: { studentId: message }` |
+| Moving or removing a student who is on a bus today, or changing the driver or vehicle of a route whose run is in progress | 409 | `detail`, naming the child or route (see the runs contract, [Moving a student or changing the driver](runs.md#moving-a-student-or-changing-the-driver-during-a-run)) |
 | Reorder repeats a student, or doesn't match the route's current stops | 400 | `errors: { studentIds: message }` |
 | Removing a student who isn't a stop on that route | 404 | `detail` |
 | Optimize with no stops | 409 | `detail` |

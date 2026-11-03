@@ -222,6 +222,7 @@ The backend and its PostgreSQL database run on [Railway](https://railway.com), i
 | `JWT_SECRET` | a long random string, at least 32 characters (secret) |
 | `JWT_COOKIE_SECURE` | `true` (the default, shown for clarity) |
 | `JWT_EXPIRATION` | `1h` |
+| `LOCKOUT_MAX_FAILURES`, `LOCKOUT_DURATION` (optional) | account lockout: this many wrong passwords in a row lock the account for this long (defaults `5` and `15m`) |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | the first admin, created on the first start; the email must be an inbox you can open because the sign-in code is emailed there (the password is secret, 10+ characters) |
 | `MAIL_USERNAME`, `MAIL_PASSWORD` | the Gmail address that sends the codes and its app password (secret); see [Email on staging](#email-on-staging) |
 | `SCHOOL_LATITUDE`, `SCHOOL_LONGITUDE` | where every route ends (`33.896`, `35.484`) |
@@ -269,8 +270,19 @@ or `main`:
 
 | Check            | What it runs                                                                      |
 | ---------------- | --------------------------------------------------------------------------------- |
-| `backend-build`  | `mvn -B verify` in `/backend` (compile + tests + package)                         |
-| `frontend-build` | `npm ci`, `npm run lint`, `npm test --if-present`, `npm run build` in `/frontend` |
+| `backend-build`  | `mvn -B verify` in `/backend` (compile + tests + package), uploads `backend-coverage` |
+| `frontend-build` | `npm ci`, `npm audit --audit-level=high`, `npm run lint`, `npm run test:coverage`, `npm run build` in `/frontend`, uploads `frontend-coverage` |
+
+Both jobs upload a coverage report as a build artifact (open the run on GitHub, **Artifacts** at the bottom, download
+and open `index.html`). It is a report only: no minimum is enforced.
+
+**Dependency scanning (SCRUM-253).** `frontend-build` fails on a high or critical known vulnerability in any npm
+package (`npm audit --audit-level=high`, dev packages included), so a newly published advisory can turn an
+unrelated PR red; the fix is to update the package, not to remove the step. `.github/dependabot.yml` opens weekly
+update PRs for Maven (`/backend`), npm (`/frontend`) and GitHub Actions. Dependabot **alerts** (which also cover the
+backend's Maven libraries) are a repository setting that an admin turns on under Settings, Advanced Security.
+`next` is pinned to an exact version and `package.json` overrides the `postcss` that `next` bundles, because the
+bundled one has known high findings; drop the override once a `next` release ships a fixed one.
 
 The same checks can be run locally before pushing:
 
