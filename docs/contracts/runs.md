@@ -67,7 +67,7 @@ One student on one run. **A stop is a student**, as in the routing contract: two
 
 `absent`, `pickedUp`, `notPresent` and the students still waiting add up to `students`. Counts are computed on every response, never stored. Children on the bus at any moment are `pickedUp - droppedOff`.
 
-Progress, as the screens show it: on a morning run `pickedUp` of `students - absent`; on an afternoon run `droppedOff` of `students - absent`, because everyone is `PICKED_UP` at the gate and `pickedUp` says nothing about progress.
+Progress, as the screens show it: on a morning run `pickedUp` of `students` (absent included, agreeing with the Counts table's "picked up out of total" definition); on an afternoon run `droppedOff` of `students - absent`, because everyone is `PICKED_UP` at the gate and `pickedUp` says nothing about progress.
 
 ### DriverDay and RunsDay
 
