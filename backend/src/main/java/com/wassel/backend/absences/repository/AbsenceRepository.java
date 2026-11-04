@@ -1,0 +1,65 @@
+package com.wassel.backend.absences.repository;
+
+import com.wassel.backend.absences.entity.Absence;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.time.LocalDate;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Every query is scoped by school id, so callers can't read or modify across the tenant
+ * boundary. Every query here also excludes cancelled rows: a cancelled absence is history (see
+ * {@code Absence#cancelled}), not a live one, and must behave as "gone" everywhere it would
+ * otherwise be read.
+ */
+public interface AbsenceRepository extends JpaRepository<Absence, UUID> {
+
+	/**
+	 * Takes a PostgreSQL advisory lock on this student until the transaction ends (SCRUM-258), so two reports or
+	 * cancellations for one child run one after the other: the second one's overlap check sees the first one's row.
+	 * Without it, two inserts racing on the exclusion constraint could deadlock instead of failing cleanly. An
+	 * advisory lock, not a row lock, because there may be no absence row to lock yet.
+	 */
+	@Query(value = "SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(CAST(:studentId AS text), 0))",
+			nativeQuery = true)
+	int lockStudent(@Param("studentId") UUID studentId);
+
+	Optional<Absence> findBySchoolIdAndStudentIdAndIdAndCancelledFalse(UUID schoolId, UUID studentId, UUID id);
+
+	/** A child's upcoming absences (contract: {@code toDate} today or later), earliest first. */
+	List<Absence> findBySchoolIdAndStudentIdAndCancelledFalseAndToDateGreaterThanEqualOrderByFromDateAsc(
+			UUID schoolId, UUID studentId, LocalDate today);
+
+	/**
+	 * This student's active absences that overlap the given range (inclusive on both ends), the
+	 * application-level half of the overlap check — the database's exclusion constraint is the
+	 * concurrency backstop for it, not a replacement for it: this is what lets
+	 * {@code AbsenceService} tell an exact repeat (200, nothing new) from a genuine conflict (409)
+	 * and name the absence it conflicts with. In a correctly maintained table this returns at
+	 * most one row, since the constraint never lets two overlapping rows for one student exist.
+	 */
+	@Query("SELECT a FROM Absence a WHERE a.schoolId = :schoolId AND a.studentId = :studentId "
+			+ "AND a.cancelled = false AND a.fromDate <= :toDate AND a.toDate >= :fromDate")
+	List<Absence> findOverlapping(@Param("schoolId") UUID schoolId, @Param("studentId") UUID studentId,
+			@Param("fromDate") LocalDate fromDate, @Param("toDate") LocalDate toDate);
+
+	/** Every active absence in the school that covers this date, for the head of transportation's list. */
+	@Query("SELECT a FROM Absence a WHERE a.schoolId = :schoolId AND a.cancelled = false "
+			+ "AND a.fromDate <= :date AND a.toDate >= :date ORDER BY a.fromDate ASC")
+	List<Absence> findActiveOn(@Param("schoolId") UUID schoolId, @Param("date") LocalDate date);
+
+	/**
+	 * Student ids, among the given set, with a live (non-cancelled) absence covering {@code date}
+	 * — the runs module's per-stop {@code absent} flag (SCRUM-239): one query for a whole route's
+	 * roster rather than one per student.
+	 */
+	@Query("SELECT a.studentId FROM Absence a WHERE a.schoolId = :schoolId AND a.studentId IN :studentIds "
+			+ "AND a.cancelled = false AND a.fromDate <= :date AND a.toDate >= :date")
+	List<UUID> findAbsentStudentIds(@Param("schoolId") UUID schoolId,
+			@Param("studentIds") Collection<UUID> studentIds, @Param("date") LocalDate date);
+}

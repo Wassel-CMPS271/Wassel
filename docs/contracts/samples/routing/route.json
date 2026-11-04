@@ -1,0 +1,41 @@
+{
+  "id": "10000000-0000-4000-8000-000000000003",
+  "name": "Verdun morning run",
+  "vehicle": { "id": "20000000-0000-4000-8000-000000000003", "plateNumber": "C 345678", "capacity": 14 },
+  "driver": { "id": "30000000-0000-4000-8000-000000000003", "firstName": "Walid", "lastName": "Barakat" },
+  "studentCount": 3,
+  "seatsLeft": 11,
+  "school": { "latitude": 33.896, "longitude": 35.484, "arrivalTime": "07:30" },
+  "stops": [
+    {
+      "studentId": "40000000-0000-4000-8000-000000000009",
+      "position": 1,
+      "firstName": "Hadi",
+      "lastName": "Rizk",
+      "address": "Verdun Street, Beirut",
+      "latitude": 33.886,
+      "longitude": 35.485,
+      "arrivalTime": "07:26"
+    },
+    {
+      "studentId": "40000000-0000-4000-8000-000000000010",
+      "position": 2,
+      "firstName": "Lina",
+      "lastName": "Daher",
+      "address": "Rue Sourati, Beirut",
+      "latitude": null,
+      "longitude": null,
+      "arrivalTime": null
+    },
+    {
+      "studentId": "40000000-0000-4000-8000-000000000011",
+      "position": 3,
+      "firstName": "Jad",
+      "lastName": "Salameh",
+      "address": "Madame Curie Street, Beirut",
+      "latitude": 33.892,
+      "longitude": 35.49,
+      "arrivalTime": "07:28"
+    }
+  ]
+}

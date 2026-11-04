@@ -54,6 +54,16 @@ export function StudentIcon(props: IconProps) {
   );
 }
 
+export function RouteIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="5" cy="6" r="2" />
+      <circle cx="19" cy="18" r="2" />
+      <path d="M5 8c0 5 14 1 14 8" />
+    </Icon>
+  );
+}
+
 export function ClockIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -109,6 +119,53 @@ export function ArrowLeftIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M19 12H5M11 6l-6 6 6 6" />
+    </Icon>
+  );
+}
+
+// Drag handle: two columns of three dots.
+export function GripIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="9" cy="6" r="1" />
+      <circle cx="15" cy="6" r="1" />
+      <circle cx="9" cy="12" r="1" />
+      <circle cx="15" cy="12" r="1" />
+      <circle cx="9" cy="18" r="1" />
+      <circle cx="15" cy="18" r="1" />
+    </Icon>
+  );
+}
+
+export function CheckIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </Icon>
+  );
+}
+
+export function ArrowUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 19V5M6 11l6-6 6 6" />
+    </Icon>
+  );
+}
+
+export function ArrowDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 5v14M6 13l6 6 6-6" />
+    </Icon>
+  );
+}
+
+export function MailIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 7l9 6 9-6" />
     </Icon>
   );
 }

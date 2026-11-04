@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -63,12 +64,7 @@ public class DriverService {
 
 	@Transactional
 	public DriverResponse addDriver(UUID schoolId, CreateDriverRequest request) {
-		if (driverRepository.existsBySchoolIdAndEmailIgnoreCase(schoolId, request.email())) {
-			throw new DriverAlreadyExistsException("email", EMAIL_TAKEN_MESSAGE);
-		}
-		if (driverRepository.existsBySchoolIdAndPhone(schoolId, request.phone())) {
-			throw new DriverAlreadyExistsException("phone", PHONE_TAKEN_MESSAGE);
-		}
+		requireNotTaken(schoolId, request);
 
 		User user = userService.createInvitedUser(request.email(), Role.DRIVER, schoolId);
 		Driver driver = Driver.builder()
@@ -89,6 +85,65 @@ public class DriverService {
 			throw new DriverAlreadyExistsException("email", EMAIL_TAKEN_MESSAGE);
 		}
 		passwordService.sendInvite(user);
+		return toResponse(driver);
+	}
+
+	/**
+	 * Adds a driver who is already active with a password set and no invite email, for demo data
+	 * (SCRUM-200): nothing is sent, so it works against fake addresses.
+	 */
+	@Transactional
+	public DriverResponse addActiveDriver(UUID schoolId, CreateDriverRequest request, String rawPassword) {
+		requireNotTaken(schoolId, request);
+		User user = userService.createUser(request.email(), rawPassword, Role.DRIVER, schoolId);
+		Driver driver = Driver.builder()
+				.schoolId(schoolId)
+				.firstName(request.firstName())
+				.lastName(request.lastName())
+				.phone(request.phone())
+				.email(request.email())
+				.status(DriverStatus.ACTIVE)
+				.invitedAt(Instant.now())
+				.userId(user.getId())
+				.build();
+		return toResponse(driverRepository.saveAndFlush(driver));
+	}
+
+	private void requireNotTaken(UUID schoolId, CreateDriverRequest request) {
+		if (driverRepository.existsBySchoolIdAndEmailIgnoreCase(schoolId, request.email())) {
+			throw new DriverAlreadyExistsException("email", EMAIL_TAKEN_MESSAGE);
+		}
+		if (driverRepository.existsBySchoolIdAndPhone(schoolId, request.phone())) {
+			throw new DriverAlreadyExistsException("phone", PHONE_TAKEN_MESSAGE);
+		}
+	}
+
+	/**
+	 * Revokes a driver's access (SCRUM-98): the login account is disabled (so no new sign-in, and an open
+	 * session ends at its next request), the status becomes DEACTIVATED, and the vehicle is released so
+	 * another driver can take it. Routes are left as they are; the head of transportation reassigns them.
+	 * Revoking a revoked driver changes nothing.
+	 */
+	@Transactional
+	public DriverResponse revoke(UUID schoolId, UUID actorId, UUID driverId) {
+		Driver driver = findOwned(schoolId, driverId);
+		if (driver.getUserId() != null) {
+			userService.setEnabled(schoolId, actorId, driver.getUserId(), Role.DRIVER, false);
+		}
+		driver.setStatus(DriverStatus.DEACTIVATED);
+		driver.setAssignedVehicleId(null);
+		return toResponse(driver);
+	}
+
+	/** Restores a revoked driver: back to ACTIVE, or INVITED if they never set a password. No vehicle comes back. */
+	@Transactional
+	public DriverResponse restore(UUID schoolId, UUID actorId, UUID driverId) {
+		Driver driver = findOwned(schoolId, driverId);
+		boolean hasPassword = false;
+		if (driver.getUserId() != null) {
+			hasPassword = userService.setEnabled(schoolId, actorId, driver.getUserId(), Role.DRIVER, true).hasPassword();
+		}
+		driver.setStatus(hasPassword ? DriverStatus.ACTIVE : DriverStatus.INVITED);
 		return toResponse(driver);
 	}
 
@@ -158,6 +213,20 @@ public class DriverService {
 		Driver driver = findOwned(schoolId, driverId);
 		driver.setAssignedVehicleId(null);
 		return toResponse(driver);
+	}
+
+	/** For the runs module: the id of the signed-in user's driver record, if they have one in this school. */
+	@Transactional(readOnly = true)
+	public Optional<UUID> findDriverIdForUser(UUID schoolId, UUID userId) {
+		return driverRepository.findByUserId(userId)
+				.filter(driver -> driver.getSchoolId().equals(schoolId))
+				.map(Driver::getId);
+	}
+
+	/** For other modules (e.g. routes, putting a driver on a route) to look up one driver. */
+	@Transactional(readOnly = true)
+	public DriverResponse getOwnedDriver(UUID schoolId, UUID driverId) {
+		return toResponse(findOwned(schoolId, driverId));
 	}
 
 	private Driver findOwned(UUID schoolId, UUID driverId) {

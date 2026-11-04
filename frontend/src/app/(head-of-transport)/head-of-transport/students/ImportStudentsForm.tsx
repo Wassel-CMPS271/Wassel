@@ -86,6 +86,8 @@ const REASON_LABELS: Record<ImportErrorReason, string> = {
   missing_fields: "Missing required fields",
   duplicate_in_batch: "Duplicate within this file",
   duplicate_existing: "Already in the roster",
+  invalid_fields: "Rejected by validation",
+  request_failed: "API request failed",
 };
 
 type Step = "select" | "preview" | "results";
@@ -228,10 +230,12 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
   type ImportRowError = Extract<ImportRowResult, { status: "error" }>;
   const successCount = results.filter((r) => r.status === "success").length;
   const errorsByReason: Record<ImportErrorReason, ImportRowError[]> = {
-    missing_fields: [],
-    duplicate_in_batch: [],
-    duplicate_existing: [],
-  };
+  missing_fields: [],
+  duplicate_in_batch: [],
+  duplicate_existing: [],
+  invalid_fields: [],
+  request_failed: [],
+};
   for (const result of results) {
     if (result.status === "error") errorsByReason[result.reason].push(result);
   }
