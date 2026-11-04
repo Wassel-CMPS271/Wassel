@@ -3,10 +3,11 @@ name: CI
 on:
   push:
   pull_request:
+    # Retargeting an existing PR must verify its current integration base.
+    types: [opened, synchronize, reopened, edited]
     branches:
       - develop
       - main
-      - test/SCRUM-230-routing-e2e
 
 # Cancel superseded runs on the same ref so a quick series of pushes doesn't queue up.
 concurrency:
