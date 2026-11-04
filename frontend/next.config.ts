@@ -30,7 +30,10 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org",
   "font-src 'self'",
-  "connect-src 'self'",
+  // Outside production, the browser calls the backend origin directly (client.ts's
+  // local-dev default), which is cross-origin from the Next dev server and so needs
+  // its own allowance here, same as script-src's 'unsafe-eval' above.
+  `connect-src 'self'${isProduction ? "" : ` ${backendUrl}`}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
