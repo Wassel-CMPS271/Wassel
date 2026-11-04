@@ -5,8 +5,7 @@
 //
 //   GET /api/parent/children -> Child[]
 //
-// SCRUM-237 adds todayRun; this Parent Home story tolerates additive fields.
-// Displaying live run status remains separately gated by SCRUM-251 approval.
+// SCRUM-237 supplies the authoritative run and count; SCRUM-251 displays it.
 
 import { request } from "./client";
 
@@ -30,6 +29,12 @@ export interface ChildVehicle {
 // Every child linked to the signed-in parent, by first name. route null means
 // "no route yet", and then driver, vehicle and expectedPickupTime are null too;
 // with a route, driver and vehicle are always set.
+export interface ChildRun {
+  direction: "MORNING" | "AFTERNOON";
+  state: "NOT_STARTED" | "IN_PROGRESS" | "FINISHED";
+  stopsLeft: number | null;
+}
+
 export interface Child {
   studentId: string; // the id the absence paths use
   firstName: string;
@@ -40,17 +45,27 @@ export interface Child {
   // "HH:mm", the planned morning time, not a live estimate. Null exactly when
   // the routing arrivalTime is null.
   expectedPickupTime: string | null;
+  todayRun: ChildRun | null;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function isRun(value: unknown): value is ChildRun | null {
+  if (value === null) return true;
+  if (!record(value) || !["MORNING", "AFTERNOON"].includes(String(value.direction))
+    || !["NOT_STARTED", "IN_PROGRESS", "FINISHED"].includes(String(value.state))) return false;
+  if (value.stopsLeft === null) return true;
+  return value.state === "IN_PROGRESS" && Number.isSafeInteger(value.stopsLeft) && Number(value.stopsLeft) >= 0;
+}
+
 function isChild(value: unknown): value is Child {
   if (!record(value) || typeof value.studentId !== "string"
-    || typeof value.firstName !== "string" || typeof value.lastName !== "string") return false;
+    || typeof value.firstName !== "string" || typeof value.lastName !== "string"
+    || !isRun(value.todayRun)) return false;
   if (value.route === null) {
-    return value.driver === null && value.vehicle === null && value.expectedPickupTime === null;
+    return value.driver === null && value.vehicle === null && value.expectedPickupTime === null && value.todayRun === null;
   }
   return record(value.route) && typeof value.route.id === "string" && typeof value.route.name === "string"
     && record(value.driver) && typeof value.driver.id === "string"

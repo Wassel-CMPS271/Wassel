@@ -24,6 +24,9 @@ const pageStyle = {
 export default function ParentHome() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState(false);
+  const busy = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -39,6 +42,20 @@ export default function ParentHome() {
     });
     return () => { active = false; };
   }, [attempt]);
+
+  async function refresh() {
+    if (busy.current) return;
+    busy.current = true;
+    setRefreshing(true); setRefreshError(false);
+    try {
+      const children = await loadParentChildren();
+      setState({ kind: "loaded", children });
+    } catch (error) {
+      if (error instanceof ApiError && [401, 403].includes(error.status)) {
+        setState({ kind: "failed", reason: error.status === 401 ? "expired" : "forbidden" });
+      } else setRefreshError(true);
+    } finally { busy.current = false; setRefreshing(false); }
+  }
 
   return (
     <main className="mx-auto flex w-full min-w-0 flex-col p-[var(--parent-page-phone)] sm:p-[var(--parent-page-wide)]" style={pageStyle}>
@@ -76,6 +93,12 @@ export default function ParentHome() {
         </Card>
       )}
 
+      {state.kind === "loaded" && (
+        <div className="flex flex-col items-start" style={{ gap: spacing.sm }}>
+          <Button variant="secondary" disabled={refreshing} onClick={refresh} style={{ minHeight: sizing.tapTarget }}>{refreshing ? "Refreshing…" : "Refresh transport details"}</Button>
+          {refreshError && <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>Couldn&apos;t refresh transport details. Showing the last loaded details; try refreshing again.</p>}
+        </div>
+      )}
       {state.kind === "loaded" && (state.children.length === 0 ? (
         <Card className="flex flex-col" style={{ gap: spacing.sm }}>
           <h2 className="text-lg font-semibold" style={{ color: darkTheme.text.primary }}>No children linked yet</h2>
