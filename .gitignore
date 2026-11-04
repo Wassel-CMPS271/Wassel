@@ -44,3 +44,6 @@ logs/
 .cache/
 tmp/
 temp/
+
+# Disposable browser-test accounts, server logs and Playwright diagnostics
+frontend/e2e-artifacts/

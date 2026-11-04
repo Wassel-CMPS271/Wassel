@@ -19,6 +19,7 @@ const eslintConfig = [
       "build/**",
       "coverage/**",
       "next-env.d.ts",
+      "e2e-artifacts/**",
     ],
   },
 ];
