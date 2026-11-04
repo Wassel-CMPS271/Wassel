@@ -12,7 +12,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "node e2e/run.mjs",
     "test:e2e:install": "playwright install chromium",
-    "test:e2e:report": "playwright show-report e2e-artifacts/report"
+    "test:e2e:report": "playwright show-report e2e-artifacts/report",
+    "test:e2e:auth": "node e2e/run.mjs --suite=auth"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

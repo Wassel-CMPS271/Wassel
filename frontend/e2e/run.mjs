@@ -1,11 +1,21 @@
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { createWriteStream, readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, readdirSync } from "node:fs";
 import { dirname, resolve, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as pause } from "node:timers/promises";
 import { createServer } from "node:net";
 
+const args = process.argv.slice(2);
+const suiteIndex = args.findIndex(arg => arg.startsWith("--suite="));
+const suite = suiteIndex < 0 ? "routing" : args.splice(suiteIndex, 1)[0].slice("--suite=".length);
+if (!["routing", "auth"].includes(suite)) throw new Error("Unknown E2E suite");
+const authentication = suite === "auth";
+const webPort = authentication ? 4180 : 4173;
+const apiPort = authentication ? 18177 : 18080;
+const postgresPort = Number(process.env.E2E_POSTGRES_PORT || (authentication ? 55439 : 55437));
+if (!Number.isInteger(postgresPort) || postgresPort < 1024 || postgresPort > 65535) throw new Error("Invalid E2E_POSTGRES_PORT");
+const baseURL = `http://127.0.0.1:${webPort}`;
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const backend = resolve(frontend, "../backend");
 const artifacts = resolve(frontend, "e2e-artifacts");
@@ -23,17 +33,26 @@ const env = {
   WASSEL_E2E: "true",
   WASSEL_E2E_PASSWORD: randomBytes(24).toString("base64url"),
   JWT_SECRET: randomBytes(48).toString("base64url"),
-  DB_URL: process.env.E2E_DB_URL || "jdbc:postgresql://127.0.0.1:55437/wassel_e2e",
+  DB_URL: process.env.E2E_DB_URL || `jdbc:postgresql://127.0.0.1:${postgresPort}/wassel_e2e`,
   DB_USERNAME: process.env.E2E_DB_USERNAME || "postgres",
   DB_PASSWORD: process.env.E2E_DB_PASSWORD || "",
   ADMIN_EMAIL: "", ADMIN_PASSWORD: "", DEMO_DATA_ENABLED: "false",
   ORS_API_KEY: "", JWT_COOKIE_SECURE: "false",
   SCHOOL_LATITUDE: "33.896", SCHOOL_LONGITUDE: "35.484",
-  CORS_ALLOWED_ORIGINS: "http://127.0.0.1:4173",
-  FRONTEND_BASE_URL: "http://127.0.0.1:4173",
-  NEXT_PUBLIC_API_BASE_URL: "", BACKEND_URL: "http://127.0.0.1:18080",
+  CORS_ALLOWED_ORIGINS: baseURL,
+  FRONTEND_BASE_URL: baseURL,
+  NEXT_PUBLIC_API_BASE_URL: "", BACKEND_URL: `http://127.0.0.1:${apiPort}`, E2E_BASE_URL: baseURL,
   MAIL_USERNAME: "", MAIL_PASSWORD: "",
 };
+if (authentication) {
+  Object.assign(env, {
+    ADMIN_EMAIL: "admin@auth-e2e.invalid", ADMIN_PASSWORD: env.WASSEL_E2E_PASSWORD,
+    DEMO_DATA_ENABLED: "true", DEMO_EMAIL_BASE: "auth@auth-e2e.invalid",
+    DEMO_PASSWORD: env.WASSEL_E2E_PASSWORD, SCHOOL_ID: randomUUID(),
+    LOCKOUT_MAX_FAILURES: "5", LOCKOUT_DURATION: "15m",
+  });
+  delete env.E2E_FAILURE_PROBE;
+}
 function launch(command, args, cwd, logfile) {
   // Only .cmd launchers require the Windows shell. Paths are quoted; no command
   // is built from credentials, datasource values, or browser input.
@@ -99,14 +118,14 @@ for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, async () => {
   if (stopping) return; stopping = true; await stop(); process.exit(130);
 });
 try {
-  await unusedPort(4173); await unusedPort(18080);
+  await unusedPort(webPort); await unusedPort(apiPort);
   if (!process.env.E2E_DB_URL && process.env.E2E_POSTGRES_BIN) {
-    await unusedPort(55437);
+    await unusedPort(postgresPort);
     const bin = process.env.E2E_POSTGRES_BIN;
     const data = resolve(artifacts, `postgres-${randomBytes(6).toString("hex")}`);
     await run(resolve(bin, "initdb.exe"), ["-D", data, "-U", "postgres", "-A", "trust", "--encoding=UTF8", "--locale=C"], frontend, "postgres-init.log");
     await run(resolve(bin, "postgres.exe"), ["--single", "-D", data, "postgres"], frontend, "postgres-create.log");
-    const pg = launch(resolve(bin, "postgres.exe"), ["-D", data, "-h", "127.0.0.1", "-p", "55437"], frontend, "postgres.log");
+    const pg = launch(resolve(bin, "postgres.exe"), ["-D", data, "-h", "127.0.0.1", "-p", String(postgresPort)], frontend, "postgres.log");
     await ready("PostgreSQL", async () => readFileSync(resolve(artifacts, "postgres.log"), "utf8").includes("database system is ready to accept connections"), pg);
   } else if (!process.env.E2E_DB_URL) throw new Error("Set E2E_DB_URL to an empty loopback wassel_e2e database or E2E_POSTGRES_BIN to native Windows PostgreSQL binaries");
   const maven = process.env.E2E_MAVEN_CMD || (windows ? resolve(backend, "mvnw.cmd") : resolve(backend, "mvnw"));
@@ -115,7 +134,7 @@ try {
   await run(maven, mavenArgs, backend, "prepare.log");
   const classpath = [resolve(backend, "target/test-classes"), resolve(backend, "target/classes"), readFileSync(resolve(backend, "target/e2e-classpath.txt"), "utf8").trim()].join(delimiter);
   const java = process.env.JAVA_HOME ? resolve(process.env.JAVA_HOME, "bin", windows ? "java.exe" : "java") : "java";
-  const api = launch(java, ["-cp", classpath, "com.wassel.backend.e2e.RoutingE2eApplication", "--spring.profiles.active=local,e2e", "--server.address=127.0.0.1", "--server.port=18080"], backend, "backend.log");
+  const api = launch(java, ["-cp", classpath, authentication ? "com.wassel.backend.e2e.AuthE2eApplication" : "com.wassel.backend.e2e.RoutingE2eApplication", "--spring.profiles.active=local,e2e", "--server.address=127.0.0.1", `--server.port=${apiPort}`], backend, "backend.log");
   await ready("backend seed", async () => existsSync(resolve(artifacts, "backend.log")) && readFileSync(resolve(artifacts, "backend.log"), "utf8").includes("E2E_SEED_READY"), api);
   console.log("E2E backend seeded (PostgreSQL + Flyway)");
   const stamp = resolve(frontend, ".next/e2e-build.json");
@@ -129,13 +148,13 @@ try {
     await run(process.execPath, ["node_modules/next/dist/bin/next", "build"], frontend, "build.log");
     writeFileSync(stamp, JSON.stringify(buildConfig));
   }
-  const web = launch(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", "4173"], frontend, "frontend.log");
-  await ready("frontend", async () => { try { return (await fetch("http://127.0.0.1:4173/login")).ok; } catch { return false; } }, web);
+  const web = launch(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)], frontend, "frontend.log");
+  await ready("frontend", async () => { try { return (await fetch(`${baseURL}/login`)).ok; } catch { return false; } }, web);
   // The browser test reads only the generated disposable account password;
   // delete-on-run artifacts are ignored by git and never uploaded by CI.
   const credentials = resolve(artifacts, "credentials.json");
-  writeFileSync(credentials, JSON.stringify({ email: "routing-head@e2e.invalid", password: env.WASSEL_E2E_PASSWORD }), { mode: 0o600 });
-  await run(process.execPath, ["node_modules/@playwright/test/cli.js", "test", ...process.argv.slice(2)], frontend);
+  writeFileSync(credentials, JSON.stringify(authentication ? { password: env.WASSEL_E2E_PASSWORD, accounts: { ADMIN: "admin@auth-e2e.invalid", HEAD_OF_TRANSPORT: "auth+head@auth-e2e.invalid", DRIVER: "auth+driver-karim@auth-e2e.invalid", PARENT: "auth+parent@auth-e2e.invalid" } } : { email: "routing-head@e2e.invalid", password: env.WASSEL_E2E_PASSWORD }), { mode: 0o600 });
+  await run(process.execPath, ["node_modules/@playwright/test/cli.js", "test", ...(authentication ? ["auth.e2e.ts", "auth-revocation.e2e.ts"] : ["routing.e2e.ts"]), ...args], frontend);
 } catch (error) {
   console.error(`E2E FAILED: ${error.message}`); process.exitCode = 1;
 } finally {
