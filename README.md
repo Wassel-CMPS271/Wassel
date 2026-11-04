@@ -249,6 +249,31 @@ The frontend runs on [Vercel](https://vercel.com).
 - **Check a new build reaches the backend through the proxy.** Open https://wassel-sooty.vercel.app/login with the browser's DevTools, Network tab, try a sign-in, and confirm the request goes to `wassel-sooty.vercel.app/api/auth/login` and not to `localhost:8080`.
 - Preview deployments get their own address, which the backend does not allow, so sign-in only works on the production URL.
 
+## Smoke test after a deploy
+
+Run this after every deploy (SCRUM-217). It signs in as each of the four roles on the deployed site, for real (password, then the emailed code), and checks what a broken deploy would break. It needs only Node 18+, no `npm install`:
+
+```bash
+SMOKE_PASSWORD='the demo password' SMOKE_ADMIN_EMAIL=... SMOKE_ADMIN_PASSWORD='the admin password' SMOKE_HEAD_EMAIL=you+head@gmail.com SMOKE_DRIVER_EMAIL=you+driver-karim@gmail.com SMOKE_PARENT_EMAIL=you+parent@gmail.com node scripts/smoke-test.mjs
+```
+
+Use accounts whose inbox you can open: the demo accounts on a `DEMO_EMAIL_BASE` you own (see [Demo data](#demo-data)) and the `ADMIN_EMAIL` admin. For each role the script asks for the code that was just emailed; type it in. `SMOKE_<ROLE>_PASSWORD` overrides `SMOKE_PASSWORD` for one role, and `SMOKE_BASE_URL` points it at another deploy (default `https://wassel-sooty.vercel.app`). Only correct passwords are sent, so a run never counts towards the account lockout.
+
+What it checks:
+
+| Check | Why |
+| ----- | --- |
+| `http://` redirects to `https://`; `/login` loads; the API answers through the site (401 when signed out) | the frontend is up and its `/api` proxy reaches the backend |
+| Each role: the password step answers 204 and the code step 200 with that role | sign-in with 2FA works end to end, email included |
+| `wassel_2fa` and `wassel_token` are `Secure`, `HttpOnly` and `SameSite=Strict` | the cookie flags the security model relies on |
+| The session works (`/api/auth/me`), the role's area page loads, and its own data loads: the head of transportation's routes (the count is printed), the driver's runs for today, the parent's children | each role reaches real data on the real backend |
+| Another role's data answers 403 | the backend keeps the areas apart, not only the screens |
+| Signing out answers 204 and clears the session cookie | sign-out is clean |
+
+Exit code `0` means every check passed for all four roles, `1` that a check failed, `2` that nothing failed but a role was skipped (its email was not set), which is not a pass.
+
+The redirect from `/login` to each role's own area happens in the browser, so check it by hand once per deploy: sign in as each role at <https://wassel-sooty.vercel.app/login> and confirm you land on `/admin`, `/head-of-transport`, `/driver` or `/parent`, that another role's area sends you back to your own, and that "Sign out" returns you to `/login`.
+
 ## Logs
 
 The staging stack collects every container's logs into one place (Loki), searchable in Grafana.

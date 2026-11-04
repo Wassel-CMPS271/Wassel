@@ -109,6 +109,29 @@ export interface AbsentStudent {
   position: number | null;
 }
 
+export function getDriverToday(): Promise<DriverDay> {
+  return request<DriverDay>("/api/driver/runs/today");
+}
+
+export function startRun(runId: string): Promise<Run> {
+  return request<Run>(`/api/driver/runs/${runId}/start`, { method: "POST" });
+}
+
+export function endRun(runId: string): Promise<Run> {
+  return request<Run>(`/api/driver/runs/${runId}/end`, { method: "POST" });
+}
+
+export function confirmStudent(
+  runId: string,
+  studentId: string,
+  status: ConfirmationStatus,
+): Promise<Run> {
+  return request<Run>(`/api/driver/runs/${runId}/students/${studentId}/confirmation`, {
+    method: "PUT",
+    body: { status },
+  });
+}
+
 // The head of transportation's Today screen (SCRUM-255). Today when `date` is omitted; asking for another
 // date only reads runs that already exist. Until SCRUM-233 and SCRUM-239 are merged the screen uses
 // runsSample.ts instead; the PR that switches to these deletes it.

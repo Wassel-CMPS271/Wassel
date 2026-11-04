@@ -582,6 +582,19 @@ HTML report to `backend/target/site/jacoco/index.html` at the `verify` phase, so
 `test` does not). CI uploads the folder as the `backend-coverage` artifact. It is a report only: there are no
 thresholds, so a low number never fails the build.
 
+**Independent tests of Moustafa's Sprint 3 work (SCRUM-236, by Hashem)**, written from the tickets and `docs/contracts/runs.md`,
+not from the authors' own suites: `AbsenceCriteriaTests` (238), `AbsentOnRunCriteriaTests` (239),
+`ParentChildrenCriteriaTests` (240), `VehicleCapacityCriteriaTests` (241) and `AccountLockoutCriteriaTests` (171). All but the
+lockout class extend `common/CriteriaTestSupport` (the real app on the PostgreSQL container, `MondayClockConfig` pinning "today"
+to Monday 2026-11-02, random school ids, no deleting, `inParallel` for requests at the same instant) and assert on HTTP
+responses; the lockout class stands alone because it also watches the `Mailer` and the log. The classes that waited on a
+story (241, 171) or on a bug fix (the two race classes) run in CI like the rest now that #107, #109, #110 and #111 are
+merged. The lockout class's `@Nested WithAShortLock` sets `wassel.auth.lockout.*`, so it, `print = NONE` and the `Mailer`
+spy each make a distinct Spring context on the shared test database; if "too many clients" appears, as in SCRUM-237, lower
+`hikari.maximum-pool-size` for the test profile. Run one with `sh ./mvnw test -Dtest=<Class>` (`mvnw` is not marked
+executable). Report and bugs:
+`docs/testing/SCRUM-236/`.
+
 Tests mirror the main package structure: a test for
 `main/java/com/wassel/backend/schools/controller/SchoolSettingsController.java`
 lives at `test/java/com/wassel/backend/schools/controller/SchoolSettingsControllerTests.java`.
