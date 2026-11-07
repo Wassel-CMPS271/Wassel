@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
@@ -260,7 +260,9 @@ it("asks before ending a run with stops left, and ends it only on Confirm", asyn
   expect(endRunSample).toHaveBeenCalledTimes(1);
   expect(endRunSample).toHaveBeenCalledWith(morning.id);
   // Focus goes back to the run button, which now starts the afternoon run.
-  expect(await screen.findByRole("button", { name: "Start run" })).toHaveFocus();
+  // Focus is set by an effect just after the element appears, so wait for it.
+  const focusTarget1 = await screen.findByRole("button", { name: "Start run" });
+  await waitFor(() => expect(focusTarget1).toHaveFocus());
 });
 
 it("warns before ending a morning run while children are still on the bus, even with no next/pending stops left", async () => {
@@ -355,7 +357,11 @@ it("closes the confirm step itself if a delayed confirmation brings the count to
     counts: { students: 4, absent: 0, pickedUp: 3, droppedOff: 3, notPresent: 1 },
   });
 
-  expect(await screen.findByRole("button", { name: "End run" })).toHaveFocus();
+  // Focus is set by an effect just after the element appears, so wait for it.
+
+  const focusTarget2 = await screen.findByRole("button", { name: "End run" });
+
+  await waitFor(() => expect(focusTarget2).toHaveFocus());
   expect(screen.queryByRole("button", { name: "Confirm end run" })).not.toBeInTheDocument();
   expect(endRunSample).not.toHaveBeenCalled();
 });
