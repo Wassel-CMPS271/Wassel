@@ -54,6 +54,11 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-mail</artifactId>
 		</dependency>
+		<!-- Only the health endpoint is exposed (application.yml, management), for the host's health check (SCRUM-285). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>com.google.ortools</groupId>
 			<artifactId>ortools-java</artifactId>

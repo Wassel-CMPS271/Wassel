@@ -46,6 +46,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -315,6 +316,14 @@ public class GlobalExceptionHandler {
 	public ProblemDetail handleConfirmationConflict(ConfirmationConflictException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	// A signed-in caller asking for a path nobody serves (a typo, or an actuator endpoint that is not exposed) is a
+	// 404, not an unexpected failure with a stack trace in the log.
+	@ExceptionHandler(NoResourceFoundException.class)
+	public ProblemDetail handleNoResource(NoResourceFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Not found");
 	}
 
 	@ExceptionHandler(UserNotFoundException.class)
