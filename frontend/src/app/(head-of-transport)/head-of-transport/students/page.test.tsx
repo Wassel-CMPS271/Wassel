@@ -376,7 +376,8 @@ it("keeps the roster working, announces the failure and offers a retry when rout
   fireEvent.click(retry);
 
   await waitFor(() => expect(screen.getByLabelText("Route")).toBeEnabled());
-  expect(screen.getByLabelText("Route")).toHaveFocus();
+  // Focus moves in an effect after the select is enabled, so wait for it.
+  await waitFor(() => expect(screen.getByLabelText("Route")).toHaveFocus());
   expect(screen.queryByRole("button", { name: "Retry routes" })).not.toBeInTheDocument();
   expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument();
 });
