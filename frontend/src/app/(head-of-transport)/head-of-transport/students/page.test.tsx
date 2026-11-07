@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { getParents, type Parent } from "@/lib/api/parents";
 import { getRouteAssignments, type RouteAssignment, type RouteAssignments } from "@/lib/api/routes";
 import {
   addStudentWithAddress,
@@ -16,6 +17,11 @@ vi.mock("@/lib/api/students", async (importOriginal) => ({
   addStudentWithAddress: vi.fn(),
   updateStudentAddress: vi.fn(),
   setStudentLocation: vi.fn(),
+}));
+
+vi.mock("@/lib/api/parents", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api/parents")>()),
+  getParents: vi.fn(),
 }));
 
 vi.mock("@/lib/api/routes", async (importOriginal) => ({
@@ -51,6 +57,9 @@ const LINA: Student = {
 };
 const HADI: Student = { ...LINA, id: "st-2", firstName: "Hadi", lastName: "Rizk", latitude: 33.886, longitude: 35.485 };
 
+const RAMI_PARENT: Parent = { id: "p-1", email: "rami@example.com", status: "active", createdAt: "" };
+const REVOKED_PARENT: Parent = { id: "p-2", email: "nour@example.com", status: "revoked", createdAt: "" };
+
 const HAMRA_ROUTE = { id: "route-1", name: "Hamra morning run" };
 const VERDUN_ROUTE = { id: "route-2", name: "Verdun morning run" };
 const ON_HAMRA: RouteAssignment = { routeId: HAMRA_ROUTE.id, routeName: HAMRA_ROUTE.name };
@@ -65,6 +74,7 @@ beforeEach(() => {
   vi.mocked(updateStudentAddress).mockReset();
   vi.mocked(setStudentLocation).mockReset();
   vi.mocked(getRouteAssignments).mockReset().mockResolvedValue(routeData());
+  vi.mocked(getParents).mockReset().mockResolvedValue([RAMI_PARENT, REVOKED_PARENT]);
 });
 
 afterEach(() => {
@@ -99,12 +109,7 @@ it("shows an error when the students fail to load", async () => {
   expect(screen.queryByRole("list")).not.toBeInTheDocument();
 });
 
-// BUG (SCRUM-223): the alert says "Please try again" but the page has no
-// retry control and never calls getStudents() again; only a full page reload
-// recovers. Same gap as the vehicles and drivers pages. To reproduce: make
-// getStudents() reject once, render StudentsPage, and look for any control
-// that reloads the roster: there is none.
-it.skip("shows an error with a retry when the students fail to load", async () => {
+it("reloads the roster when Try again is pressed after a failed load", async () => {
   vi.mocked(getStudents).mockRejectedValueOnce(new Error("down")).mockResolvedValueOnce([LINA]);
   render(<StudentsPage />);
 
@@ -113,7 +118,19 @@ it.skip("shows an error with a retry when the students fail to load", async () =
 
   expect(await screen.findByText("Lina Daher")).toBeInTheDocument();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
   expect(getStudents).toHaveBeenCalledTimes(2);
+});
+
+it("keeps the error and the Try again button when the retry fails too", async () => {
+  vi.mocked(getStudents).mockRejectedValue(new Error("down"));
+  render(<StudentsPage />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+
+  await waitFor(() => expect(getStudents).toHaveBeenCalledTimes(2));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load students. Please try again.");
+  expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
 });
 
 // NOT BUILT (SCRUM-223), a design observation rather than a bug: search,
@@ -448,4 +465,61 @@ it("still filters by search, status and grade when the routes fail", async () =>
   fireEvent.change(screen.getByLabelText("Search"), { target: { value: "Lina" } });
   await waitFor(() => expect(screen.queryByText("Hadi Rizk")).not.toBeInTheDocument());
   expect(screen.getByText("Lina Daher")).toBeInTheDocument();
+});
+
+it("shows the linked parent's email and account status on each row", async () => {
+  vi.mocked(getStudents).mockResolvedValue([
+    { ...LINA, parentUserId: REVOKED_PARENT.id },
+    { ...HADI, parentUserId: RAMI_PARENT.id },
+  ]);
+  render(<StudentsPage />);
+  await screen.findByText("Hadi Rizk");
+
+  expect(
+    await within(row("Hadi Rizk")).findByText("Parent account: rami@example.com (active). Manage in Edit pickup details."),
+  ).toBeInTheDocument();
+  expect(
+    within(row("Lina Daher")).getByText("Parent account: nour@example.com (revoked). Manage in Edit pickup details."),
+  ).toBeInTheDocument();
+  expect(getParents).toHaveBeenCalledTimes(1);
+});
+
+it("says 'Not assigned' for a student with no parent once the parents load", async () => {
+  vi.mocked(getStudents).mockResolvedValue([LINA, { ...HADI, parentUserId: RAMI_PARENT.id }]);
+  render(<StudentsPage />);
+  await screen.findByText("Hadi Rizk");
+
+  await within(row("Hadi Rizk")).findByText(/rami@example\.com/);
+  expect(
+    within(row("Lina Daher")).getByText("Parent account: Not assigned. Manage in Edit pickup details."),
+  ).toBeInTheDocument();
+});
+
+it("falls back to 'Linked'/'Not assigned' and keeps the roster and routes when the parents fail", async () => {
+  vi.mocked(getParents).mockRejectedValue(new Error("down"));
+  vi.mocked(getStudents).mockResolvedValue([LINA, { ...HADI, parentUserId: RAMI_PARENT.id }]);
+  await renderLoaded();
+
+  await waitFor(() => expect(getParents).toHaveBeenCalled());
+  expect(
+    within(row("Hadi Rizk")).getByText("Parent account: Linked. Manage in Edit pickup details."),
+  ).toBeInTheDocument();
+  expect(
+    within(row("Lina Daher")).getByText("Parent account: Not assigned. Manage in Edit pickup details."),
+  ).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument();
+  expect(within(row("Lina Daher")).getByText("No route")).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.queryByText(/rami@example\.com/)).not.toBeInTheDocument();
+});
+
+it("says 'Linked' when the linked parent isn't in the parents list", async () => {
+  vi.mocked(getStudents).mockResolvedValue([{ ...LINA, parentUserId: "p-unknown" }, HADI]);
+  await renderLoaded();
+
+  await waitFor(() => expect(getParents).toHaveBeenCalled());
+  expect(
+    within(row("Lina Daher")).getByText("Parent account: Linked. Manage in Edit pickup details."),
+  ).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument();
 });
