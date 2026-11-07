@@ -1,6 +1,7 @@
 package com.wassel.backend.auth.service;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -10,10 +11,13 @@ import org.springframework.stereotype.Component;
  * Sends plain-text email through the SMTP server in {@code spring.mail.*}. A failed send is an
  * unchecked exception, so it rolls back the caller's transaction and the request fails; the user
  * retries. It runs in every profile except local and test, which print the email instead
- * ({@link LoggingMailer}), so a deployed environment never writes a code or link to its log.
+ * ({@link LoggingMailer}), so a deployed environment never writes a code or link to its log. It is
+ * the default provider; {@code wassel.mail.provider=brevo} swaps it for {@link BrevoMailer}, for
+ * hosts that block outbound SMTP.
  */
 @Component
 @Profile("!local & !test")
+@ConditionalOnProperty(name = "wassel.mail.provider", havingValue = "smtp", matchIfMissing = true)
 public class SmtpMailer implements Mailer {
 
 	private final JavaMailSender sender;

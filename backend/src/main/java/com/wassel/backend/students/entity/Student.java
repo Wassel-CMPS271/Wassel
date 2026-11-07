@@ -14,6 +14,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -30,8 +31,25 @@ import java.util.UUID;
  * are set after creation via the edit endpoints (SCRUM-166); {@code route} is filterable
  * (SCRUM-167) but nothing sets it yet, pending a future routing feature. All four are nullable:
  * a newly added student has none of them yet.
+ *
+ * <p>{@code routeId} and {@code stopPosition} (SCRUM-209) are the real route assignment: a
+ * student is a stop on at most one route, and {@code stopPosition} orders the stops within it.
+ * The old text {@code route} column is untouched and keeps working for filtering until the
+ * screens use {@code routeId} instead (routing contract, "Draft rules"). {@code stopPosition} is
+ * a watermark (next = current max + 1), not a compacted 1..n sequence, so removing a stop never
+ * reassigns another student's position; display order always comes from sorting by it, never
+ * from its raw value.
+ *
+ * <p>{@code manualPin} (SCRUM-211) is true once {@code latitude}/{@code longitude} were set by a
+ * human correcting the map pin, not the geocoder. Saving a new address never overwrites a pin
+ * once this is true.
+ *
+ * <p>Updates write only the changed columns ({@code @DynamicUpdate}): a request that loads many
+ * students (a reorder) would otherwise save every column from its stale copy and overwrite a pin or
+ * a removal another request committed in the meantime.
  */
 @Entity
+@DynamicUpdate
 @Table(name = "students")
 @Getter
 @Setter
@@ -80,6 +98,16 @@ public class Student {
 
 	@Column(name = "parent_user_id")
 	private UUID parentUserId;
+
+	@Column(name = "route_id")
+	private UUID routeId;
+
+	@Column(name = "stop_position")
+	private Integer stopPosition;
+
+	@Builder.Default
+	@Column(name = "manual_pin", nullable = false)
+	private boolean manualPin = false;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)

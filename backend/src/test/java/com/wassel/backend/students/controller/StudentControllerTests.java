@@ -1,5 +1,7 @@
 package com.wassel.backend.students.controller;
 
+import com.wassel.backend.geocoding.service.GeocodeResult;
+import com.wassel.backend.geocoding.service.Geocoder;
 import com.wassel.backend.students.entity.Student;
 import com.wassel.backend.students.entity.StudentStatus;
 import com.wassel.backend.students.repository.StudentRepository;
@@ -14,16 +16,23 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -50,10 +59,16 @@ class StudentControllerTests {
 	@Autowired
 	private UserRepository userRepository;
 
+	// Real network calls are made only by NominatimGeocoder, which this replaces everywhere in
+	// this test class; a real lookup is never exercised here (see NominatimGeocoderTests for that).
+	@MockitoBean
+	private Geocoder geocoder;
+
 	@BeforeEach
 	void cleanDatabase() {
 		studentRepository.deleteAll();
 		userRepository.deleteAll();
+		when(geocoder.geocode(any())).thenReturn(Optional.empty());
 	}
 
 	private RequestPostProcessor loggedInAs(Role role, UUID schoolId) {
@@ -119,6 +134,71 @@ class StudentControllerTests {
 		mockMvc.perform(get(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)))
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].firstName").value("Layla"));
+	}
+
+	@Test
+	void creatingAStudentWithoutAnAddressStillWorks() throws Exception {
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(student("Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222")))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.address").doesNotExist())
+				.andExpect(jsonPath("$.latitude").doesNotExist());
+		verifyNoInteractions(geocoder);
+	}
+
+	@Test
+	void creatingAStudentWithAnAddressGeocodesAndStoresIt() throws Exception {
+		when(geocoder.geocode(eq("Hamra Street, Beirut")))
+				.thenReturn(Optional.of(new GeocodeResult(BigDecimal.valueOf(33.8938), BigDecimal.valueOf(35.5018))));
+
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"firstName\":\"Layla\",\"lastName\":\"Chamoun\",\"grade\":\"Grade 2\","
+								+ "\"guardianName\":\"Rania Chamoun\",\"guardianPhone\":\"+961 3 111 222\","
+								+ "\"address\":\"Hamra Street, Beirut\"}"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.address").value("Hamra Street, Beirut"))
+				.andExpect(jsonPath("$.latitude").value(33.8938))
+				.andExpect(jsonPath("$.longitude").value(35.5018));
+	}
+
+	@Test
+	void creatingAStudentWithAnAddressThatDoesNotGeocodeStillSavesTheAddress() throws Exception {
+		when(geocoder.geocode(eq("Gibberish that doesn't geocode"))).thenReturn(Optional.empty());
+
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"firstName\":\"Layla\",\"lastName\":\"Chamoun\",\"grade\":\"Grade 2\","
+								+ "\"guardianName\":\"Rania Chamoun\",\"guardianPhone\":\"+961 3 111 222\","
+								+ "\"address\":\"Gibberish that doesn't geocode\"}"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.address").value("Gibberish that doesn't geocode"))
+				.andExpect(jsonPath("$.latitude").doesNotExist());
+	}
+
+	@Test
+	void creatingAStudentWithABlankAddressIsTreatedAsNoAddress() throws Exception {
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"firstName\":\"Layla\",\"lastName\":\"Chamoun\",\"grade\":\"Grade 2\","
+								+ "\"guardianName\":\"Rania Chamoun\",\"guardianPhone\":\"+961 3 111 222\","
+								+ "\"address\":\"   \"}"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.address").doesNotExist());
+		verifyNoInteractions(geocoder);
+	}
+
+	@Test
+	void creatingAStudentWithAnAddressOver255CharactersIsRejected() throws Exception {
+		mockMvc.perform(post(URL).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"firstName\":\"Layla\",\"lastName\":\"Chamoun\",\"grade\":\"Grade 2\","
+								+ "\"guardianName\":\"Rania Chamoun\",\"guardianPhone\":\"+961 3 111 222\","
+								+ "\"address\":\"%s\"}".formatted("x".repeat(256))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.address").value("Address must be 255 characters or fewer"));
+		assertEquals(0, studentRepository.count());
 	}
 
 	@Test
@@ -244,6 +324,55 @@ class StudentControllerTests {
 						.content("{\"address\":\"  Hamra Street, Beirut  \"}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.address").value("Hamra Street, Beirut"));
+	}
+
+	@Test
+	void updatingAddressGeocodesAndStoresTheCoordinates() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+		when(geocoder.geocode(eq("Hamra Street, Beirut")))
+				.thenReturn(Optional.of(new GeocodeResult(BigDecimal.valueOf(33.8938), BigDecimal.valueOf(35.5018))));
+
+		mockMvc.perform(patch(URL + "/" + id + "/address").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"address\":\"Hamra Street, Beirut\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.latitude").value(33.8938))
+				.andExpect(jsonPath("$.longitude").value(35.5018));
+	}
+
+	@Test
+	void updatingAddressWithNoGeocodeResultClearsAnyPreviousPin() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+		when(geocoder.geocode(eq("A real address")))
+				.thenReturn(Optional.of(new GeocodeResult(BigDecimal.valueOf(33.8938), BigDecimal.valueOf(35.5018))));
+		mockMvc.perform(patch(URL + "/" + id + "/address").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON).content("{\"address\":\"A real address\"}"))
+				.andExpect(status().isOk());
+
+		when(geocoder.geocode(eq("Some gibberish that doesn't geocode"))).thenReturn(Optional.empty());
+		mockMvc.perform(patch(URL + "/" + id + "/address").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"address\":\"Some gibberish that doesn't geocode\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.latitude").doesNotExist())
+				.andExpect(jsonPath("$.longitude").doesNotExist());
+	}
+
+	@Test
+	void updatingAddressNeverOverwritesAManuallyPlacedPin() throws Exception {
+		String id = addAs(schoolA, "Layla", "Chamoun", "Grade 2", "Rania Chamoun", "+961 3 111 222");
+		mockMvc.perform(patch(URL + "/" + id + "/location").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"latitude\":33.8938,\"longitude\":35.5018}"))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(patch(URL + "/" + id + "/address").with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"address\":\"A different address entirely\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.latitude").value(33.8938))
+				.andExpect(jsonPath("$.longitude").value(35.5018));
+		verifyNoInteractions(geocoder);
 	}
 
 	@Test

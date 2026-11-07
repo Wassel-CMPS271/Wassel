@@ -1,0 +1,11 @@
+{
+  "note": "Illustrative snapshot only \u2014 NOT API schema",
+  "routeId": "route-1",
+  "version": 3,
+  "savedOrder": [
+    "stop-A",
+    "stop-B",
+    "stop-C"
+  ],
+  "requirement": "propose and discard do not change saved order; apply changes order only if valid and current version"
+}

@@ -31,7 +31,8 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      # Schema is never auto-modified outside local dev; add a migration tool (Flyway/Liquibase) for real schemas.
+      # Hibernate never changes the schema: Flyway does (db/migration), and Hibernate only checks
+      # that the entities still match it, so a missing migration stops startup.
       ddl-auto: validate
 
 jwt:
@@ -45,10 +46,62 @@ cors:
 
 wassel:
   frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
+  # How sign-in codes and links are emailed outside local and test: "smtp" (the spring.mail settings above,
+  # the default) or "brevo" (Brevo's HTTPS API, for hosts that block outbound SMTP, such as Railway's
+  # non-Pro plans). Brevo needs BREVO_API_KEY and BREVO_SENDER_EMAIL (an address verified in the Brevo
+  # account); with "brevo", MAIL_USERNAME and MAIL_PASSWORD are not used.
+  mail:
+    provider: ${MAIL_PROVIDER:smtp}
+    brevo:
+      api-key: ${BREVO_API_KEY:}
+      sender-email: ${BREVO_SENDER_EMAIL:}
+      sender-name: ${BREVO_SENDER_NAME:Wassel}
   seed-admin:
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
     school-id: ${SCHOOL_ID:00000000-0000-0000-0000-000000000001}
+  # Demo data (SCRUM-200): off unless DEMO_DATA_ENABLED=true. It fills the seeded admin's school with a
+  # head of transportation, a parent, vehicles, drivers and students, all signing in with DEMO_PASSWORD.
+  # It skips itself when the database has accounts beyond the demo ones and the admin, unless
+  # DEMO_DATA_FORCE=true.
+  demo:
+    enabled: ${DEMO_DATA_ENABLED:false}
+    password: ${DEMO_PASSWORD:}
+    force: ${DEMO_DATA_FORCE:false}
+    # Accounts are demo+head@..., demo+parent@..., demo+driver-karim@... (a tag after the "+"). Sign-in
+    # emails a code, so on a deployed environment set this to a real mailbox that supports "+" tags
+    # (Gmail does) to receive the codes. The default only works where the code is logged (local).
+    email-base: ${DEMO_EMAIL_BASE:demo@wassel.local}
+  # Account lockout (SCRUM-171): this many wrong passwords in a row lock the account for this long. The lock
+  # ends by itself; while it lasts, sign-in fails with the same error as a wrong password.
+  auth:
+    lockout:
+      max-failures: ${LOCKOUT_MAX_FAILURES:5}
+      duration: ${LOCKOUT_DURATION:15m}
+  # Must be overridden in every deployed environment: the MVP serves one school, and every
+  # route response includes its location.
+  school:
+    latitude: ${SCHOOL_LATITUDE}
+    longitude: ${SCHOOL_LONGITUDE}
+
+geocoding:
+  nominatim:
+    base-url: ${NOMINATIM_BASE_URL:https://nominatim.openstreetmap.org}
+    # Nominatim's usage policy requires a descriptive User-Agent identifying the application.
+    user-agent: ${NOMINATIM_USER_AGENT:Wassel-school-transport/1.0 (+https://github.com/Wassel-CMPS271/Wassel)}
+    # The MVP serves one school in Lebanon. Without a country, "Verdun Street" resolves to Sydney. Blank turns it off.
+    country-codes: ${NOMINATIM_COUNTRY_CODES:lb}
+    # Connect and read timeout: a slow Nominatim must not hold the save (and its database connection) open.
+    timeout: ${NOMINATIM_TIMEOUT:5s}
+
+routing:
+  openrouteservice:
+    base-url: https://api.openrouteservice.org
+    # Free key from openrouteservice.org. Blank = no road times: every matrix is straight-line (fine locally and
+    # in CI). Sent in the Authorization header, never in a URL, so it cannot end up in an error message.
+    api-key: ${ORS_API_KEY:}
+    # Connect and read timeout: route responses wait on this while holding a database connection.
+    timeout: 3s
 
 # One JSON object per log line, with the severity in "log.level" (ECS). Loki (see
 # docker-compose.staging.yml) parses these, so the level can be filtered on.

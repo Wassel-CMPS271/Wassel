@@ -1,20 +1,15 @@
-// School times API layer — SCRUM-178.
+// School times API layer (backend: SchoolSettingsController). The school is
+// always the signed-in admin's own; the request never names it.
 //
-// The backend endpoints exist (SchoolSettingsController) but can't be called
-// from the browser yet: they need a logged-in admin, and login lands with
-// SCRUM-168/176. Until then these functions run against an in-memory mock,
-// the same approach as vehicles.ts. Each one is already async and returns
-// the same shape as the real API, so swapping the body for a fetch() needs
-// no change to the signatures or the components calling them:
+//   GET /api/admin/school-settings/times -> SchoolTimes
+//   PUT /api/admin/school-settings/times    { arrivalTime, dismissalTime } -> SchoolTimes
 //
-//   GET /api/admin/school-settings/times -> { arrivalTime, dismissalTime }
-//   PUT /api/admin/school-settings/times    (same shape, both required)
-//
-// Times are 24-hour "HH:mm" strings; both are null until first set. A 400
-// from the real API carries { errors: { field: message } }, which is what
-// ApiValidationError (errors.ts) models here.
+// Times are 24-hour "HH:mm" strings; both are null until first set, and both
+// are required on save. A dismissal at or before arrival is a 400 with
+// { errors: { dismissalTime: message } }, which request() throws as
+// ApiValidationError (see errors.ts and client.ts).
 
-import { ApiValidationError } from "./errors";
+import { request } from "./client";
 
 export interface SchoolTimes {
   arrivalTime: string | null;
@@ -23,25 +18,10 @@ export interface SchoolTimes {
 
 export type NewSchoolTimes = { arrivalTime: string; dismissalTime: string };
 
-const MOCK_LATENCY_MS = 400;
-
-function delay<T>(value: T, ms: number = MOCK_LATENCY_MS): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
+export function getSchoolTimes(): Promise<SchoolTimes> {
+  return request<SchoolTimes>("/api/admin/school-settings/times");
 }
 
-let schoolTimes: SchoolTimes = { arrivalTime: null, dismissalTime: null };
-
-export async function getSchoolTimes(): Promise<SchoolTimes> {
-  return delay({ ...schoolTimes });
-}
-
-export async function saveSchoolTimes(data: NewSchoolTimes): Promise<SchoolTimes> {
-  // Same rule the backend enforces. Zero-padded 24h strings compare correctly as text.
-  if (data.dismissalTime <= data.arrivalTime) {
-    throw new ApiValidationError({
-      dismissalTime: "Dismissal time must be after arrival time.",
-    });
-  }
-  schoolTimes = { ...data };
-  return delay({ ...schoolTimes });
+export function saveSchoolTimes(data: NewSchoolTimes): Promise<SchoolTimes> {
+  return request<SchoolTimes>("/api/admin/school-settings/times", { method: "PUT", body: data });
 }

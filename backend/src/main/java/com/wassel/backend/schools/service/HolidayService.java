@@ -5,6 +5,7 @@ import com.wassel.backend.schools.dto.HolidayResponse;
 import com.wassel.backend.schools.entity.Holiday;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
 import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
+import com.wassel.backend.schools.exception.HolidayNotFoundException;
 import com.wassel.backend.schools.repository.HalfDayRepository;
 import com.wassel.backend.schools.repository.HolidayRepository;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,6 +29,8 @@ public class HolidayService {
 
 	private static final String IS_HALF_DAY_MESSAGE = "That date is marked as a half-day, so it can't also be a holiday.";
 
+	private static final String NOT_FOUND_MESSAGE = "Holiday not found.";
+
 	private final HolidayRepository holidayRepository;
 	private final HalfDayRepository halfDayRepository;
 
@@ -36,6 +40,12 @@ public class HolidayService {
 		return holidayRepository.findBySchoolIdOrderByDateAsc(schoolId).stream()
 				.map(this::toResponse)
 				.toList();
+	}
+
+	/** For the runs module: whether the school is closed on this date by its holiday calendar. */
+	@Transactional(readOnly = true)
+	public boolean isHoliday(UUID schoolId, LocalDate date) {
+		return holidayRepository.existsBySchoolIdAndDate(schoolId, date);
 	}
 
 	@Transactional
@@ -60,6 +70,13 @@ public class HolidayService {
 			// for the check above.
 			throw new HolidayAlreadyExistsException(DUPLICATE_DATE_MESSAGE);
 		}
+	}
+
+	@Transactional
+	public void deleteHoliday(UUID schoolId, UUID holidayId) {
+		Holiday holiday = holidayRepository.findBySchoolIdAndId(schoolId, holidayId)
+				.orElseThrow(() -> new HolidayNotFoundException(NOT_FOUND_MESSAGE));
+		holidayRepository.delete(holiday);
 	}
 
 	private HolidayResponse toResponse(Holiday holiday) {

@@ -2,26 +2,29 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, MotionConfig } from "framer-motion";
-import {
-  addStudent,
-  getStudents,
-  importStudents,
-  matchesFilters,
-  setStudentStatus,
-  updateStudent,
-  type ImportRowResult,
-  type NewStudent,
-  type Student,
-} from "@/lib/api/students";
+import { getRouteAssignments, type RouteAssignment, type RouteAssignments } from "@/lib/api/routes";
+import { addStudentWithAddress, getStudents, importStudents, matchesFilters, setStudentLocation, updateStudentAddress, type ImportRowResult, type NewStudent, type NewStudentWithAddress, type Student } from "@/lib/api/students";
 import { AddStudentForm } from "./AddStudentForm";
 import { ImportStudentsForm } from "./ImportStudentsForm";
-import { StudentFilters, type StatusFilterValue } from "./StudentFilters";
+import { StudentFilters, type RouteFilterValue, type RoutesStatus, type StatusFilterValue } from "./StudentFilters";
 import { StudentListItem } from "./StudentListItem";
 import { StudentListSkeleton } from "./StudentListSkeleton";
 import { Button } from "@/components/ui/Button";
 import { ToastViewport, useToastQueue } from "@/components/ui/Toast";
 import { StudentIcon } from "@/components/ui/icons";
 import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
+
+// A student matches the route filter when it's "all" (no filter), "none"
+// (on no route) or the id of the route they're a stop on.
+function matchesRouteFilter(
+  student: Student,
+  routeFilter: RouteFilterValue,
+  assignments: Map<string, RouteAssignment>,
+): boolean {
+  if (routeFilter === "all") return true;
+  if (routeFilter === "none") return !assignments.has(student.id);
+  return assignments.get(student.id)?.routeId === routeFilter;
+}
 
 // How long to wait after the last keystroke before the search filter
 // applies, so filtering doesn't re-run on every character.
@@ -37,6 +40,10 @@ export default function StudentsPage() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
   const [gradeFilter, setGradeFilter] = useState("all");
+  const [routeFilter, setRouteFilter] = useState<RouteFilterValue>("all");
+
+  const [routeData, setRouteData] = useState<RouteAssignments>({ routes: [], byStudent: new Map() });
+  const [routesStatus, setRoutesStatus] = useState<RoutesStatus>("loading");
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedQuery(searchInput), SEARCH_DEBOUNCE_MS);
@@ -50,14 +57,19 @@ export default function StudentsPage() {
 
   const filteredStudents = useMemo(
     () =>
-      students.filter((s) =>
-        matchesFilters(s, { query: debouncedQuery, status: statusFilter, grade: gradeFilter }),
-      ),
-    [students, debouncedQuery, statusFilter, gradeFilter],
+      students
+        .filter((s) =>
+          matchesFilters(s, { query: debouncedQuery, status: statusFilter, grade: gradeFilter }),
+        )
+        .filter((s) => matchesRouteFilter(s, routeFilter, routeData.byStudent)),
+    [students, debouncedQuery, statusFilter, gradeFilter, routeFilter, routeData],
   );
 
   const isFiltering =
-    debouncedQuery.trim() !== "" || statusFilter !== "all" || gradeFilter !== "all";
+    debouncedQuery.trim() !== "" ||
+    statusFilter !== "all" ||
+    gradeFilter !== "all" ||
+    routeFilter !== "all";
 
   const loadStudents = useCallback(async () => {
     setIsLoading(true);
@@ -74,29 +86,46 @@ export default function StudentsPage() {
     }
   }, [pushToast]);
 
+  // Loaded in parallel with the roster: a failure here never blocks or
+  // breaks the roster, it just leaves the route filter disabled and the rows
+  // without a route line until a retry succeeds. The route filter stays "all"
+  // until then, because the filter can't be changed while it's disabled.
+  const loadRouteData = useCallback(async (status: "loading" | "retrying") => {
+    setRoutesStatus(status);
+    try {
+      setRouteData(await getRouteAssignments());
+      setRoutesStatus("ready");
+    } catch {
+      setRoutesStatus("error");
+    }
+  }, []);
+
   useEffect(() => {
     loadStudents();
-  }, [loadStudents]);
+    loadRouteData("loading");
+  }, [loadStudents, loadRouteData]);
 
-  async function handleAdd(data: NewStudent) {
-    const student = await addStudent(data);
+  async function handleAdd(data: NewStudentWithAddress) {
+    const { student, addressSaved } = await addStudentWithAddress(data);
     setStudents((prev) => [...prev, student]);
-    pushToast(`${student.firstName} ${student.lastName} added.`);
+    if (addressSaved) {
+      pushToast(`${student.firstName} ${student.lastName} added with pickup address.`);
+    } else {
+      // POST succeeded, but PATCH did not: don't pretend the address was saved.
+      pushToast(`${student.firstName} ${student.lastName} was created, but the address was not saved. Use Edit pickup details to retry.`);
+    }
   }
 
-  async function handleEdit(
-    id: string,
-    updates: Partial<Omit<Student, "id" | "createdAt">>,
-  ) {
-    const updated = await updateStudent(id, updates);
-    setStudents((prev) => prev.map((s) => (s.id === id ? updated : s)));
-    pushToast(`${updated.firstName} ${updated.lastName} updated.`);
+  async function handleUpdateAddress(id: string, address: string) {
+    const updated = await updateStudentAddress(id, address);
+    setStudents((prev) => prev.map((student) => student.id === id ? updated : student));
+    pushToast(`Pickup address updated for ${updated.firstName} ${updated.lastName}.`);
   }
 
-  async function handleToggleStatus(id: string, status: Student["status"]) {
-    const updated = await setStudentStatus(id, status);
-    setStudents((prev) => prev.map((s) => (s.id === id ? updated : s)));
-    pushToast(`${updated.firstName} ${updated.lastName} marked ${status}.`);
+  async function handleUpdateLocation(id: string, latitude: number, longitude: number) {
+    const updated = await setStudentLocation(id, latitude, longitude);
+    setStudents((prev) => prev.map((student) => student.id === id ? updated : student));
+    pushToast(`Pickup location updated for ${updated.firstName} ${updated.lastName}.`);
   }
 
   async function handleImport(rows: NewStudent[]): Promise<ImportRowResult[]> {
@@ -185,6 +214,11 @@ export default function StudentsPage() {
               grade={gradeFilter}
               onGradeChange={setGradeFilter}
               grades={grades}
+              route={routeFilter}
+              onRouteChange={setRouteFilter}
+              routes={routeData.routes}
+              routesStatus={routesStatus}
+              onRetryRoutes={() => loadRouteData("retrying")}
             />
           )}
 
@@ -248,6 +282,7 @@ export default function StudentsPage() {
                     setSearchInput("");
                     setStatusFilter("all");
                     setGradeFilter("all");
+                    setRouteFilter("all");
                   }}
                   style={{ marginTop: spacing.sm }}
                 >
@@ -268,8 +303,13 @@ export default function StudentsPage() {
                   <StudentListItem
                     key={student.id}
                     student={student}
-                    onEdit={handleEdit}
-                    onToggleStatus={handleToggleStatus}
+                    routeAssignment={routesStatus === "ready" ? routeData.byStudent.get(student.id) ?? null : undefined}
+                    onLinked={(updated) => {
+                      setStudents(prev => prev.map(item => item.id === updated.id ? updated : item));
+                      pushToast(`Parent updated for ${updated.firstName} ${updated.lastName}.`);
+                    }}
+                    onUpdateAddress={handleUpdateAddress}
+                    onUpdateLocation={handleUpdateLocation}
                   />
                 ))}
               </AnimatePresence>

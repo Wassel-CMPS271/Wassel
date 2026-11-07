@@ -30,3 +30,36 @@ input::placeholder {
   color: var(--input-placeholder-color, #71717a);
   opacity: 1;
 }
+
+/* Map (components/map/LeafletMap.tsx). Colors come from mapTheme/darkTheme
+   through the CSS variables the map wrapper sets inline. */
+.wassel-map .leaflet-container {
+  font-family: inherit;
+}
+
+.wassel-map .leaflet-popup-content-wrapper,
+.wassel-map .leaflet-popup-tip {
+  background: var(--map-popup-bg);
+  color: var(--map-popup-text);
+}
+
+.wassel-map .leaflet-popup-content {
+  font-family: inherit;
+}
+
+/* divIcon paints a white box by default; the marker html draws itself. */
+.wassel-map .wassel-map-marker {
+  background: none;
+  border: 0;
+}
+
+.wassel-map .leaflet-marker-icon:focus-visible,
+.wassel-map .leaflet-container:focus-visible {
+  outline: 2px solid var(--map-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--focus-halo);
+}
+
+.wassel-map .leaflet-container:focus-visible {
+  outline-offset: -4px;
+}

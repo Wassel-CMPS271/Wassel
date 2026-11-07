@@ -184,6 +184,10 @@ export const darkTheme = {
     sidebar: "rgba(16, 18, 24, 0.78)", // translucent nav rail over the page gradient
     sidebarBlur: "blur(12px)", // backdropFilter that pairs with `sidebar`
     recede: "rgba(255, 255, 255, 0.03)", // inactive/"before" items that should sit back
+    emptyState: "rgba(20, 22, 29, 0.5)", // dashed "nothing here yet" panel: surface.card at half strength
+    emptyStateBadge: "rgba(255, 255, 255, 0.05)", // icon circle inside the empty state
+    skeleton: "rgba(255, 255, 255, 0.08)", // pulsing blocks of a loading placeholder list
+    overlay: "rgba(5, 6, 10, 0.72)", // modal dialog backdrop, a tint of background.base
   },
   interactive: {
     hoverBg: "rgba(251, 191, 36, 0.06)", // accent tint for hovered nav items/cards
@@ -193,6 +197,14 @@ export const darkTheme = {
     // dark halo (same as background.base) so it clears 3:1 on any frame (~5.6:1).
     focusRing: colors.primary[400],
     focusHalo: "#05060a",
+    // Drag and drop between two lists (route students, SCRUM-219). A list that
+    // accepts the card gets a dashed primary[400] border (5.0:1 on surface.card,
+    // clears 3:1 for UI boundaries); the list under the pointer also gets the tint.
+    dropTargetBorder: colors.primary[400],
+    dropTargetBg: "rgba(77, 127, 255, 0.08)", // tint of primary[400]
+    // A list that refuses the drop (vehicle full): warning[500] border (7.7:1 on surface.card).
+    dropRefusedBorder: colors.warning[500],
+    dropRefusedBg: "rgba(247, 144, 9, 0.08)", // tint of warning[500]
   },
   text: {
     primary: "#f5f5f7", // headings, primary content
@@ -203,7 +215,32 @@ export const darkTheme = {
     activeDot: colors.success[500],
     activeGlow: "rgba(18, 183, 106, 0.55)",
     inactiveDot: colors.neutral[400],
+    liveBadgeBg: "rgba(18, 183, 106, 0.14)", // circle behind a section heading's live dot, from success[500]
   },
+  // Driver's Today screen (SCRUM-243). The next stop is the one thing the
+  // driver must find at a glance, so its card gets a primary[400] border
+  // (5.0:1 on surface.card) and a tint, not just a badge.
+  //   nextLabel (primary[300]) on nextBg over surface.card  ~6.9:1
+  //   text.primary on nextBadge (primary[600])              ~6.9:1
+  //   absentText (warning[500]) on absentBg over surface.card ~6.2:1
+  runStop: {
+    nextBorder: colors.primary[400],
+    nextBg: "rgba(77, 127, 255, 0.10)", // tint of primary[400]
+    nextShadow: "0 0 0 1px rgba(77, 127, 255, 0.35), 0 12px 32px rgba(0, 0, 0, 0.55)", // cardShadow plus a primary[400] halo
+    nextLabel: colors.primary[300],
+    nextBadge: colors.primary[600], // position circle of the next stop
+    absentText: colors.warning[500],
+    absentBg: "rgba(247, 144, 9, 0.14)", // "Absent" pill, tint of warning[500]
+  },
+} as const;
+
+/**
+ * Field colors for the explicit light opt-in (theme="light" on Select).
+ * text on fill ~18.9:1.
+ */
+export const lightTheme = {
+  inputFill: "#ffffff",
+  inputText: "#111111",
 } as const;
 
 /**
@@ -231,10 +268,66 @@ export const brand = {
   sun: colors.accent[100],
 } as const;
 
+/**
+ * Map (SCRUM-222, components/map/). Markers sit on light OpenStreetMap
+ * tiles, so each one has a text.primary ring and a dark shadow to stay
+ * visible on any tile. No new colors: every fill reuses the palette.
+ *   markerText (text.primary) on stopFill (primary[600]) ~6.9:1
+ *   schoolInk (brand.ink) on schoolFill (brand.badge)     10.2:1
+ */
+export const mapTheme = {
+  height: "clamp(260px, 55vh, 480px)", // map viewport: shorter on phones so the page still scrolls past it
+  stopFill: colors.primary[600], // numbered stop badge
+  markerText: darkTheme.text.primary, // the number on a stop badge
+  markerRing: darkTheme.text.primary, // ring around every marker, for contrast on light tiles
+  markerShadow: "0 2px 6px rgba(5, 6, 10, 0.5)", // marker drop shadow, a tint of background.base
+  schoolFill: brand.badge, // the school marker reuses the brand badge so it stands apart from stops
+  schoolInk: brand.ink, // school glyph on the badge
+  pinFill: colors.secondary[600], // the draggable pin, distinct from stops and the school
+  line: colors.primary[500], // the line joining the ordered stops
+  lineWeight: 4, // px
+  lineOpacity: 0.85,
+  // Marker sizes in px (Leaflet's iconSize takes numbers).
+  stopSize: 28,
+  schoolSize: 36,
+  pinSize: 32,
+  // Route palette (SCRUM-224): one color per route when a map draws several
+  // at once (the "Generate routes" proposal), so routes can be told apart on
+  // sight. Color is never the only signal — pair it with the legend and with
+  // a marker label that names the route. Each shade keeps markerText
+  // (#f5f5f7) at or above 4.5:1, the same bar as stopFill (~6.9:1), so a
+  // route's numbered badges stay readable; shades are spread across hues so
+  // no two are mistaken for one another. On the dark page every shade is
+  // under 3:1, so a swatch off the map keeps the markers' markerRing. Routes
+  // beyond the list wrap back to the start (route 11 shares route 1's color);
+  // the legend, the marker popups and labels still name each route. The
+  // first entry matches stopFill, so a single-route map and a one-route
+  // proposal look the same.
+  routeColors: [
+    colors.primary[600], // blue, ~6.9:1 (same as stopFill)
+    "#b91c1c", // red, ~5.9:1
+    "#166534", // green, ~6.7:1
+    "#9a3412", // orange, ~6.8:1
+    "#7e22ce", // purple, ~6.5:1
+    "#115e59", // teal, ~7.1:1
+    "#be185d", // pink, ~5.6:1
+    colors.accent[800], // brown, ~6.5:1
+    "#3f6212", // lime, ~6.6:1
+    "#155e75", // cyan, ~6.8:1
+  ],
+} as const;
+
 /** Minimum hit area for any link or button (WCAG 2.5.5 target size). */
 export const sizing = {
   tapTarget: "44px",
   brandSidebar: "40px", // BrandMark beside the wordmark in the role sidebars (was the old "W" badge size)
+  pageMaxWidth: "768px", // content column of a role-area list page
+  dialogMaxWidth: "420px", // modal form panel
+  dialogWideMaxWidth: "560px", // modal form panel that holds a map, so the map and its pin controls fit
+  sectionBadge: "24px", // live-dot circle beside a section heading
+  emptyStateBadge: "48px", // icon circle in an empty state
+  emptyStateText: "320px", // max line length of the empty-state helper text
+  stopBadge: "32px", // position circle on a driver's stop card
 } as const;
 
 /** Icon pixel sizes, so call sites don't pass bare numbers. */

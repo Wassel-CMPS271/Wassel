@@ -3,6 +3,7 @@ package com.wassel.backend.users.service;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.entity.User;
 import com.wassel.backend.users.exception.EmailAlreadyInUseException;
+import com.wassel.backend.users.exception.RevokeNotAllowedException;
 import com.wassel.backend.users.exception.UserNotFoundException;
 import com.wassel.backend.users.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +12,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -41,6 +44,33 @@ public class UserService {
 	@Transactional(readOnly = true)
 	public Optional<User> findByEmail(String email) {
 		return userRepository.findByEmailIgnoreCase(email.trim());
+	}
+
+	/** Whether any account has an email outside the given ones, on any school (for the demo seeder's guard). */
+	@Transactional(readOnly = true)
+	public boolean existsOtherThan(Collection<String> emails) {
+		return userRepository.existsByEmailNotIn(emails.stream().map(e -> e.trim().toLowerCase(Locale.ROOT)).toList());
+	}
+
+	/**
+	 * Sign-in lockout (SCRUM-171), for auth: counts this attempt before its password is checked. False when the
+	 * account is locked, or {@code maxFailures} attempts are already counted, so the password must not be tried.
+	 */
+	@Transactional
+	public boolean countSignInAttempt(UUID userId, int maxFailures, Instant now) {
+		return userRepository.countSignInAttempt(userId, maxFailures, now) == 1;
+	}
+
+	/** After the right password: the account's counted attempts are cleared. */
+	@Transactional
+	public void clearSignInAttempts(UUID userId) {
+		userRepository.clearSignInAttempts(userId);
+	}
+
+	/** After a wrong password: true if this one locked the account until {@code until}. */
+	@Transactional
+	public boolean lockIfTooManyFailures(UUID userId, int maxFailures, Instant until) {
+		return userRepository.lockIfTooManyFailures(userId, maxFailures, until) == 1;
 	}
 
 	@Transactional(readOnly = true)
@@ -80,6 +110,23 @@ public class UserService {
 		catch (DataIntegrityViolationException ex) {
 			throw new EmailAlreadyInUseException(EMAIL_IN_USE);
 		}
+	}
+
+	/**
+	 * Revokes or restores one of the school's accounts of the given role (SCRUM-98). A disabled account
+	 * can't sign in, and {@code JwtAuthenticationFilter} reloads the user on every request, so an open
+	 * session ends at its next request. Nobody can revoke themselves; the lookup is by school and role, so
+	 * an account of another role (an admin, for instance) or another school is a UserNotFoundException.
+	 * Setting the state it already has changes nothing.
+	 */
+	@Transactional
+	public User setEnabled(UUID schoolId, UUID actorId, UUID userId, Role role, boolean enabled) {
+		if (!enabled && userId.equals(actorId)) {
+			throw new RevokeNotAllowedException("You cannot revoke your own access.");
+		}
+		User user = getOwnedUser(schoolId, userId, role);
+		user.setEnabled(enabled);
+		return user;
 	}
 
 	@Transactional

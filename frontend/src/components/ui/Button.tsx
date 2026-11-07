@@ -92,6 +92,29 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
+export interface ButtonLinkProps extends ComponentProps<typeof Link> {
+  variant?: ButtonVariant;
+}
+
+// A link that looks like the dark Button, for navigation that reads as an
+// action ("Generate routes"). It stays a real <a>, so it can be opened in a
+// new tab and is announced as a link.
+export function ButtonLink({ variant = "primary", className = "", style, ...props }: ButtonLinkProps) {
+  return (
+    <Link
+      className={`inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${className}`}
+      style={{
+        ...VARIANT_STYLES_DARK[variant],
+        borderRadius: radius.md,
+        padding: `${spacing.sm} ${spacing.md}`,
+        outlineColor: colors.primary[500],
+        ...style,
+      }}
+      {...props}
+    />
+  );
+}
+
 // The public call to action (e.g. "Sign in" -> /login): an amber fill with a
 // navy label and an arrow that slides right on hover. CtaLink stays a real
 // <a>; CtaButton is the same look as a form submit (the auth pages).

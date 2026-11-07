@@ -6,6 +6,7 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.security.access.AccessDeniedException;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -16,7 +17,10 @@ class GlobalExceptionHandlerLoggingTests {
 
 	@Test
 	void unexpectedFailureIsLoggedAtErrorWithTheStackTrace(CapturedOutput output) {
-		handler.handleUnexpected(new IllegalStateException("database unreachable"));
+		var problem = handler.handleUnexpected(new IllegalStateException("database unreachable"));
+
+		assertEquals(500, problem.getStatus());
+		assertEquals("An unexpected error occurred", problem.getDetail());
 
 		assertTrue(output.getOut().contains("ERROR"), output.getAll());
 		assertTrue(output.getOut().contains("Unhandled exception"), output.getAll());

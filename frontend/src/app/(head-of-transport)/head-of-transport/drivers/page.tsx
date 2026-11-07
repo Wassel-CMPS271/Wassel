@@ -6,11 +6,14 @@ import {
   addDriver,
   assignDriverToVehicle,
   getDrivers,
+  restoreDriver,
   resendInvite,
+  revokeDriver,
   unassignDriver,
   type Driver,
   type NewDriver,
 } from "@/lib/api/drivers";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import { getVehicles, type Vehicle } from "@/lib/api/vehicles";
 import { AddDriverForm } from "./AddDriverForm";
 import { DriverListItem } from "./DriverListItem";
@@ -18,6 +21,15 @@ import { DriverListSkeleton } from "./DriverListSkeleton";
 import { ToastViewport, useToastQueue } from "@/components/ui/Toast";
 import { DriverIcon } from "@/components/ui/icons";
 import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
+
+// The backend answers expected conflicts (vehicle taken, invite already
+// accepted) with a 409 `errors` map, so ApiValidationError.message is the
+// generic "Validation failed". Show the backend's own message instead.
+function failureMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiValidationError) return Object.values(err.errors)[0] ?? fallback;
+  if (err instanceof ApiError && err.status < 500) return err.message;
+  return fallback;
+}
 
 export default function DriversPage() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -73,7 +85,27 @@ export default function DriversPage() {
       setDrivers((prev) => prev.map((driver) => (driver.id === id ? updated : driver)));
       pushToast(`Invite resent to ${updated.firstName} ${updated.lastName}.`);
     } catch (err) {
-      pushToast(err instanceof Error ? err.message : "Couldn't resend the invite. Please try again.");
+      pushToast(failureMessage(err, "Couldn't resend the invite. Please try again."));
+    }
+  }
+
+  async function handleRevoke(id: string) {
+    try {
+      const updated = await revokeDriver(id);
+      setDrivers((prev) => prev.map((driver) => (driver.id === id ? updated : driver)));
+      pushToast(`${updated.firstName} ${updated.lastName}'s access revoked.`);
+    } catch (err) {
+      pushToast(failureMessage(err, "Couldn't revoke access. Please try again."));
+    }
+  }
+
+  async function handleRestore(id: string) {
+    try {
+      const updated = await restoreDriver(id);
+      setDrivers((prev) => prev.map((driver) => (driver.id === id ? updated : driver)));
+      pushToast(`${updated.firstName} ${updated.lastName}'s access restored.`);
+    } catch (err) {
+      pushToast(failureMessage(err, "Couldn't restore access. Please try again."));
     }
   }
 
@@ -84,7 +116,7 @@ export default function DriversPage() {
       const plate = vehiclePlatesById[vehicleId] ?? vehicleId;
       pushToast(`${updated.firstName} ${updated.lastName} assigned to ${plate}.`);
     } catch (err) {
-      pushToast(err instanceof Error ? err.message : "Couldn't assign the vehicle. Please try again.");
+      pushToast(failureMessage(err, "Couldn't assign the vehicle. Please try again."));
     }
   }
 
@@ -94,7 +126,7 @@ export default function DriversPage() {
       setDrivers((prev) => prev.map((driver) => (driver.id === driverId ? updated : driver)));
       pushToast(`${updated.firstName} ${updated.lastName} unassigned.`);
     } catch (err) {
-      pushToast(err instanceof Error ? err.message : "Couldn't unassign the driver. Please try again.");
+      pushToast(failureMessage(err, "Couldn't unassign the driver. Please try again."));
     }
   }
 
@@ -214,6 +246,8 @@ export default function DriversPage() {
                     }
                     eligibleVehicles={eligibleVehicles}
                     onResendInvite={handleResendInvite}
+                    onRevoke={handleRevoke}
+                    onRestore={handleRestore}
                     onAssign={handleAssign}
                     onUnassign={handleUnassign}
                   />

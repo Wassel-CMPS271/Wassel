@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card } from "@/components/ui/Card";
 import type { NewDriver } from "@/lib/api/drivers";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import { colors, darkTheme, spacing } from "@/styles/tokens";
 
 interface FormErrors {
@@ -108,14 +109,24 @@ export function AddDriverForm({ onAdd }: AddDriverFormProps) {
       });
       closeForm();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
-      const lower = message.toLowerCase();
-      if (lower.includes("email")) {
-        setErrors((prev) => ({ ...prev, email: message }));
-      } else if (lower.includes("phone")) {
-        setErrors((prev) => ({ ...prev, phone: message }));
+      if (err instanceof ApiValidationError) {
+        // The backend reports validation and duplicate fields by key.
+        const { firstName, lastName, phone, email, ...others } = err.errors;
+        setErrors({
+          firstName,
+          lastName,
+          phone,
+          email,
+          form: Object.values(others)[0],
+        });
+      } else if (err instanceof ApiError) {
+        setErrors({
+          form: err.status === 401
+            ? "Your session has expired. Please sign in again."
+            : err.message,
+        });
       } else {
-        setErrors((prev) => ({ ...prev, form: message }));
+        setErrors({ form: "Something went wrong. Please try again." });
       }
     } finally {
       setIsSubmitting(false);

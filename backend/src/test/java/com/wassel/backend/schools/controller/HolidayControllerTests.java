@@ -17,9 +17,12 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -59,9 +62,17 @@ class HolidayControllerTests {
 	}
 
 	private void addAs(UUID schoolId, String date, String name) throws Exception {
-		mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolId))
+		addAndGetId(schoolId, date, name);
+	}
+
+	private String addAndGetId(UUID schoolId, String date, String name) throws Exception {
+		String body = mockMvc.perform(post(URL).with(loggedInAs(Role.ADMIN, schoolId))
 						.contentType(MediaType.APPLICATION_JSON).content(holiday(date, name)))
-				.andExpect(status().isCreated());
+				.andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString();
+		Matcher matcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(body);
+		matcher.find();
+		return matcher.group(1);
 	}
 
 	@Test
@@ -198,15 +209,54 @@ class HolidayControllerTests {
 	}
 
 	@Test
+	void adminCanDeleteAHoliday() throws Exception {
+		String id = addAndGetId(schoolA, "2026-12-25", "Christmas Day");
+		addAs(schoolA, "2026-05-01", "Labour Day");
+
+		mockMvc.perform(delete(URL + "/" + id).with(loggedInAs(Role.ADMIN, schoolA)))
+				.andExpect(status().isNoContent());
+
+		mockMvc.perform(get(URL).with(loggedInAs(Role.ADMIN, schoolA)))
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].name").value("Labour Day"));
+	}
+
+	@Test
+	void deletingTheSameHolidayTwiceIsNotFoundTheSecondTime() throws Exception {
+		String id = addAndGetId(schoolA, "2026-12-25", "Christmas Day");
+
+		mockMvc.perform(delete(URL + "/" + id).with(loggedInAs(Role.ADMIN, schoolA)))
+				.andExpect(status().isNoContent());
+		mockMvc.perform(delete(URL + "/" + id).with(loggedInAs(Role.ADMIN, schoolA)))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void deletingAnUnknownOrOtherSchoolHolidayIsNotFound() throws Exception {
+		String id = addAndGetId(schoolA, "2026-12-25", "Christmas Day");
+
+		mockMvc.perform(delete(URL + "/" + UUID.randomUUID()).with(loggedInAs(Role.ADMIN, schoolA)))
+				.andExpect(status().isNotFound());
+		mockMvc.perform(delete(URL + "/" + id).with(loggedInAs(Role.ADMIN, schoolB)))
+				.andExpect(status().isNotFound());
+
+		assertEquals(1, holidayRepository.count());
+	}
+
+	@Test
 	void nonAdminRolesAreForbidden() throws Exception {
+		String id = addAndGetId(schoolA, "2026-12-25", "Christmas Day");
+
 		for (Role role : new Role[] { Role.HEAD_OF_TRANSPORT, Role.DRIVER, Role.PARENT }) {
 			mockMvc.perform(get(URL).with(loggedInAs(role, schoolA)))
 					.andExpect(status().isForbidden());
 			mockMvc.perform(post(URL).with(loggedInAs(role, schoolA))
-							.contentType(MediaType.APPLICATION_JSON).content(holiday("2026-12-25", "Christmas Day")))
+							.contentType(MediaType.APPLICATION_JSON).content(holiday("2026-05-01", "Labour Day")))
+					.andExpect(status().isForbidden());
+			mockMvc.perform(delete(URL + "/" + id).with(loggedInAs(role, schoolA)))
 					.andExpect(status().isForbidden());
 		}
-		assertEquals(0, holidayRepository.count());
+		assertEquals(1, holidayRepository.count());
 	}
 
 	@Test
@@ -214,5 +264,6 @@ class HolidayControllerTests {
 		mockMvc.perform(get(URL)).andExpect(status().isUnauthorized());
 		mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON).content(holiday("2026-12-25", "Christmas Day")))
 				.andExpect(status().isUnauthorized());
+		mockMvc.perform(delete(URL + "/" + UUID.randomUUID())).andExpect(status().isUnauthorized());
 	}
 }

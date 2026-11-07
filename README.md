@@ -12,7 +12,7 @@ Wassel is a web-based school transport management platform for private schools, 
 ### Prerequisites
 
 - Java 21
-- Node.js 20+ (with npm)
+- Node.js 24+ (with npm) — required by the frontend's test tooling (Vitest, jsdom)
 - Docker (with Docker Compose v2)
 
 ### Run locally
@@ -81,7 +81,8 @@ demos and pre-release verification.
    Then edit `.env.staging` and set real, generated values for `DB_PASSWORD` and
    `JWT_SECRET` — don't reuse the local-dev defaults — and the mail account (see
    [Email on staging](#email-on-staging)). Compose will not start the backend without
-   `MAIL_USERNAME` and `MAIL_PASSWORD`.
+   `MAIL_USERNAME` and `MAIL_PASSWORD`, nor without `ORS_API_KEY`, a free key from
+   [openrouteservice.org](https://openrouteservice.org) that gives routes real road travel times.
 
 2. **Build and start the full stack** (Postgres, backend, frontend):
 
@@ -98,6 +99,23 @@ demos and pre-release verification.
 To stop the stack: `docker compose -f docker-compose.staging.yml down` (add `-v` to
 also delete the staging database's data). Rebuild after code changes with the same
 `up -d --build` command.
+
+### Email through Brevo (hosts that block SMTP)
+
+Some hosts block outbound SMTP, so Gmail can't be used there: Railway allows it only on its Pro plan. For those, the
+backend can send through [Brevo](https://www.brevo.com)'s HTTPS API instead. It is chosen by a setting, and the
+default stays SMTP, so local and staging are unchanged.
+
+| Variable | Value |
+| -------- | ----- |
+| `MAIL_PROVIDER` | `brevo` (the default is `smtp`) |
+| `BREVO_API_KEY` | a Brevo API key (secret; create one under SMTP & API in your Brevo account) |
+| `BREVO_SENDER_EMAIL` | the sender address, which must be verified in Brevo (Senders, Domains & Dedicated IPs); Brevo refuses any other |
+| `BREVO_SENDER_NAME` (optional) | the name recipients see, default `Wassel` |
+
+With `brevo`, `MAIL_USERNAME` and `MAIL_PASSWORD` are not used. Missing the key or the sender stops the backend at
+startup. Never put the key in git, in a chat or in a screenshot; set it only where the backend runs (Railway's
+Variables tab). If a key was ever pasted somewhere shared, delete it in Brevo and create a new one.
 
 ### Email on staging
 
@@ -122,6 +140,140 @@ printed in the logs.
   users; moving to another provider only changes these settings. Each login takes a second or so
   longer than before because the email is sent during the request.
 
+## One site for the app and its API
+
+The sign-in cookies are `HttpOnly` and `SameSite=Strict`, so the browser only sends them when the app and
+the API are on the same site. A frontend on one domain and a backend on another would silently fail to sign
+anyone in. So a deployment serves one origin: the frontend proxies every `/api/*` request to the backend
+(a Next.js rewrite in `frontend/next.config.ts`), and the browser never talks to the backend directly.
+
+Settings, all on the frontend build unless noted (they are read when it is built, not when it runs):
+
+| Setting | Value | Why |
+| ------- | ----- | --- |
+| `NEXT_PUBLIC_API_BASE_URL` | empty | Switches the app to relative `/api/...` URLs. Not set means `http://localhost:8080`, which is what local development uses. |
+| `BACKEND_URL` | the backend's address, for example `https://wassel-api.example.com` | Where the app forwards `/api/*`. The build fails if the line above is empty and this is not set. |
+| `CORS_ALLOWED_ORIGINS` (backend) | the address people open the app at, for example `https://wassel.example.com` | The proxy passes the browser's `Origin` header on, so the backend still checks it: anything not listed gets a 403 on every POST, PUT and DELETE (sign-in included). |
+| `FRONTEND_BASE_URL` (backend) | the same address | Invite and reset links point at it. |
+| `JWT_COOKIE_SECURE` (backend) | `true` | The deployed site is HTTPS. |
+
+On Vercel, set `NEXT_PUBLIC_API_BASE_URL` (empty) and `BACKEND_URL` as environment variables for the build. The staging
+stack does the same through `docker-compose.staging.yml`: its default is empty with `BACKEND_URL=http://backend:8080`,
+so staging behaves like a deployment. To call the backend directly instead, put its URL in
+`NEXT_PUBLIC_API_BASE_URL` and rebuild the frontend.
+
+Local development is unchanged: leave `NEXT_PUBLIC_API_BASE_URL` unset (or `http://localhost:8080`), and the backend's
+default `CORS_ALLOWED_ORIGINS=http://localhost:3000` keeps working.
+
+## Demo data
+
+A new database only has the seeded admin. To show the app with believable data, turn the demo seeder
+on: it fills the school with a head of transportation, a parent, 3 vehicles, 3 drivers (each on a
+vehicle), 10 students with addresses and map pins around Beirut (two of them are the parent's
+children), and school times of 08:00 arrival and 14:30 dismissal.
+
+- **Turn it on** with `DEMO_DATA_ENABLED=true` (off by default) and start the backend. Locally:
+
+  ```bash
+  cd backend
+  DEMO_DATA_ENABLED=true ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+  ```
+
+  On staging, put `DEMO_DATA_ENABLED=true`, a `DEMO_PASSWORD` (10+ characters) and a `DEMO_EMAIL_BASE`
+  in `.env.staging`, then restart the backend.
+- **Safe to repeat.** Running it again adds nothing twice; anything missing is filled in, and school
+  times you already set are kept.
+- **Never on real data.** If the database has any account other than the demo ones and the seeded
+  admin, it does nothing and logs a warning. Set `DEMO_DATA_FORCE=true` to seed anyway.
+- **The accounts.** Every account signs in with the demo password: `DEMO_PASSWORD`, which is
+  `local-demo-password` when you run the `local` profile. The emails are the base address with a tag
+  before the `@`. With the default base `demo@wassel.local`:
+
+  | Account | Email |
+  | ------- | ----- |
+  | Head of transportation | `demo+head@wassel.local` |
+  | Parent (two children) | `demo+parent@wassel.local` |
+  | Drivers | `demo+driver-karim@wassel.local`, `demo+driver-nadia@wassel.local`, `demo+driver-rami@wassel.local` |
+
+  Sign-in emails a code. Locally it is printed in the backend console (look for `Email to`). On
+  staging it is really emailed, so set `DEMO_EMAIL_BASE` to a mailbox you can open that supports `+tags`
+  (Gmail does, for example `you@gmail.com` makes `you+head@gmail.com`), and every demo account's code
+  arrives there. The admin account is the one from `ADMIN_EMAIL` as before.
+
+## Hosted backend (Railway)
+
+The backend and its PostgreSQL database run on [Railway](https://railway.com), in one project with two services.
+
+- **URL:** https://wassel-production.up.railway.app (for example `GET /api/auth/me` answers `401` when signed out).
+- **How it deploys:** the Railway service builds `backend/Dockerfile` (root directory `/backend`) from the connected branch on every push to it. It follows `develop` while Sprint 2 is in progress and switches to `main` at the release, because `main` is still the Sprint 1 code. Change the branch under the service's Settings, "Branch connected to production".
+- **Never edit a migration that has reached `develop`.** Every migration merged to `develop` is applied to the hosted database for good, and Flyway checks each one's checksum at startup. Editing or renumbering one that already ran there (say, amending `V12__x.sql`) makes the service crash-loop on every deploy; add a new `V<n>` file instead. Before switching the branch to `main` at the release, decide what happens to the database: either reset it, or switch only once `main` has caught up with `develop`, because older code must not run against a newer schema.
+- **Profile:** the hosted backend deliberately runs the default Spring profile (`SPRING_PROFILES_ACTIVE` is not set), while the local staging stack runs `staging`. `application-staging.yml` is empty today, so nothing differs. If staging-only settings are ever added there, copy any the hosted backend also needs into Railway variables.
+- **Logs:** open the service in Railway, then Deployments, then "View logs". The Grafana setup under [Logs](#logs) only covers the local staging stack, so look here first when something fails on the hosted backend.
+- **Outbound email needs Railway's Pro plan.** Every sign-in emails a code through Gmail SMTP, and Railway only allows outbound SMTP on the Pro plan and above (see [Railway's networking docs](https://docs.railway.com/networking/outbound-networking)). On the Free, Trial or Hobby plans the connection times out after 5 seconds and sign-in, including the admin's, answers 500 and stays unusable. The `401` from `/api/auth/me` does not send email, so it can't show this problem; only a real sign-in does. After upgrading, redeploy the service so SMTP opens.
+- **Database:** a Railway PostgreSQL service in the same project. The backend reads it through variable references, so no database password is stored in git or typed anywhere. Flyway builds the schema on the first start.
+- **Settings live on Railway, never in git** (service "Wassel", Variables tab):
+
+| Variable | Value |
+| -------- | ----- |
+| `DB_URL` | `jdbc:postgresql://${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}` |
+| `DB_USERNAME` | `${{Postgres.PGUSER}}` |
+| `DB_PASSWORD` | `${{Postgres.PGPASSWORD}}` |
+| `SERVER_PORT` | `8080`, and it must equal the target port of the service's public domain (Settings, Networking). Spring Boot reads it natively. If the two differ the public URL answers 502 |
+| `JWT_SECRET` | a long random string, at least 32 characters (secret) |
+| `JWT_COOKIE_SECURE` | `true` (the default, shown for clarity) |
+| `JWT_EXPIRATION` | `1h` |
+| `LOCKOUT_MAX_FAILURES`, `LOCKOUT_DURATION` (optional) | account lockout: this many wrong passwords in a row lock the account for this long (defaults `5` and `15m`) |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | the first admin, created on the first start; the email must be an inbox you can open because the sign-in code is emailed there (the password is secret, 10+ characters) |
+| `MAIL_USERNAME`, `MAIL_PASSWORD` | the Gmail address that sends the codes and its app password (secret); see [Email on staging](#email-on-staging) |
+| `SCHOOL_LATITUDE`, `SCHOOL_LONGITUDE` | where every route ends (`33.896`, `35.484`) |
+| `CORS_ALLOWED_ORIGINS`, `FRONTEND_BASE_URL` | both `https://wassel-sooty.vercel.app`, with no trailing slash (`https`, not `http`: the backend compares the scheme and host of the origin, so a different one gives a 403 on every POST, sign-in included). See [One site for the app and its API](#one-site-for-the-app-and-its-api) |
+| `ORS_API_KEY` | OpenRouteService key for road times (secret). Required, as in `docker-compose.staging.yml`: without it the hosted demo quietly shows straight-line times |
+| `DEMO_DATA_ENABLED`, `DEMO_PASSWORD`, `DEMO_EMAIL_BASE` (optional) | the demo school, see [Demo data](#demo-data) |
+
+Changing a variable redeploys the service. Changing `ADMIN_EMAIL` or `ADMIN_PASSWORD` later does not change an admin that already exists.
+
+## Hosted frontend (Vercel)
+
+The frontend runs on [Vercel](https://vercel.com).
+
+- **URL:** https://wassel-sooty.vercel.app (the landing page and `/login`).
+- **How it deploys:** the Vercel project `wassel` is connected to this repo with the root directory `frontend`. Every push to the production branch creates a production deployment, and every other branch and pull request gets a preview deployment. The production branch is `develop` while Sprint 2 is in progress and switches to `main` at the release, because `main` is still the Sprint 1 code. Change it under Project Settings, Environments, Production, "Branch Tracking".
+- **Settings live in Vercel, never in git** (Project Settings, Environment Variables, for Production and Preview). They are read when the app is built, so changing one needs a redeploy:
+
+| Variable | Value |
+| -------- | ----- |
+| `NEXT_PUBLIC_API_BASE_URL` | empty (set, not missing), so the browser calls the app's own origin. If it were stored as unset, the app would fall back to `http://localhost:8080` and every API call from the browser would fail while `/` and `/login` still answer 200 |
+| `BACKEND_URL` | the hosted backend, https://wassel-production.up.railway.app (see [Hosted backend (Railway)](#hosted-backend-railway)) |
+
+- **Both halves must know each other's address.** On Railway, `CORS_ALLOWED_ORIGINS=https://wassel-sooty.vercel.app` and `FRONTEND_BASE_URL=https://wassel-sooty.vercel.app` (`https`, no trailing slash). The backend compares origins exactly, so a trailing `/` or `http://` makes every POST, sign-in included, fail with a 403. If the Vercel address ever changes (a custom domain, say), update both there; see [One site for the app and its API](#one-site-for-the-app-and-its-api).
+- **Check a new build reaches the backend through the proxy.** Open https://wassel-sooty.vercel.app/login with the browser's DevTools, Network tab, try a sign-in, and confirm the request goes to `wassel-sooty.vercel.app/api/auth/login` and not to `localhost:8080`.
+- Preview deployments get their own address, which the backend does not allow, so sign-in only works on the production URL.
+
+## Smoke test after a deploy
+
+Run this after every deploy (SCRUM-217). It signs in as each of the four roles on the deployed site, for real (password, then the emailed code), and checks what a broken deploy would break. It needs only Node 18+, no `npm install`:
+
+```bash
+SMOKE_PASSWORD='the demo password' SMOKE_ADMIN_EMAIL=... SMOKE_ADMIN_PASSWORD='the admin password' SMOKE_HEAD_EMAIL=you+head@gmail.com SMOKE_DRIVER_EMAIL=you+driver-karim@gmail.com SMOKE_PARENT_EMAIL=you+parent@gmail.com node scripts/smoke-test.mjs
+```
+
+Use accounts whose inbox you can open: the demo accounts on a `DEMO_EMAIL_BASE` you own (see [Demo data](#demo-data)) and the `ADMIN_EMAIL` admin. For each role the script asks for the code that was just emailed; type it in. `SMOKE_<ROLE>_PASSWORD` overrides `SMOKE_PASSWORD` for one role, and `SMOKE_BASE_URL` points it at another deploy (default `https://wassel-sooty.vercel.app`). Only correct passwords are sent, so a run never counts towards the account lockout.
+
+What it checks:
+
+| Check | Why |
+| ----- | --- |
+| `http://` redirects to `https://`; `/login` loads; the API answers through the site (401 when signed out) | the frontend is up and its `/api` proxy reaches the backend |
+| Each role: the password step answers 204 and the code step 200 with that role | sign-in with 2FA works end to end, email included |
+| `wassel_2fa` and `wassel_token` are `Secure`, `HttpOnly` and `SameSite=Strict` | the cookie flags the security model relies on |
+| The session works (`/api/auth/me`), the role's area page loads, and its own data loads: the head of transportation's routes (the count is printed), the driver's runs for today, the parent's children | each role reaches real data on the real backend |
+| Another role's data answers 403 | the backend keeps the areas apart, not only the screens |
+| Signing out answers 204 and clears the session cookie | sign-out is clean |
+
+Exit code `0` means every check passed for all four roles, `1` that a check failed, `2` that nothing failed but a role was skipped (its email was not set), which is not a pass.
+
+The redirect from `/login` to each role's own area happens in the browser, so check it by hand once per deploy: sign in as each role at <https://wassel-sooty.vercel.app/login> and confirm you land on `/admin`, `/head-of-transport`, `/driver` or `/parent`, that another role's area sends you back to your own, and that "Sign out" returns you to `/login`.
+
 ## Logs
 
 The staging stack collects every container's logs into one place (Loki), searchable in Grafana.
@@ -143,8 +295,19 @@ or `main`:
 
 | Check            | What it runs                                                                      |
 | ---------------- | --------------------------------------------------------------------------------- |
-| `backend-build`  | `mvn -B verify` in `/backend` (compile + tests + package)                         |
-| `frontend-build` | `npm ci`, `npm run lint`, `npm test --if-present`, `npm run build` in `/frontend` |
+| `backend-build`  | `mvn -B verify` in `/backend` (compile + tests + package), uploads `backend-coverage` |
+| `frontend-build` | `npm ci`, `npm audit --audit-level=high`, `npm run lint`, `npm run test:coverage`, `npm run build` in `/frontend`, uploads `frontend-coverage` |
+
+Both jobs upload a coverage report as a build artifact (open the run on GitHub, **Artifacts** at the bottom, download
+and open `index.html`). It is a report only: no minimum is enforced.
+
+**Dependency scanning (SCRUM-253).** `frontend-build` fails on a high or critical known vulnerability in any npm
+package (`npm audit --audit-level=high`, dev packages included), so a newly published advisory can turn an
+unrelated PR red; the fix is to update the package, not to remove the step. `.github/dependabot.yml` opens weekly
+update PRs for Maven (`/backend`), npm (`/frontend`) and GitHub Actions. Dependabot **alerts** (which also cover the
+backend's Maven libraries) are a repository setting that an admin turns on under Settings, Advanced Security.
+`next` is pinned to an exact version and `package.json` overrides the `postcss` that `next` bundles, because the
+bundled one has known high findings; drop the override once a `next` release ships a fixed one.
 
 The same checks can be run locally before pushing:
 

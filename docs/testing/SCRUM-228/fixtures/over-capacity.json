@@ -1,0 +1,22 @@
+{
+  "note": "Illustrative test inputs only \u2014 NOT API schema",
+  "vehicleCapacity": 14,
+  "studentIds": [
+    "student-01",
+    "student-02",
+    "student-03",
+    "student-04",
+    "student-05",
+    "student-06",
+    "student-07",
+    "student-08",
+    "student-09",
+    "student-10",
+    "student-11",
+    "student-12",
+    "student-13",
+    "student-14",
+    "student-15"
+  ],
+  "expectedRequirement": "Do not accept an assignment exceeding vehicleCapacity; do not drop students silently"
+}

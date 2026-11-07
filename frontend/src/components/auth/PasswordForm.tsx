@@ -98,6 +98,7 @@ export function PasswordForm({ mode, token }: PasswordFormProps) {
       }
     >
       <form
+        method="post"
         onSubmit={handleSubmit}
         noValidate
         style={{
