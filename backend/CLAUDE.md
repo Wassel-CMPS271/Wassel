@@ -536,6 +536,12 @@ DTOs live at the API boundary. Controllers must never return entities directly
 
 ## Security
 
+- **The one other open route is `GET /actuator/health`** (SCRUM-285), for the host's health check and uptime monitors.
+  It answers `{"status":"UP"}` (or 503 `DOWN` when the database is lost) with no details, and it is the only
+  actuator endpoint exposed over HTTP (`management.endpoints.web.exposure.include: health`). The mail check is off
+  (`management.health.mail.enabled: false`) because it would open an SMTP connection that Railway blocks. It is not a
+  controller, so it has no `@PreAuthorize` and no row in the role-access table; `HealthEndpointTests` is its test.
+  Don't expose another actuator endpoint without a decision: `env`, `heapdump` and `beans` leak secrets and internals.
 - Every endpoint has a `@PreAuthorize` check (`permitAll()` for the public auth routes,
   `isAuthenticated()` for `/me`). The only public routes are `POST /api/auth/login`,
   `/api/auth/2fa/verify`, `/api/auth/2fa/resend`, `/api/auth/logout`, `/api/auth/forgot-password`
