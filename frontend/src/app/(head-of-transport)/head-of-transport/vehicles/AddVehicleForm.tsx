@@ -82,7 +82,7 @@ export function AddVehicleForm({ onAdd }: AddVehicleFormProps) {
 
   return (
     <Card>
-      <form onSubmit={handleSubmit} noValidate aria-labelledby="add-vehicle-heading">
+      <form method="post" onSubmit={handleSubmit} noValidate aria-labelledby="add-vehicle-heading">
         <h2
           id="add-vehicle-heading"
           className="text-lg font-semibold"

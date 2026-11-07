@@ -60,7 +60,7 @@ export function HeadOfTransportForm({ onInvite }: HeadOfTransportFormProps) {
 
   return (
     <Card>
-      <form onSubmit={handleSubmit} noValidate aria-labelledby="head-of-transport-heading">
+      <form method="post" onSubmit={handleSubmit} noValidate aria-labelledby="head-of-transport-heading">
         <h2
           id="head-of-transport-heading"
           className="text-lg font-semibold"

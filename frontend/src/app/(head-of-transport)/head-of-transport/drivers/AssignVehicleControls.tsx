@@ -150,7 +150,7 @@ export function AssignVehicleControls({
 
   if (mode === "picking") {
     return (
-      <form
+      <form method="post"
         onSubmit={handleChooseSubmit}
         onKeyDown={handlePickerKeyDown}
         className="flex items-end flex-wrap"

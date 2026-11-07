@@ -74,7 +74,7 @@ export function HalfDaysSection({ pushToast }: HalfDaysSectionProps) {
   return (
     <>
       <Card>
-        <form onSubmit={handleSubmit} noValidate aria-labelledby="add-half-day-heading">
+        <form method="post" onSubmit={handleSubmit} noValidate aria-labelledby="add-half-day-heading">
           <h2
             id="add-half-day-heading"
             className="text-lg font-semibold"

@@ -191,7 +191,7 @@ export function AddDriverForm({ onAdd }: AddDriverFormProps) {
               transition={{ duration: 0.2, ease: "easeOut" }}
             >
               <Card>
-                <form onSubmit={handleSubmit} noValidate aria-labelledby="add-driver-heading">
+                <form method="post" onSubmit={handleSubmit} noValidate aria-labelledby="add-driver-heading">
                   <h2
                     id="add-driver-heading"
                     className="text-lg font-semibold"
