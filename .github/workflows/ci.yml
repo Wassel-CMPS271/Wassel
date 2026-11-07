@@ -83,7 +83,7 @@ jobs:
         working-directory: backend
       - name: Upload test reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-test-reports
           path: backend/target/surefire-reports/
@@ -91,7 +91,7 @@ jobs:
       # JaCoCo writes the HTML report during verify (SCRUM-151). A report only: nothing fails on a low number.
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-coverage
           path: backend/target/site/jacoco/
@@ -125,7 +125,7 @@ jobs:
         working-directory: frontend
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-coverage
           path: frontend/coverage/
@@ -223,7 +223,7 @@ jobs:
           test ! -f e2e-artifacts/credentials.json
       - name: Upload browser report and isolated stack logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: routing-e2e-diagnostics-${{ matrix.scenario }}
           retention-days: 7
