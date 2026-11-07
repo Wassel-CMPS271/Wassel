@@ -71,7 +71,7 @@ export default function ParentsPage() {
   return <main className="mx-auto flex flex-col" style={{ padding: spacing.lg, gap: spacing.lg, maxWidth: sizing.pageMaxWidth, color: darkTheme.text.primary }}>
     <header><h1 className="text-2xl font-semibold">Parent Management</h1>
       <p style={{ color: darkTheme.text.secondary }}>Invite parents to set their password, then link them to students in the student editor.</p></header>
-    <Card><form onSubmit={submit} noValidate className="flex flex-col" style={{ gap: spacing.md }} aria-label="Invite parent">
+    <Card><form method="post" onSubmit={submit} noValidate className="flex flex-col" style={{ gap: spacing.md }} aria-label="Invite parent">
       <h2 className="text-lg font-semibold">Invite a parent</h2>
       <Input ref={emailRef} label="Parent email" type="email" autoComplete="email" maxLength={255} value={email} onChange={e => setEmail(e.target.value)} error={error} disabled={saving} required />
       <Button type="submit" disabled={saving}>{saving ? "Sending invitation…" : "Send invitation"}</Button>
