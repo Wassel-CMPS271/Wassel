@@ -8,7 +8,7 @@
 // Proposed endpoints (not implemented; see the contract for open questions):
 //   GET    /api/driver/runs/{runId}/location-sharing              -> LocationSharing
 //   PUT    /api/driver/runs/{runId}/location-sharing  { enabled } -> LocationSharing
-//   DELETE /api/driver/runs/{runId}/location-sharing               -> 204
+//          (also how sharing is turned off; DELETE is only an alternative in the contract)
 //   POST   /api/driver/runs/{runId}/positions          Position   -> 204
 
 export interface LocationSharing {

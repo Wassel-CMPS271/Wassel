@@ -50,15 +50,15 @@ replay. Both are new; nothing about `status` changes.
 |---|---|---|
 | `status` | `ConfirmationStatus` | unchanged |
 | `clientRequestId` | string | an idempotency key the client generates once per confirmation attempt and resends on every retry of that same attempt (see [Confirmation replay and idempotency](#confirmation-replay-and-idempotency)). Not a header: it travels in the body like the rest of the request |
-| `occurredAt` | moment or null | **optional, OPEN QUESTION** — see [Open questions](#open-questions). When sent, the time the driver tapped the button on their device, for the server to use instead of its own receive time, clamped so a late replay doesn't misrecord progress |
+| `occurredAt` | moment, optional (omitted, not null) | **OPEN QUESTION** — see [Open questions](#open-questions). When sent, the time the driver tapped the button on their device, for the server to use instead of its own receive time, clamped so a late replay doesn't misrecord progress |
 
 ## Endpoints
 
 | Method | Path | Role | Body | Success | Status |
 |---|---|---|---|---|---|
 | GET | `/api/driver/runs/{runId}/location-sharing` | DRIVER | | 200 `LocationSharing` | proposed |
-| PUT | `/api/driver/runs/{runId}/location-sharing` | DRIVER | `{ enabled: true }` | 200 `LocationSharing` | proposed |
-| DELETE | `/api/driver/runs/{runId}/location-sharing` | DRIVER | | 204 | proposed |
+| PUT | `/api/driver/runs/{runId}/location-sharing` | DRIVER | `{ enabled }` | 200 `LocationSharing` | proposed; the client turns sharing off with `{ enabled: false }` too |
+| DELETE | `/api/driver/runs/{runId}/location-sharing` | DRIVER | | 204 | alternative to `PUT { enabled: false }`, not used by the client (open question) |
 | POST | `/api/driver/runs/{runId}/positions` | DRIVER | `Position` | 204 | proposed |
 | PUT | `/api/driver/runs/{runId}/students/{studentId}/confirmation` | DRIVER | `ConfirmationRequest` (extended) | 200 `Run` | extends an existing endpoint (`runs.md`) |
 
@@ -72,9 +72,9 @@ The confirmation endpoint's path and success shape are unchanged; only the body 
 - Turning sharing on (`PUT { enabled: true }`) is allowed only while the run is `IN_PROGRESS`
   (SCRUM-273's decision: GPS is tied to an active, consented run, never to the driver in general).
   Any other state is **409**, same wording style as `runs.md`'s run-state errors.
-- Turning sharing off (`DELETE`, or `PUT { enabled: false }` — **pick one**, see
-  [Open questions](#open-questions)) is always allowed for one of today's runs, whatever its state,
-  so a driver can always withdraw consent.
+- Turning sharing off is `PUT { enabled: false }` (what `DriverGpsApi.setSharing` sends; `DELETE`
+  is listed above as an alternative, see [Open questions](#open-questions)). It is always allowed for
+  one of today's runs, whatever its state, so a driver can always withdraw consent.
 - `GET` answers `{ enabled: false, since: null }` for a run sharing has never been turned on for;
   it is not a 404 just because nothing has happened yet.
 - Sharing does not carry over between runs or between the morning and afternoon run of the same
@@ -128,7 +128,7 @@ what each status means for the UI before either is built.
 | In flight | `sending` | A request for it is in progress |
 | 200, matches what was tapped | `synced` | Recorded (or already was, via `clientRequestId` dedup); shown briefly, then the item is dropped |
 | 404, 409 from the confirmation table, or any other answer saying the server disagrees with what the UI expected | `conflict` | Something changed server-side since the tap (the run ended, the student was moved, a later status already exists). The day is refetched and the server's own `detail` is shown; dismissing only clears the local item, never retries it |
-| 422 (key reused for a different request) | `conflict` | Should not happen from normal use; treated the same as above rather than surfaced as a client bug the driver can do nothing about |
+| 400, 403, 422 (422: key reused for a different request), other 4xx | `error` (rejected) | The server refused the request itself; never sent again automatically, only on the driver's Try again |
 | Network failure, timeout (see `client.ts`'s `timeoutMs`), or 5xx/429 | `error` | Retryable: "Try again" resends the same `clientRequestId` |
 | 401 | — (not shown per item) | Pauses the whole queue; the driver is routed to sign in again, and items are kept for when they're signed in again |
 

@@ -21,6 +21,13 @@ vi.mock("@/lib/api/runs", () => ({
   confirmStudent: vi.fn(),
 }));
 
+// useOfflineQueue (SCRUM-273) needs a signed-in user; confirmationReplayApi stays
+// null in this file (SCRUM-263 not merged), so these tests exercise the same
+// online-only path they always did — see page.queue.test.tsx for the queue itself.
+vi.mock("@/components/auth/RoleGuard", () => ({
+  useCurrentUser: () => ({ id: "driver-1", email: "karim@wassel.local", role: "DRIVER", schoolId: "s-1" }),
+}));
+
 const DAY = sample as unknown as DriverDay;
 
 beforeEach(() => {
