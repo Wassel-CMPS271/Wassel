@@ -247,3 +247,65 @@ describe("request", () => {
     await expect(request("/api/auth/me")).rejects.toThrow("Failed to fetch");
   });
 });
+
+describe("request timeoutMs", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("sends no signal when timeoutMs is not given", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, json: () => Promise.resolve({}) });
+
+    await request("/api/auth/me");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ signal: undefined }),
+    );
+  });
+
+  it("sends an AbortSignal when timeoutMs is given", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, json: () => Promise.resolve({}) });
+
+    await request("/api/auth/me", { timeoutMs: 5000 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  // A real fetch rejects with a DOMException named "AbortError" once its signal
+  // aborts; the mock here does the same so the test matches what callers see.
+  function fetchThatRejectsOnAbort() {
+    return vi.fn((_url: string, init?: RequestInit) => {
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+  }
+
+  it("aborts and rejects once timeoutMs elapses with no answer", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", fetchThatRejectsOnAbort());
+
+    const pending = request("/api/auth/me", { timeoutMs: 3000 });
+    const assertion = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(3000);
+
+    await assertion;
+  });
+
+  it("clears the timeout once the response arrives, so it never fires later", async () => {
+    vi.useFakeTimers();
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+    mockFetchOnce({ ok: true, status: 200, json: () => Promise.resolve({}) });
+
+    await request("/api/auth/me", { timeoutMs: 3000 });
+
+    expect(clearSpy).toHaveBeenCalled();
+  });
+});
