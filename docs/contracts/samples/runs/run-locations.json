@@ -1,0 +1,18 @@
+[
+  {
+    "runId": "50000000-0000-4000-8000-000000000001",
+    "status": "LIVE",
+    "position": {
+      "latitude": 33.8961,
+      "longitude": 35.4823,
+      "accuracyMeters": 12.5,
+      "receivedAt": "2026-10-21T04:15:50Z",
+      "ageSeconds": 10
+    }
+  },
+  {
+    "runId": "50000000-0000-4000-8000-000000000012",
+    "status": "UNAVAILABLE",
+    "position": null
+  }
+]
