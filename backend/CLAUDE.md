@@ -480,6 +480,23 @@ that's the structure this codebase moved away from.
   arrival time from the same `RouteService#schedule` the route's own stops use, one read per distinct route), none when the
   child has no route — the same "no route" treatment `findStudentRoute` (`absences`) gives a
   vanished route.
+- `addressrequests` — a parent asks to change a child's pickup address and the head of transportation decides it
+  (SCRUM-269). Shapes and rules are in `docs/contracts/address-requests.md`. A new module because it has its own table
+  (`address_requests`, migration V11, no foreign keys) and two controllers (`ParentAddressRequestController`,
+  `HeadOfTransportAddressRequestController`); it reads and writes the student only through `StudentService`
+  (`findChildOf`, `getStudent`, `updateAddress`, `updateLocation`), and nothing depends on it. The student's name and
+  address and the parent's email are copied into the request, so it reads the same later. **One pending request per
+  child**: `submit` takes the same per-student advisory lock as absences (`AddressRequestRepository.lockStudent`) before
+  checking for a pending one, with a partial unique index (`status = 'PENDING'`) as the backstop. **A decision takes the
+  request's row lock** (`findLockedBySchoolIdAndId`, like a run's confirmation), so two decisions of one request run
+  one after the other and the second is a 409. `approve` runs in one transaction: it checks the student is active
+  (409, the request stays pending), saves the address through `StudentService.updateAddress` (geocoded unless the student
+  has a manual pin, exactly like the head's own edit) and, if the parent sent a pin, `updateLocation` (a manual pin),
+  then marks the request approved. `reject` never touches the student, so it works for an inactive one too. A parent
+  lists only the requests they sent for their own child. The status is stored as `PENDING`/`APPROVED`/`REJECTED` and
+  sent lower case, like a student's; the `status` filter is parsed in the controller, an unknown one a 400 on `status`.
+  Known limits are in the contract: a manual pin stays when the request has none, a request stays with the parent who
+  sent it after a re-link, no withdrawing and no notification.
 
 ## Where things go
 

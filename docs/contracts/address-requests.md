@@ -53,7 +53,7 @@ Agreed by Moustafa (SCRUM-269, owner of the endpoints). It replaces the draft th
 ### Listing
 
 - A parent sees only the requests **they** sent for that child, all statuses, newest first.
-- The head of transportation sees their school's requests with the given `status` (`pending` when omitted), oldest first. An unknown `status` is 400.
+- The head of transportation sees their school's requests with the given `status` (`pending` when omitted), oldest first. An unknown `status` is 400 on `status`.
 
 ### Deciding
 
@@ -71,9 +71,9 @@ Agreed by Moustafa (SCRUM-269, owner of the endpoints). It replaces the draft th
 | No session | 401 | empty |
 | Signed in with another role | 403 | `detail` |
 | A child that is not the parent's, a request of another school, an unknown id | 404 | `detail` |
-| Invalid `address`, `reason` or pin | 400 | `errors: { field: message }` |
+| Invalid `address`, `reason`, pin or `status` filter | 400 | `errors: { field: message }` |
 | A body that is not JSON | 400 | `detail: "Malformed request body"` |
-| An unknown `status` filter, or an id in the path that does not parse | 400 | `detail: "Invalid request parameter"` |
+| An id in the path that does not parse | 400 | `detail: "Invalid request parameter"` |
 | The child already has a pending request | 409 | `detail` |
 | The child is not active | 409 | `errors: { studentId: message }` |
 | Approve or reject a request that is not pending | 409 | `detail`, naming the status and `decidedAt` |
