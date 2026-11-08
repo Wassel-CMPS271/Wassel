@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, MotionConfig } from "framer-motion";
+import { addressRequestsApi } from "@/lib/api/addressRequests";
 import { getParents, type Parent } from "@/lib/api/parents";
 import { getRouteAssignments, type RouteAssignment, type RouteAssignments } from "@/lib/api/routes";
 import { addStudentWithAddress, getStudents, importStudents, matchesFilters, setStudentLocation, updateStudentAddress, type ImportRowResult, type NewStudent, type NewStudentWithAddress, type Student } from "@/lib/api/students";
 import { AddStudentForm } from "./AddStudentForm";
+import { AddressRequestsSection } from "./AddressRequestsSection";
 import { ImportStudentsForm } from "./ImportStudentsForm";
 import { StudentFilters, type RouteFilterValue, type RoutesStatus, type StatusFilterValue } from "./StudentFilters";
 import { StudentListItem } from "./StudentListItem";
@@ -177,6 +179,17 @@ export default function StudentsPage() {
             <AddStudentForm onAdd={handleAdd} />
           </div>
         </header>
+
+        <AddressRequestsSection
+          api={addressRequestsApi}
+          // An approval may change the student's saved address or pin
+          // (SCRUM-269's decision, not this screen's); reload the roster so
+          // the row shows whatever actually got saved, same as any other
+          // save elsewhere on this page.
+          onApproved={() => {
+            void loadStudents();
+          }}
+        />
 
         <section aria-labelledby="student-list-heading">
           <div className="flex items-center" style={{ gap: spacing.sm, marginBottom: spacing.sm }}>
