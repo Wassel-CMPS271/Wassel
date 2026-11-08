@@ -3,17 +3,15 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ApiError } from "@/lib/api/errors";
-import type { Run } from "@/lib/api/runs";
-// Sample calls until SCRUM-234 is merged; see the comments in runs.sample.ts.
-import { endRunSample, startRunSample } from "@/lib/api/runs.sample";
+import { endRun, startRun, type Run } from "@/lib/api/runs";
 import { colors, darkTheme, sizing, spacing } from "@/styles/tokens";
 import { stopStates } from "./today";
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 
 const ACTIONS = {
-  NOT_STARTED: { label: "Start run", pendingLabel: "Starting…", call: startRunSample },
-  IN_PROGRESS: { label: "End run", pendingLabel: "Ending…", call: endRunSample },
+  NOT_STARTED: { label: "Start run", pendingLabel: "Starting…", call: startRun },
+  IN_PROGRESS: { label: "End run", pendingLabel: "Ending…", call: endRun },
 } as const;
 
 export function actionError(error: unknown): string {

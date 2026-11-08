@@ -23,6 +23,7 @@ function stop(position: number, absent = false, status: ConfirmationStatus | nul
     guardianPhone: "+961 3 000 000",
     absent,
     confirmation: status ? { status, at: "2026-10-21T04:00:00Z" } : null,
+    removedFromRoute: false,
   } as RunStop;
 }
 

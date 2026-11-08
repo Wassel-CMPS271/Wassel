@@ -20,6 +20,7 @@ const BASE_STOP: RunStop = {
   guardianPhone: "+96170123456",
   absent: false,
   confirmation: null,
+  removedFromRoute: false,
 };
 
 function renderCard(stop: RunStop) {

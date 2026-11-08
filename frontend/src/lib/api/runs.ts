@@ -42,6 +42,11 @@ export interface RunStop extends Stop {
   absent: boolean;
   // The latest confirmation, or null when there is none yet.
   confirmation: Confirmation | null;
+  // true for a student who has a confirmation on this run and is no longer on
+  // the route: they stay on the run, after the route's current stops, so a
+  // child who was picked up never disappears from the bus they are on. false
+  // for every other stop (docs/contracts/runs.md#runstop).
+  removedFromRoute: boolean;
 }
 
 export interface RunCounts {

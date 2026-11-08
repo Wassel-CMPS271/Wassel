@@ -4,10 +4,13 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@/components/ui/Button";
 import { LicensePlate } from "@/components/ui/LicensePlate";
 import { DriverIcon } from "@/components/ui/icons";
-import type { ConfirmationStatus, DriverDay, Run } from "@/lib/api/runs";
-// Sample data until SCRUM-233 and SCRUM-235 are merged; see the comments in
-// runs.sample.ts.
-import { confirmStudentSample, getDriverTodaySample } from "@/lib/api/runs.sample";
+import {
+  confirmStudent,
+  getDriverToday,
+  type ConfirmationStatus,
+  type DriverDay,
+  type Run,
+} from "@/lib/api/runs";
 import { colors, darkTheme, radius, sizing, spacing } from "@/styles/tokens";
 import { RunAction, actionError } from "./RunAction";
 import { StopCard } from "./StopCard";
@@ -40,7 +43,7 @@ export default function DriverTodayPage() {
     let active = true;
     setDay(null);
     setLoadFailed(false);
-    getDriverTodaySample()
+    getDriverToday()
       .then((result) => {
         if (active) setDay(result);
       })
@@ -150,7 +153,7 @@ function Today({
     setPending((current) => new Map(current).set(key, status));
     setErrors((current) => without(current, key));
     try {
-      const updated = await confirmStudentSample(runId, studentId, status);
+      const updated = await confirmStudent(runId, studentId, status);
       onStopChange(updated, studentId);
     } catch (err) {
       setErrors((current) => new Map(current).set(key, { status, message: actionError(err) }));
