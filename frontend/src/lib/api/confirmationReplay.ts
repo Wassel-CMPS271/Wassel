@@ -27,8 +27,14 @@ export interface ConfirmationReplayInput {
   occurredAt?: string;
 }
 
+export interface ConfirmationReplayOptions {
+  // Passed through to request()'s timeoutMs, so a stuck attempt rejects (and is
+  // retried with the same clientRequestId) instead of blocking the queue.
+  timeoutMs?: number;
+}
+
 export interface ConfirmationReplayApi {
-  confirm(input: ConfirmationReplayInput): Promise<Run>;
+  confirm(input: ConfirmationReplayInput, options?: ConfirmationReplayOptions): Promise<Run>;
 }
 
 // SCRUM-263 not merged. While this is null, the offline queue (SCRUM-273) has nothing
