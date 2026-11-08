@@ -20,7 +20,7 @@ public interface ConfirmationRepository extends JpaRepository<Confirmation, UUID
 	List<Confirmation> findBySchoolIdAndRunIdAndStudentId(UUID schoolId, UUID runId, UUID studentId);
 
 	/**
-	 * Saves the status for the student on the run, or leaves the row that is there. One statement, so a retry
+	 * Saves the status for the student on the run, or leaves the row that is there, and returns 1 when it saved one (0 for a retry). One statement, so a retry
 	 * keeps the first time; catching the unique-key violation instead would poison the surrounding PostgreSQL
 	 * transaction. Callers have already checked the run and the student belong to the school.
 	 */
@@ -30,7 +30,7 @@ public interface ConfirmationRepository extends JpaRepository<Confirmation, UUID
 			VALUES (gen_random_uuid(), :schoolId, :runId, :studentId, :status, :now)
 			ON CONFLICT (run_id, student_id, status) DO NOTHING
 			""", nativeQuery = true)
-	void insertIfMissing(@Param("schoolId") UUID schoolId, @Param("runId") UUID runId,
+	int insertIfMissing(@Param("schoolId") UUID schoolId, @Param("runId") UUID runId,
 			@Param("studentId") UUID studentId, @Param("status") String status, @Param("now") Instant now);
 
 	/** The student's confirmations on the school's runs of that date that are in progress, with each run's route. */
