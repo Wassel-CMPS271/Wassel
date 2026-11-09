@@ -7,7 +7,7 @@ import { MotionConfig, motion } from "framer-motion";
 import { RoleGuard } from "@/components/auth/RoleGuard";
 import { UserBlock } from "@/components/auth/UserBlock";
 import { BrandMark } from "@/components/ui/BrandMark";
-import { CalendarIcon, ClockIcon } from "@/components/ui/icons";
+import { CalendarIcon, ClockIcon, MailIcon } from "@/components/ui/icons";
 import { colors, darkPageBackground, darkTheme, radius, sizing, spacing } from "@/styles/tokens";
 
 interface NavItem {
@@ -20,6 +20,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: "School times", href: "/admin/school-times", enabled: true, Icon: ClockIcon },
   { label: "School calendar", href: "/admin/calendar", enabled: true, Icon: CalendarIcon },
+  { label: "Head of transportation", href: "/admin/head-of-transport", enabled: true, Icon: MailIcon },
 ];
 
 // Colors go through CSS variables so Tailwind's hover: variants can

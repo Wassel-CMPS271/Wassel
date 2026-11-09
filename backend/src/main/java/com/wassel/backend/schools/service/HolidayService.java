@@ -13,6 +13,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,6 +40,12 @@ public class HolidayService {
 		return holidayRepository.findBySchoolIdOrderByDateAsc(schoolId).stream()
 				.map(this::toResponse)
 				.toList();
+	}
+
+	/** For the runs module: whether the school is closed on this date by its holiday calendar. */
+	@Transactional(readOnly = true)
+	public boolean isHoliday(UUID schoolId, LocalDate date) {
+		return holidayRepository.existsBySchoolIdAndDate(schoolId, date);
 	}
 
 	@Transactional

@@ -208,6 +208,7 @@ The backend and its PostgreSQL database run on [Railway](https://railway.com), i
 - **How it deploys:** the Railway service builds `backend/Dockerfile` (root directory `/backend`) from the connected branch on every push to it. It follows `develop` while Sprint 2 is in progress and switches to `main` at the release, because `main` is still the Sprint 1 code. Change the branch under the service's Settings, "Branch connected to production".
 - **Never edit a migration that has reached `develop`.** Every migration merged to `develop` is applied to the hosted database for good, and Flyway checks each one's checksum at startup. Editing or renumbering one that already ran there (say, amending `V12__x.sql`) makes the service crash-loop on every deploy; add a new `V<n>` file instead. Before switching the branch to `main` at the release, decide what happens to the database: either reset it, or switch only once `main` has caught up with `develop`, because older code must not run against a newer schema.
 - **Profile:** the hosted backend deliberately runs the default Spring profile (`SPRING_PROFILES_ACTIVE` is not set), while the local staging stack runs `staging`. `application-staging.yml` is empty today, so nothing differs. If staging-only settings are ever added there, copy any the hosted backend also needs into Railway variables.
+- **Health check:** the backend answers `GET /actuator/health` without a sign-in: `{"status":"UP"}`, or 503 `DOWN` if the database is lost. Set it as the service's healthcheck under Settings, "Healthcheck Path" (`/actuator/health`), so Railway only switches to a new deployment once it is healthy and restarts one that is not. Point an uptime monitor at `https://wassel-production.up.railway.app/actuator/health` too. It says nothing else (no versions, no database name).
 - **Logs:** open the service in Railway, then Deployments, then "View logs". The Grafana setup under [Logs](#logs) only covers the local staging stack, so look here first when something fails on the hosted backend.
 - **Outbound email needs Railway's Pro plan.** Every sign-in emails a code through Gmail SMTP, and Railway only allows outbound SMTP on the Pro plan and above (see [Railway's networking docs](https://docs.railway.com/networking/outbound-networking)). On the Free, Trial or Hobby plans the connection times out after 5 seconds and sign-in, including the admin's, answers 500 and stays unusable. The `401` from `/api/auth/me` does not send email, so it can't show this problem; only a real sign-in does. After upgrading, redeploy the service so SMTP opens.
 - **Database:** a Railway PostgreSQL service in the same project. The backend reads it through variable references, so no database password is stored in git or typed anywhere. Flyway builds the schema on the first start.
@@ -222,6 +223,7 @@ The backend and its PostgreSQL database run on [Railway](https://railway.com), i
 | `JWT_SECRET` | a long random string, at least 32 characters (secret) |
 | `JWT_COOKIE_SECURE` | `true` (the default, shown for clarity) |
 | `JWT_EXPIRATION` | `1h` |
+| `LOCKOUT_MAX_FAILURES`, `LOCKOUT_DURATION` (optional) | account lockout: this many wrong passwords in a row lock the account for this long (defaults `5` and `15m`) |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | the first admin, created on the first start; the email must be an inbox you can open because the sign-in code is emailed there (the password is secret, 10+ characters) |
 | `MAIL_USERNAME`, `MAIL_PASSWORD` | the Gmail address that sends the codes and its app password (secret); see [Email on staging](#email-on-staging) |
 | `SCHOOL_LATITUDE`, `SCHOOL_LONGITUDE` | where every route ends (`33.896`, `35.484`) |
@@ -248,6 +250,31 @@ The frontend runs on [Vercel](https://vercel.com).
 - **Check a new build reaches the backend through the proxy.** Open https://wassel-sooty.vercel.app/login with the browser's DevTools, Network tab, try a sign-in, and confirm the request goes to `wassel-sooty.vercel.app/api/auth/login` and not to `localhost:8080`.
 - Preview deployments get their own address, which the backend does not allow, so sign-in only works on the production URL.
 
+## Smoke test after a deploy
+
+Run this after every deploy (SCRUM-217). It signs in as each of the four roles on the deployed site, for real (password, then the emailed code), and checks what a broken deploy would break. It needs only Node 18+, no `npm install`:
+
+```bash
+SMOKE_PASSWORD='the demo password' SMOKE_ADMIN_EMAIL=... SMOKE_ADMIN_PASSWORD='the admin password' SMOKE_HEAD_EMAIL=you+head@gmail.com SMOKE_DRIVER_EMAIL=you+driver-karim@gmail.com SMOKE_PARENT_EMAIL=you+parent@gmail.com node scripts/smoke-test.mjs
+```
+
+Use accounts whose inbox you can open: the demo accounts on a `DEMO_EMAIL_BASE` you own (see [Demo data](#demo-data)) and the `ADMIN_EMAIL` admin. For each role the script asks for the code that was just emailed; type it in. `SMOKE_<ROLE>_PASSWORD` overrides `SMOKE_PASSWORD` for one role, and `SMOKE_BASE_URL` points it at another deploy (default `https://wassel-sooty.vercel.app`). Only correct passwords are sent, so a run never counts towards the account lockout.
+
+What it checks:
+
+| Check | Why |
+| ----- | --- |
+| `http://` redirects to `https://`; `/login` loads; the API answers through the site (401 when signed out) | the frontend is up and its `/api` proxy reaches the backend |
+| Each role: the password step answers 204 and the code step 200 with that role | sign-in with 2FA works end to end, email included |
+| `wassel_2fa` and `wassel_token` are `Secure`, `HttpOnly` and `SameSite=Strict` | the cookie flags the security model relies on |
+| The session works (`/api/auth/me`), the role's area page loads, and its own data loads: the head of transportation's routes (the count is printed), the driver's runs for today, the parent's children | each role reaches real data on the real backend |
+| Another role's data answers 403 | the backend keeps the areas apart, not only the screens |
+| Signing out answers 204 and clears the session cookie | sign-out is clean |
+
+Exit code `0` means every check passed for all four roles, `1` that a check failed, `2` that nothing failed but a role was skipped (its email was not set), which is not a pass.
+
+The redirect from `/login` to each role's own area happens in the browser, so check it by hand once per deploy: sign in as each role at <https://wassel-sooty.vercel.app/login> and confirm you land on `/admin`, `/head-of-transport`, `/driver` or `/parent`, that another role's area sends you back to your own, and that "Sign out" returns you to `/login`.
+
 ## Logs
 
 The staging stack collects every container's logs into one place (Loki), searchable in Grafana.
@@ -269,8 +296,19 @@ or `main`:
 
 | Check            | What it runs                                                                      |
 | ---------------- | --------------------------------------------------------------------------------- |
-| `backend-build`  | `mvn -B verify` in `/backend` (compile + tests + package)                         |
-| `frontend-build` | `npm ci`, `npm run lint`, `npm test --if-present`, `npm run build` in `/frontend` |
+| `backend-build`  | `mvn -B verify` in `/backend` (compile + tests + package), uploads `backend-coverage` |
+| `frontend-build` | `npm ci`, `npm audit --audit-level=high`, `npm run lint`, `npm run test:coverage`, `npm run build` in `/frontend`, uploads `frontend-coverage` |
+
+Both jobs upload a coverage report as a build artifact (open the run on GitHub, **Artifacts** at the bottom, download
+and open `index.html`). It is a report only: no minimum is enforced.
+
+**Dependency scanning (SCRUM-253).** `frontend-build` fails on a high or critical known vulnerability in any npm
+package (`npm audit --audit-level=high`, dev packages included), so a newly published advisory can turn an
+unrelated PR red; the fix is to update the package, not to remove the step. `.github/dependabot.yml` opens weekly
+update PRs for Maven (`/backend`), npm (`/frontend`) and GitHub Actions. Dependabot **alerts** (which also cover the
+backend's Maven libraries) are a repository setting that an admin turns on under Settings, Advanced Security.
+`next` is pinned to an exact version and `package.json` overrides the `postcss` that `next` bundles, because the
+bundled one has known high findings; drop the override once a `next` release ships a fixed one.
 
 The same checks can be run locally before pushing:
 

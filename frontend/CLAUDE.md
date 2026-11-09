@@ -68,7 +68,7 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
 ## API calls
 
 - Every call to the backend goes through `request()` in `src/lib/api/client.ts`. Don't call `fetch` directly. It sends the session cookies (`credentials: "include"`), prefixes `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8080`; an empty value counts as unset; it is baked in at build time, so staging passes it as a Docker build arg), and sends `Content-Type` only when there is a body, because the backend's CORS allows only that header.
-- One module per backend area in `src/lib/api/`; `auth.ts` is the model. Every module calls the real backend; there are no mocks or sample clients. The one exception: while a Sprint 3 endpoint (`docs/contracts/runs.md`) is not merged, its screen may use a temporary sample client built from `docs/contracts/samples/`, and the PR that wires the real call deletes it. The two workarounds are in `routes.ts`, and both get every route (one request per route): `listUnassignedStudents()`, because the backend has no endpoint for students on no route, and `getRouteAssignments()`, which says which route each student is on so the students screen can filter by route in memory, because the students list's `route` filter still reads the old text column.
+- One module per backend area in `src/lib/api/`; `auth.ts` is the model. Every module calls the real backend; there are no mocks or sample clients. The one exception: while a Sprint 3 endpoint (`docs/contracts/runs.md`) is not merged, its screen may use a temporary sample client built from `docs/contracts/samples/`, and the PR that wires the real call deletes it. The Today screen (SCRUM-255) is the one using it now: it imports `getRunsDay`/`getAbsentStudents` from `lib/api/runsSample.ts` (the contract's sample JSON, copied to `lib/api/__fixtures__/runs/`), while the real calls already exist in `runs.ts`; going live means changing that one import and deleting `runsSample.ts` and the fixtures. The two workarounds are in `routes.ts`, and both get every route (one request per route): `listUnassignedStudents()`, because the backend has no endpoint for students on no route, and `getRouteAssignments()`, which says which route each student is on so the students screen can filter by route in memory, because the students list's `route` filter still reads the old text column.
 - A failed call throws `ApiValidationError` (a 400 or 409 with an `errors` map: show each message next to its field) or `ApiError` (any other non-2xx: `status` says what to do, `message` is the backend's `detail`, and `studentIds` is the optimize 409's list of students without a pin). A network failure rejects as it is. Forms say "Something went wrong. Please try again." for anything they don't handle by status.
 - The auth cookies are `HttpOnly` and `SameSite=Strict`. The frontend never reads them, and it must be served from the same site as the API: locally that is `localhost` on two ports, and in a deployment it is the `/api/*` proxy above. The proxy forwards the browser's `Origin` header, so the backend's `CORS_ALLOWED_ORIGINS` must still list the public address of the app, or every POST, PUT and DELETE is refused with a 403.
 
@@ -90,7 +90,16 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
   hitting a real backend.
 - `npm test` runs once and exits non-zero on a failure (CI's `frontend-build` job runs this
   and fails the build). `npm run test:watch` re-runs on save during development.
+- `npm run test:coverage` is the same run plus a v8 coverage report (a text summary and an HTML report in
+  `frontend/coverage/`, git-ignored). CI's `frontend-build` job runs it instead of `npm test` and uploads the
+  folder as the `frontend-coverage` artifact. It is a report only: there are no thresholds, so a low number
+  never fails the build.
 - `vitest.setup.ts` loads the jest-dom matchers (`toBeInTheDocument`, etc.) for every test.
+
+## Revoking access
+
+- `RevokeAccessControl` (`components/ui/`) is the Revoke / Restore access button for a person (SCRUM-98): one button, then an inline question with Confirm and Cancel (Escape cancels, focus goes to Confirm and back to the button). Both directions ask first. The caller's `onRevoke`/`onRestore` must report their own failures (a toast or an alert), because the control goes back to the button whatever happened.
+- The drivers roster and the parents list use it. A revoked driver arrives from the API as `status: "deactivated"` and is shown as "Revoked"; a parent as `status: "revoked"`. Update the row from the response instead of reloading the list.
 
 ## Route protection
 

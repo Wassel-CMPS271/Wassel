@@ -4,6 +4,7 @@ import com.wassel.backend.drivers.entity.Driver;
 import com.wassel.backend.drivers.entity.DriverStatus;
 import com.wassel.backend.drivers.repository.DriverRepository;
 import com.jayway.jsonpath.JsonPath;
+import com.wassel.backend.common.WhileLocked;
 import com.wassel.backend.routes.repository.RouteProposalRepository;
 import com.wassel.backend.routes.repository.RouteRepository;
 import com.wassel.backend.routes.repository.RouteVersionRepository;
@@ -24,11 +25,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.math.BigDecimal;
@@ -83,6 +86,9 @@ class RouteControllerTests {
 
 	@Autowired
 	private SchoolSettingsRepository schoolSettingsRepository;
+
+	@Autowired
+	private TransactionTemplate transactionTemplate;
 
 	@BeforeEach
 	void cleanDatabase() {
@@ -502,6 +508,99 @@ class RouteControllerTests {
 		assignAs(schoolA, id, UUID.randomUUID())
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.detail").value("The route has 1 students but the vehicle seats 1."));
+	}
+
+	@Test
+	void swappingInASmallerVehicleBelowTheRoutesStudentsIsAConflict() throws Exception {
+		UUID driver = aDriver(schoolA);
+		UUID bigVehicle = aVehicle(schoolA, true, 5);
+		String id = createAs(schoolA, "Verdun morning run", bigVehicle, driver);
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		UUID smallVehicle = aVehicle(schoolA, true, 1);
+
+		mockMvc.perform(put(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(route("Verdun morning run", smallVehicle, driver)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value("The route has 2 students but the vehicle seats 1."));
+
+		assertEquals(bigVehicle, routeRepository.findById(UUID.fromString(id)).orElseThrow().getVehicleId());
+	}
+
+	@Test
+	void swappingInASmallerVehicleAtExactlyTheStudentCountIsAllowed() throws Exception {
+		UUID driver = aDriver(schoolA);
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true, 5), driver);
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		UUID exactVehicle = aVehicle(schoolA, true, 2);
+
+		mockMvc.perform(put(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(route("Verdun morning run", exactVehicle, driver)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.vehicle.capacity").value(2));
+	}
+
+	@Test
+	void renamingAnAlreadyOverCapacityRouteWithTheSameVehicleIsNotRechecked() throws Exception {
+		UUID driver = aDriver(schoolA);
+		UUID vehicle = aVehicle(schoolA, true, 2);
+		String id = createAs(schoolA, "Verdun morning run", vehicle, driver);
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		lowerCapacityTo(id, 1);
+
+		mockMvc.perform(put(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(route("Verdun afternoon run", vehicle, driver)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.name").value("Verdun afternoon run"));
+	}
+
+	/**
+	 * Seats lowered while this add waits for the route's lock must be counted (SCRUM-259). Counted before the lock, the
+	 * add passes on the old seats and leaves the route overfull, which is what a seat change at the same moment did.
+	 */
+	@Test
+	void addingAStudentWaitsForTheRouteLockAndCountsSeatsLoweredMeanwhile() throws Exception {
+		String id = createAs(schoolA, "Verdun morning run", aVehicle(schoolA, true, 2), aDriver(schoolA));
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		UUID next = aStudent(schoolA);
+
+		MockHttpServletResponse answer = WhileLocked.send(transactionTemplate, () -> {
+			routeRepository.findLockedBySchoolIdAndId(schoolA, UUID.fromString(id));
+			lowerCapacityTo(id, 1);
+		}, () -> assignAs(schoolA, id, next).andReturn().getResponse());
+
+		assertEquals(409, answer.getStatus(), answer.getContentAsString());
+		assertEquals("The route has 1 students but the vehicle seats 1.",
+				JsonPath.read(answer.getContentAsString(), "$.detail"));
+		assertEquals(1, stopIdsOf(id).size());
+	}
+
+	/** The same for a vehicle being swapped in: its seats lowered while the edit waits for its lock (SCRUM-259). */
+	@Test
+	void swappingInAVehicleWaitsForItsLockAndCountsSeatsLoweredMeanwhile() throws Exception {
+		UUID driver = aDriver(schoolA);
+		UUID current = aVehicle(schoolA, true, 5);
+		String id = createAs(schoolA, "Verdun morning run", current, driver);
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		assignAs(schoolA, id, aStudent(schoolA)).andExpect(status().isOk());
+		UUID swappedIn = aVehicle(schoolA, true, 5);
+
+		MockHttpServletResponse answer = WhileLocked.send(transactionTemplate,
+				() -> vehicleRepository.findLockedBySchoolIdAndId(schoolA, swappedIn).orElseThrow().setCapacity(1),
+				() -> mockMvc.perform(put(URL + "/" + id).with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA))
+								.contentType(MediaType.APPLICATION_JSON)
+								.content(route("Verdun morning run", swappedIn, driver)))
+						.andReturn().getResponse());
+
+		assertEquals(409, answer.getStatus(), answer.getContentAsString());
+		assertEquals("The route has 2 students but the vehicle seats 1.",
+				JsonPath.read(answer.getContentAsString(), "$.detail"));
+		assertEquals(current, routeRepository.findById(UUID.fromString(id)).orElseThrow().getVehicleId());
 	}
 
 	@Test

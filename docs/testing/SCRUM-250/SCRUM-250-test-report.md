@@ -1,5 +1,16 @@
 # SCRUM-250 — Independent driver frontend tests
 
+## Current-source verification — 9 November 2026
+
+Reused the existing branch/test files and merged current develop 8a249e8 without rewriting any preserved commit or changing Majd's production source. The former feature stack PRs #89/#93/#103 are merged. Their run screen/actions still use runs.sample.ts on develop. PR #144 contains real endpoint wiring but remains an unfinished draft and is not an accepted integration base.
+
+- Exact five independent suites: **64 passed, 1 failed, 0 skipped (65 total)**. The failure remains the unmocked GET /api/driver/runs/today completion gate. Onboard warning, all maps/call cases, transitions, absent/all-absent stops, retry and frontend authorization pass. No failing test is skipped or marked expected-failure.
+- Full frontend regression: **773 passed, 1 failed (same gate), 1 existing expected failure, 6 existing skipped (781 total, 56 files)**. The broader independent-only command also ran: 146 pass/1 same failure/1 existing expected failure (148 total).
+- ESLint and production build: **passed**. Standalone type checking is recorded separately against the known develop baseline; an initial concurrent build/typecheck collided with transient generated .next/types files and is not a source defect.
+- New real-backend driver action E2E remains **blocked/unverified**, because the screen still bypasses the real client. Historical fixture-only mobile evidence below is preserved and is not relabelled as a current real-backend pass.
+
+Evidence is ignored under tmp/SCRUM-250-20261109. The final diff contains only the original seven independent test/helper/report files. A blocked draft PR is permitted by the current execution request so the genuine failing gate can be reviewed in CI. Keep Jira In Progress and do not merge or mark complete until Majd finishes real client wiring/sample removal, the unchanged gate passes, and real backend/mobile regression is verified. Historical no-push/no-partial-PR restrictions below describe earlier sessions; the current request explicitly permits clearly blocked drafts.
+
 ## Current independent verification — 3 November 2026
 
 Preserved the original seven test/report files first in local snapshot 2f958fa. Updated only the test branch by merging exact PR #103 head d11b762fb726c2c8825b6c544a44cadd48c87df5 and PR #93's later approved fix f525a8a1952ed0fe99bd5d47b23f3b1375f1db42. Correct stack: #103 → #93 → #89 → develop. PR #89 still conflicts with current develop. No Majd production implementation was edited by the tester.

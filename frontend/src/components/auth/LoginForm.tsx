@@ -94,6 +94,7 @@ export function LoginForm({ notice }: LoginFormProps) {
   return (
     <AuthCard title="Sign in to Wassel" description="Use your account credentials to continue.">
       <form
+        method="post"
         onSubmit={handleSubmit}
         style={{
           display: "flex",
