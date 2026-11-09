@@ -42,7 +42,9 @@ it("asks first and sends nothing until Confirm is pressed", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "Confirm revoke access for Ahmad Khalil" }));
   await waitFor(() => expect(onRevoke).toHaveBeenCalledTimes(1));
-  expect(await screen.findByRole("button", { name: "Revoke access for Ahmad Khalil" })).toHaveFocus();
+  // Focus is set by an effect just after the element appears, so wait for it.
+  const focusTarget1 = await screen.findByRole("button", { name: "Revoke access for Ahmad Khalil" });
+  await waitFor(() => expect(focusTarget1).toHaveFocus());
 });
 
 it("asks before restoring too, and does not mention the revoke note", async () => {

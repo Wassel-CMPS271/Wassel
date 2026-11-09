@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { ChildRunStatus } from "./ChildRunStatus";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { LicensePlate } from "@/components/ui/LicensePlate";
@@ -23,6 +24,8 @@ export function ChildTransportCard({ child, onAbsences }: { child: Child; onAbse
           </span>
           <h2 id={titleId} className="min-w-0 text-xl font-semibold" style={{ color: darkTheme.text.primary }}>{fullName}</h2>
         </header>
+
+        <ChildRunStatus run={child.todayRun} />
 
         {!child.route ? (
           <div className="flex flex-col" style={{ gap: spacing.sm }}>

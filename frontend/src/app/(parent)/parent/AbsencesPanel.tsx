@@ -95,7 +95,7 @@ export function AbsencesPanel({ child, onBack }: { child: Child; onBack: () => v
     {!items && !loadError && <p role="status">Loading absences…</p>}
     {items && <>
       <Card>
-        <form noValidate className="flex min-w-0 flex-col" style={{ gap: spacing.md }} onSubmit={event => { event.preventDefault(); void save(); }}>
+        <form method="post" noValidate className="flex min-w-0 flex-col" style={{ gap: spacing.md }} onSubmit={event => { event.preventDefault(); void save(); }}>
           <h3 className="text-lg font-semibold">Report an absence</h3>
           <label className="flex items-center" style={{ gap: spacing.sm, minHeight: sizing.tapTarget }}><input type="checkbox" checked={range} disabled={busy} onChange={event => { setRange(event.target.checked); setFields({}); }} />Report a date range</label>
           <Input label={range ? "Start date" : "Absence date"} type="date" min={today} value={fromDate} disabled={busy} error={fields.fromDate} style={{ minWidth: 0, minHeight: sizing.tapTarget }} onChange={event => setFrom(event.target.value)} />
@@ -108,6 +108,7 @@ export function AbsencesPanel({ child, onBack }: { child: Child; onBack: () => v
       <h3 className="text-lg font-semibold">Upcoming absences</h3>
       {items.length === 0 ? <p>No upcoming absences.</p> : <ul className="flex min-w-0 flex-col" style={{ gap: spacing.md }}>
         {items.map(item => <li key={item.id} className="min-w-0 list-none"><Card className="flex min-w-0 flex-col" style={{ gap: spacing.md, overflowWrap: "anywhere" }}>
+          <p className="text-sm" style={{ color: darkTheme.text.secondary }}>{item.fromDate <= today ? "Ongoing absence" : "Upcoming absence"}</p>
           <p>{item.fromDate === item.toDate ? item.fromDate : `${item.fromDate} to ${item.toDate} (inclusive)`}</p>
           {confirm === item.id ? <div role="group" aria-label={`Confirm cancellation ${item.id}`} onKeyDown={event => { if (event.key === "Escape" && !busy) dismiss(item.id); }} className="flex flex-col" style={{ gap: spacing.sm }}>
             <p>Cancel this absence? {item.fromDate < today ? "Only today and future days will be cancelled; past days remain recorded." : "Your child will no longer be marked absent for these days."}</p>

@@ -35,6 +35,25 @@ spring:
       # that the entities still match it, so a missing migration stops startup.
       ddl-auto: validate
 
+# Health check for the host and uptime monitors (SCRUM-285). Only /actuator/health is exposed: no other actuator
+# endpoint exists over HTTP, and the answer carries no details (no database name, disk sizes or versions), just UP
+# or DOWN. It checks the database, so a lost connection answers 503.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+  health:
+    # The mail check opens an SMTP connection, which Railway blocks outside its Pro plan (and Brevo sends over
+    # HTTPS, with no SMTP at all), so it would report DOWN for good. A failed send already fails the request
+    # loudly (ERROR log, 500), so the health check keeps to what it can answer for: the app and its database.
+    mail:
+      enabled: false
+
 jwt:
   # Must be overridden in every deployed environment.
   secret: ${JWT_SECRET:}

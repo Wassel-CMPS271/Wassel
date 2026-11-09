@@ -1,5 +1,20 @@
 # SCRUM-249 — Parent absences
 
+## Current-source verification — 9 November 2026
+
+Resumed the existing branch and merged develop 8a249e8 without rewriting its history. Preserved original Parent Home snapshot 8167c2a, original absence commits, and all historical test evidence. PR #119 and SCRUM-238 are merged; the old base/backend blockers below are superseded. Parent Home refresh, run status, authorization and logout remain intact. Added explicit upcoming/ongoing labels and method=post to this ticket's form.
+
+- Full frontend regression: **752 passed, 1 existing expected failure, 6 existing skipped (759 total, 54 files)**. The first run had one unchanged roster focus race (751 pass/1 failure); that suite passed on untouched develop and the unchanged full rerun passed. Both logs are retained; no assertion, timeout or failure gate was weakened.
+- Focused current absence tests after the test-query type correction: **43 passed, 0 failed/skipped**. Removed unsupported exact options from role queries; string accessible-name matching remains exact by default.
+- ESLint: **passed**. Next.js production build: **passed** through the actual E2E launcher with the same-origin backend proxy.
+- Standalone tsc: **fails with the same 13 diagnostics as untouched develop**, byte-for-byte compared at the diagnostic-line level. These are existing Admin invite fixture schoolId, SCRUM-229 callback and Parent Home sample-enum typing errors. No new absence or E2E diagnostic remains. No global ignore/check setting was changed.
+- Real browser E2E: **1 passed**, current frontend/backend source, real password/2FA, isolated native PostgreSQL and all real Flyway migrations. Single day/inclusive range, exact-repeat 200, overlap 409, Keep/confirmed cancellation, in-place updates, reload persistence, client/server past/inverted dates, foreign-child GET/POST/DELETE 404, sibling isolation, actual revocation 401/restored retry, cleanup and 360px overflow/crash checks passed. The 360px screenshot was visually inspected.
+- Added reusable frontend/e2e/absences.e2e.ts using the merged auth helpers and an absences suite selector in the existing runner, with a separate PostgreSQL GitHub Actions job. No duplicate seed/backend implementation, intercepted response or fake production data was introduced. Authentication logs, credentials and traces are not uploaded by this job.
+
+Evidence stays ignored under tmp/SCRUM-249-20261109 and frontend/e2e-artifacts; historical directories are retained. CI results will be verified on the pushed current commit. Only absence UI/client/tests/report plus its runner command and CI job are in the final PR diff (12 files). Backend source and migrations are unchanged.
+
+Remaining delivery gates: inspect actual GitHub CI, request Majd's independent review, and integrate only after required approval. Jira remains unfinished until the code is merged; no automatic merge is authorized in this workflow. Historical no-push restrictions below describe earlier sessions and are superseded by the current explicit delivery authorization.
+
 ## Current verification — 3 November 2026
 
 Integrated the finished SCRUM-248 implementation by merge while retaining the original snapshot 8167c2a8630dd5290ad35cd97076441058416b45 and existing absence commit 0f218224c9dddcb535f43be980c3bb4a1878026b. The real SCRUM-238 API is present. Parent Home's temporary sample adapter is deleted; absence requests already used the authenticated real endpoint and have no sample fallback. No absence screen was recreated.

@@ -75,7 +75,9 @@ it("revokes a parent after confirming and shows them as revoked", async () => {
   expect(fetch.mock.calls[1][0]).toMatch(/\/api\/head-of-transport\/parents\/p1\/revoke$/);
   expect(fetch.mock.calls[1][1]).toMatchObject({ method: "PATCH", credentials: "include" });
   expect(await screen.findByText(`${parent.email}: access revoked.`)).toBeInTheDocument();
-  expect(await screen.findByRole("button", { name: `Restore access for ${parent.email}` })).toHaveFocus();
+  // Focus is set by an effect just after the element appears, so wait for it.
+  const focusTarget1 = await screen.findByRole("button", { name: `Restore access for ${parent.email}` });
+  await waitFor(() => expect(focusTarget1).toHaveFocus());
   expect(fetch).toHaveBeenCalledTimes(2);
 });
 

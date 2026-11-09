@@ -1,0 +1,164 @@
+import { spawn } from "node:child_process";
+import { randomBytes, randomUUID } from "node:crypto";
+import { createWriteStream, readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, readdirSync } from "node:fs";
+import { dirname, resolve, delimiter } from "node:path";
+import { fileURLToPath } from "node:url";
+import { setTimeout as pause } from "node:timers/promises";
+import { createServer } from "node:net";
+
+const args = process.argv.slice(2);
+const suiteIndex = args.findIndex(arg => arg.startsWith("--suite="));
+const suite = suiteIndex < 0 ? "routing" : args.splice(suiteIndex, 1)[0].slice("--suite=".length);
+if (!["routing", "auth", "absences"].includes(suite)) throw new Error("Unknown E2E suite");
+const authentication = suite !== "routing"; // Absences reuse the isolated production demo/auth seed.
+const webPort = authentication ? 4180 : 4173;
+const apiPort = authentication ? 18177 : 18080;
+const postgresPort = Number(process.env.E2E_POSTGRES_PORT || (authentication ? 55439 : 55437));
+if (!Number.isInteger(postgresPort) || postgresPort < 1024 || postgresPort > 65535) throw new Error("Invalid E2E_POSTGRES_PORT");
+const baseURL = `http://127.0.0.1:${webPort}`;
+const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const backend = resolve(frontend, "../backend");
+const artifacts = resolve(frontend, "e2e-artifacts");
+mkdirSync(artifacts, { recursive: true });
+const previous = readdirSync(artifacts).filter(name => name.endsWith(".log") || ["report", "results"].includes(name));
+if (previous.length) {
+  const archive = resolve(artifacts, "history", new Date().toISOString().replaceAll(":", "-"));
+  mkdirSync(archive, { recursive: true });
+  for (const name of previous) cpSync(resolve(artifacts, name), resolve(archive, name), { recursive: true, errorOnExist: true });
+}
+const windows = process.platform === "win32";
+const children = [];
+const env = {
+  ...process.env,
+  WASSEL_E2E: "true",
+  WASSEL_E2E_PASSWORD: randomBytes(24).toString("base64url"),
+  JWT_SECRET: randomBytes(48).toString("base64url"),
+  DB_URL: process.env.E2E_DB_URL || `jdbc:postgresql://127.0.0.1:${postgresPort}/wassel_e2e`,
+  DB_USERNAME: process.env.E2E_DB_USERNAME || "postgres",
+  DB_PASSWORD: process.env.E2E_DB_PASSWORD || "",
+  ADMIN_EMAIL: "", ADMIN_PASSWORD: "", DEMO_DATA_ENABLED: "false",
+  ORS_API_KEY: "", JWT_COOKIE_SECURE: "false",
+  SCHOOL_LATITUDE: "33.896", SCHOOL_LONGITUDE: "35.484",
+  CORS_ALLOWED_ORIGINS: baseURL,
+  FRONTEND_BASE_URL: baseURL,
+  NEXT_PUBLIC_API_BASE_URL: "", BACKEND_URL: `http://127.0.0.1:${apiPort}`, E2E_BASE_URL: baseURL,
+  MAIL_USERNAME: "", MAIL_PASSWORD: "",
+};
+if (authentication) {
+  Object.assign(env, {
+    ADMIN_EMAIL: "admin@auth-e2e.invalid", ADMIN_PASSWORD: env.WASSEL_E2E_PASSWORD,
+    DEMO_DATA_ENABLED: "true", DEMO_EMAIL_BASE: "auth@auth-e2e.invalid",
+    DEMO_PASSWORD: env.WASSEL_E2E_PASSWORD, SCHOOL_ID: randomUUID(),
+    LOCKOUT_MAX_FAILURES: "5", LOCKOUT_DURATION: "15m",
+  });
+  delete env.E2E_FAILURE_PROBE;
+}
+function launch(command, args, cwd, logfile) {
+  // Only .cmd launchers require the Windows shell. Paths are quoted; no command
+  // is built from credentials, datasource values, or browser input.
+  const cmdScript = windows && command.endsWith(".cmd");
+  if (cmdScript && [command, ...args].some(value => /["%\r\n&|<>^!]/.test(value))) {
+    throw new Error("Maven command/path contains unsupported Windows shell metacharacters");
+  }
+  const executable = cmdScript ? (process.env.ComSpec || "cmd.exe") : command;
+  const spawnArgs = cmdScript ? ["/d", "/s", "/c", `"${[command, ...args].map(value => `"${value}"`).join(" ")}"`] : args;
+  // Clear stale readiness markers synchronously before the child can be polled.
+  if (logfile) writeFileSync(resolve(artifacts, logfile), "");
+  const child = spawn(executable, spawnArgs, {
+    cwd, env, shell: false, windowsVerbatimArguments: cmdScript, windowsHide: true,
+    stdio: logfile ? [args.includes("--single") ? "pipe" : "ignore", "pipe", "pipe"] : "inherit",
+  });
+  children.push(child);
+  child.on("error", error => { child.launchError = error; });
+  if (args.includes("--single")) child.stdin.end("CREATE DATABASE wassel_e2e;\n");
+  if (logfile) {
+    const output = createWriteStream(resolve(artifacts, logfile));
+    child.stdout.pipe(output); child.stderr.pipe(output);
+    child.on("close", () => output.end());
+  }
+  return child;
+}
+async function run(command, args, cwd, logfile) {
+  const child = launch(command, args, cwd, logfile);
+  await new Promise((ok, fail) => {
+    child.on("error", fail);
+    child.on("exit", code => code === 0 ? ok() : fail(new Error(`${command} exited ${code}; see ${logfile || "console"}`)));
+  });
+}
+async function unusedPort(port) {
+  await new Promise((ok, fail) => {
+    const server = createServer(); server.once("error", () => fail(new Error(`E2E port ${port} is occupied; refusing to reuse a possibly unrelated stack`)));
+    server.listen(port, "127.0.0.1", () => server.close(ok));
+  });
+}
+async function ready(label, check, child) {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    if (child.launchError) throw child.launchError;
+    if (child.exitCode !== null) throw new Error(`${label} exited before readiness; see e2e-artifacts logs`);
+    if (await check()) return;
+    await pause(250); // Bounded readiness polling, not a browser timing assumption.
+  }
+  throw new Error(`${label} readiness timed out; see e2e-artifacts logs`);
+}
+async function stop() {
+  for (const child of children.toReversed()) {
+    if (child.exitCode !== null || !child.pid) continue;
+    if (windows) {
+      await new Promise(ok => spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }).on("exit", ok));
+    } else {
+      child.kill("SIGTERM");
+      await Promise.race([new Promise(ok => child.once("exit", ok)), pause(5_000)]);
+      if (child.exitCode === null) child.kill("SIGKILL");
+    }
+  }
+}
+let stopping = false;
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, async () => {
+  if (stopping) return; stopping = true; await stop(); process.exit(130);
+});
+try {
+  await unusedPort(webPort); await unusedPort(apiPort);
+  if (!process.env.E2E_DB_URL && process.env.E2E_POSTGRES_BIN) {
+    await unusedPort(postgresPort);
+    const bin = process.env.E2E_POSTGRES_BIN;
+    const data = resolve(artifacts, `postgres-${randomBytes(6).toString("hex")}`);
+    await run(resolve(bin, "initdb.exe"), ["-D", data, "-U", "postgres", "-A", "trust", "--encoding=UTF8", "--locale=C"], frontend, "postgres-init.log");
+    await run(resolve(bin, "postgres.exe"), ["--single", "-D", data, "postgres"], frontend, "postgres-create.log");
+    const pg = launch(resolve(bin, "postgres.exe"), ["-D", data, "-h", "127.0.0.1", "-p", String(postgresPort)], frontend, "postgres.log");
+    await ready("PostgreSQL", async () => readFileSync(resolve(artifacts, "postgres.log"), "utf8").includes("database system is ready to accept connections"), pg);
+  } else if (!process.env.E2E_DB_URL) throw new Error("Set E2E_DB_URL to an empty loopback wassel_e2e database or E2E_POSTGRES_BIN to native Windows PostgreSQL binaries");
+  const maven = process.env.E2E_MAVEN_CMD || (windows ? resolve(backend, "mvnw.cmd") : resolve(backend, "mvnw"));
+  const mavenArgs = ["-B", "-ntp", "test-compile", "dependency:build-classpath", "-DincludeScope=test", "-Dmdep.outputFile=target/e2e-classpath.txt"];
+  if (process.env.E2E_MAVEN_REPO) mavenArgs.push(`-Dmaven.repo.local=${process.env.E2E_MAVEN_REPO}`);
+  await run(maven, mavenArgs, backend, "prepare.log");
+  const classpath = [resolve(backend, "target/test-classes"), resolve(backend, "target/classes"), readFileSync(resolve(backend, "target/e2e-classpath.txt"), "utf8").trim()].join(delimiter);
+  const java = process.env.JAVA_HOME ? resolve(process.env.JAVA_HOME, "bin", windows ? "java.exe" : "java") : "java";
+  const api = launch(java, ["-cp", classpath, authentication ? "com.wassel.backend.e2e.AuthE2eApplication" : "com.wassel.backend.e2e.RoutingE2eApplication", "--spring.profiles.active=local,e2e", "--server.address=127.0.0.1", `--server.port=${apiPort}`], backend, "backend.log");
+  await ready("backend seed", async () => existsSync(resolve(artifacts, "backend.log")) && readFileSync(resolve(artifacts, "backend.log"), "utf8").includes("E2E_SEED_READY"), api);
+  console.log("E2E backend seeded (PostgreSQL + Flyway)");
+  const stamp = resolve(frontend, ".next/e2e-build.json");
+  const buildConfig = { api: env.NEXT_PUBLIC_API_BASE_URL, backend: env.BACKEND_URL };
+  if (process.env.E2E_REUSE_BUILD === "1") {
+    if (!existsSync(stamp) || !existsSync(resolve(frontend, ".next/BUILD_ID"))
+        || readFileSync(stamp, "utf8") !== JSON.stringify(buildConfig)) {
+      throw new Error("No matching E2E production build; rerun without E2E_REUSE_BUILD");
+    }
+  } else {
+    await run(process.execPath, ["node_modules/next/dist/bin/next", "build"], frontend, "build.log");
+    writeFileSync(stamp, JSON.stringify(buildConfig));
+  }
+  const web = launch(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)], frontend, "frontend.log");
+  await ready("frontend", async () => { try { return (await fetch(`${baseURL}/login`)).ok; } catch { return false; } }, web);
+  // The browser test reads only the generated disposable account password;
+  // delete-on-run artifacts are ignored by git and never uploaded by CI.
+  const credentials = resolve(artifacts, "credentials.json");
+  writeFileSync(credentials, JSON.stringify(authentication ? { password: env.WASSEL_E2E_PASSWORD, accounts: { ADMIN: "admin@auth-e2e.invalid", HEAD_OF_TRANSPORT: "auth+head@auth-e2e.invalid", DRIVER: "auth+driver-karim@auth-e2e.invalid", PARENT: "auth+parent@auth-e2e.invalid" } } : { email: "routing-head@e2e.invalid", password: env.WASSEL_E2E_PASSWORD }), { mode: 0o600 });
+  await run(process.execPath, ["node_modules/@playwright/test/cli.js", "test", ...(suite === "absences" ? ["absences.e2e.ts"] : authentication ? ["auth.e2e.ts", "auth-revocation.e2e.ts"] : ["routing.e2e.ts"]), ...args], frontend);
+} catch (error) {
+  console.error(`E2E FAILED: ${error.message}`); process.exitCode = 1;
+} finally {
+  await stop();
+  const { rmSync } = await import("node:fs");
+  rmSync(resolve(artifacts, "credentials.json"), { force: true });
+}

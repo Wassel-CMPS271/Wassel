@@ -217,6 +217,21 @@ export const darkTheme = {
     inactiveDot: colors.neutral[400],
     liveBadgeBg: "rgba(18, 183, 106, 0.14)", // circle behind a section heading's live dot, from success[500]
   },
+  // Driver's Today screen (SCRUM-243). The next stop is the one thing the
+  // driver must find at a glance, so its card gets a primary[400] border
+  // (5.0:1 on surface.card) and a tint, not just a badge.
+  //   nextLabel (primary[300]) on nextBg over surface.card  ~6.9:1
+  //   text.primary on nextBadge (primary[600])              ~6.9:1
+  //   absentText (warning[500]) on absentBg over surface.card ~6.2:1
+  runStop: {
+    nextBorder: colors.primary[400],
+    nextBg: "rgba(77, 127, 255, 0.10)", // tint of primary[400]
+    nextShadow: "0 0 0 1px rgba(77, 127, 255, 0.35), 0 12px 32px rgba(0, 0, 0, 0.55)", // cardShadow plus a primary[400] halo
+    nextLabel: colors.primary[300],
+    nextBadge: colors.primary[600], // position circle of the next stop
+    absentText: colors.warning[500],
+    absentBg: "rgba(247, 144, 9, 0.14)", // "Absent" pill, tint of warning[500]
+  },
 } as const;
 
 /**
@@ -312,6 +327,7 @@ export const sizing = {
   sectionBadge: "24px", // live-dot circle beside a section heading
   emptyStateBadge: "48px", // icon circle in an empty state
   emptyStateText: "320px", // max line length of the empty-state helper text
+  stopBadge: "32px", // position circle on a driver's stop card
 } as const;
 
 /** Icon pixel sizes, so call sites don't pass bare numbers. */
