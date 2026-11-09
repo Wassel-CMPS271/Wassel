@@ -1,0 +1,39 @@
+name: SCRUM-282 independent operations review
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'frontend/src/independent/operations/**'
+      - 'frontend/src/test-support/operationsCandidate.ts'
+      - 'frontend/src/app/(admin)/admin/operations-auth.independent.test.tsx'
+      - '.github/workflows/operations-independent.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  operations-candidates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # Read only the exact current heads of the existing frontend PRs.
+      # No feature source is copied into the test branch or changed on disk.
+      - name: Fetch existing driver and roster candidates
+        run: |
+          git fetch origin refs/pull/144/head:refs/remotes/origin/operations-driver-review refs/pull/142/head:refs/remotes/origin/operations-roster-review
+          git rev-parse origin/operations-driver-review origin/operations-roster-review
+      - run: npm ci
+        working-directory: frontend
+      - name: Independent candidate acceptance
+        run: npm test -- gps-queue.independent.test.ts gps-permission.independent.test.tsx roster.independent.test.tsx operations-auth.independent.test.tsx --maxWorkers=2
+        working-directory: frontend
+        env:
+          WASSEL_OPERATIONS_CANDIDATE: origin/operations-driver-review
+          WASSEL_ROSTER_CANDIDATE: origin/operations-roster-review
+      # No continue-on-error or expected-failure markers. Known product defects
+      # remain red. The normal frontend-build also tests HEAD as integration gate.
