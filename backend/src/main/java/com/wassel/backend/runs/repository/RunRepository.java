@@ -24,6 +24,19 @@ public interface RunRepository extends JpaRepository<Run, UUID> {
 	List<Run> findBySchoolIdAndRunDateAndRouteIdIn(UUID schoolId, LocalDate runDate, Collection<UUID> routeIds);
 
 	/**
+	 * For the transport totals (SCRUM-271): per date in the range that has runs, how many runs there are and how
+	 * many are finished. Rows are {@code [runDate, runs, finished]}; a date with no run has no row.
+	 */
+	@Query("""
+			SELECT r.runDate, COUNT(r), SUM(CASE WHEN r.state = com.wassel.backend.runs.entity.RunState.FINISHED
+				THEN 1 ELSE 0 END)
+			FROM Run r WHERE r.schoolId = :schoolId AND r.runDate BETWEEN :from AND :to
+			GROUP BY r.runDate
+			""")
+	List<Object[]> countByDate(@Param("schoolId") UUID schoolId, @Param("from") LocalDate from,
+			@Param("to") LocalDate to);
+
+	/**
 	 * The run with its row locked until the transaction ends. A confirmation takes it so that its checks (the run is
 	 * in progress, what the student already has) and its insert are not interleaved with another confirmation of
 	 * the same student or with the run ending. The first row lock in the codebase; it is held for milliseconds.

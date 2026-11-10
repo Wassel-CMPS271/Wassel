@@ -13,6 +13,7 @@ import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
+import com.wassel.backend.reports.exception.InvalidTotalsRangeException;
 import com.wassel.backend.routes.exception.ActiveRunConflictException;
 import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
@@ -284,6 +285,15 @@ public class GlobalExceptionHandler {
 	public ProblemDetail handleAbsenceNotFound(AbsenceNotFoundException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// Same "errors" shape again, keyed by the field of the date range that was wrong (to).
+	@ExceptionHandler(InvalidTotalsRangeException.class)
+	public ProblemDetail handleInvalidTotalsRange(InvalidTotalsRangeException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
+		return problem;
 	}
 
 	// A plain detail, as the contract has it. Stops without a pin also get "studentIds" as an extra

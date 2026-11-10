@@ -11,6 +11,7 @@ import com.wassel.backend.routes.service.RouteService;
 import com.wassel.backend.runs.dto.ChildOnRoute;
 import com.wassel.backend.runs.dto.ChildRunResponse;
 import com.wassel.backend.runs.dto.ConfirmationResponse;
+import com.wassel.backend.runs.dto.DailyRunTotals;
 import com.wassel.backend.runs.dto.DayType;
 import com.wassel.backend.runs.dto.RunCountsResponse;
 import com.wassel.backend.runs.dto.RunResponse;
@@ -52,6 +53,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.BinaryOperator;
 import java.util.UUID;
 import java.util.function.Function;
@@ -207,6 +209,29 @@ public class RunService {
 			return locked;
 		});
 		return driverAnswer(run, route, dayType);
+	}
+
+	/**
+	 * For the {@code reports} module (SCRUM-271): the run figures of each date in the range that has a run or a
+	 * confirmation, from two grouped queries and nothing else (no road time, no roster). A date with neither is not
+	 * in the list; the caller fills it with zeros.
+	 */
+	@Transactional(readOnly = true)
+	public List<DailyRunTotals> dailyTotals(UUID schoolId, LocalDate from, LocalDate to) {
+		Map<LocalDate, long[]> byDate = new TreeMap<>();
+		for (Object[] row : runRepository.countByDate(schoolId, from, to)) {
+			long[] figures = byDate.computeIfAbsent((LocalDate) row[0], date -> new long[5]);
+			figures[0] = ((Number) row[1]).longValue();
+			figures[1] = ((Number) row[2]).longValue();
+		}
+		for (Object[] row : confirmationRepository.riderCountsByDate(schoolId, from, to)) {
+			long[] figures = byDate.computeIfAbsent(LocalDate.parse(row[0].toString()), date -> new long[5]);
+			figures[2] = ((Number) row[1]).longValue();
+			figures[3] = ((Number) row[2]).longValue();
+			figures[4] = ((Number) row[3]).longValue();
+		}
+		return byDate.entrySet().stream().map(entry -> new DailyRunTotals(entry.getKey(), entry.getValue()[0],
+				entry.getValue()[1], entry.getValue()[2], entry.getValue()[3], entry.getValue()[4])).toList();
 	}
 
 	/** One run as the driver sees it, with the confirmations as stored now. */

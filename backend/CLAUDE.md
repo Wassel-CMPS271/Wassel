@@ -480,6 +480,17 @@ that's the structure this codebase moved away from.
   arrival time from the same `RouteService#schedule` the route's own stops use, one read per distinct route), none when the
   child has no route — the same "no route" treatment `findStudentRoute` (`absences`) gives a
   vanished route.
+- `reports` — the head of transportation's transport totals and their CSV export over a date range (SCRUM-271):
+  `GET /api/head-of-transport/transport-totals?from=&to=` and `.../export`. Shapes and rules are in
+  `docs/contracts/transport-totals.md`. Stores nothing and nothing depends on it; `ReportService` reads three
+  services, each one grouped query for the whole range (no per-day loop): `RunService.dailyTotals` (runs per date
+  from `RunRepository.countByDate`, riders from `ConfirmationRepository.riderCountsByDate`),
+  `AbsenceService.countAbsentStudentsByDate` and `StudentService.countOnRoutes`. A student's status on a run is their
+  latest (highest) one, and each student counts once a day, so `total` is a sum of student-days, not different
+  students; `studentsOnRoutes` is the roster now because a run stores no roster. Every date of the range is listed
+  (zeros), the range is at most 62 days (400 on `to`), and the CSV is built from the same `TransportTotalsResponse`
+  as the JSON with a final `TOTAL` row, so the two cannot disagree. The absence query counts by an integer offset
+  from `from`, not `generate_series` over dates (that returns timestamps and would depend on the session time zone).
 
 ## Where things go
 
