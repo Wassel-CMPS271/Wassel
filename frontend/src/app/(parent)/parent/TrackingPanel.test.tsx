@@ -24,11 +24,28 @@ it("hides the map on an error and supports retry", async () => {
 it("clears the previous child's location immediately on selection change", async () => {
   const api = vi.fn().mockResolvedValueOnce(fix).mockReturnValue(new Promise(() => {}));
   const view = render(<TrackingPanel child={child} api={api} />); await screen.findByRole("region");
-  view.rerender(<TrackingPanel child={{ ...child, studentId: "b", firstName: "Omar" }} api={api} />); expect(screen.queryByRole("region")).not.toBeInTheDocument(); expect(screen.getByText("Loading bus locationâ€¦")).toBeVisible();
+  view.rerender(<TrackingPanel child={{ ...child, studentId: "b", firstName: "Omar" }} api={api} />); expect(screen.queryByRole("region")).not.toBeInTheDocument(); expect(screen.getByText("Loading bus location…")).toBeVisible();
 });
 it("offers sign-in after session expiry and reveals no old coordinates", async () => { render(<TrackingPanel child={child} api={vi.fn().mockRejectedValue(new ApiError(401))} />); expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login"); expect(screen.queryByRole("region")).not.toBeInTheDocument(); });
 it("ages a fix out even when its next poll never resolves", async () => {
   vi.useFakeTimers(); const api = vi.fn().mockResolvedValueOnce(fix).mockReturnValue(new Promise(() => {}));
   render(<TrackingPanel child={child} api={api} />); await act(async () => {}); await act(async () => vi.advanceTimersByTimeAsync(51_000)); expect(screen.getByText(/position is stale/)).toBeVisible();
   await act(async () => vi.advanceTimersByTimeAsync(250_000)); expect(screen.queryByRole("region")).not.toBeInTheDocument(); expect(screen.getByText("Bus location is unavailable.")).toBeVisible();
+});
+
+it.each([403, 404])("keeps a denied child location private for HTTP %s", async status => {
+  render(<TrackingPanel child={child} api={vi.fn().mockRejectedValue(new ApiError(status))} />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("not available for this child");
+  expect(screen.queryByRole("region")).not.toBeInTheDocument();
+});
+it("does not keep polling or expose a map after the child stops waiting", async () => {
+  const api = vi.fn().mockResolvedValue(fix); const view = render(<TrackingPanel child={child} api={api} />); await screen.findByRole("region");
+  view.rerender(<TrackingPanel child={{ ...child, todayRun: { ...child.todayRun!, stopsLeft: null } }} api={api} />);
+  expect(screen.queryByRole("region")).not.toBeInTheDocument(); expect(api).toHaveBeenCalledTimes(1);
+});
+it("drops the previous route/driver fix before an authorized assignment changes", async () => {
+  const api = vi.fn().mockResolvedValueOnce(fix).mockReturnValue(new Promise(() => {}));
+  const view = render(<TrackingPanel child={child} api={api} />); await screen.findByRole("region");
+  view.rerender(<TrackingPanel child={{ ...child, route: { id: "changed", name: "New route" } }} api={api} />);
+  expect(screen.queryByRole("region")).not.toBeInTheDocument(); expect(api).toHaveBeenCalledTimes(2);
 });
