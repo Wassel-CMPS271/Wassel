@@ -10,6 +10,7 @@ import type { Child } from "@/lib/api/myChildren";
 import { loadParentChildren } from "@/lib/api/parentChildrenSource";
 import { colors, darkTheme, sizing, spacing } from "@/styles/tokens";
 import { ChildTransportCard } from "./ChildTransportCard";
+import { AbsencesPanel } from "./AbsencesPanel";
 
 type LoadState = { kind: "loading" } | { kind: "loaded"; children: Child[] }
   | { kind: "failed"; reason: "expired" | "forbidden" | "unavailable" };
@@ -24,6 +25,7 @@ const pageStyle = {
 export default function ParentHome() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const [selectedChild, setSelectedChild] = useState<Child | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState(false);
   const busy = useRef(false);
@@ -93,13 +95,17 @@ export default function ParentHome() {
         </Card>
       )}
 
-      {state.kind === "loaded" && (
+      {selectedChild && state.kind === "loaded" && <AbsencesPanel key={selectedChild.studentId} child={selectedChild} onBack={() => {
+        const id = selectedChild.studentId; setSelectedChild(null);
+        requestAnimationFrame(() => document.getElementById(`absences-${id}`)?.focus());
+      }} />}
+      {!selectedChild && state.kind === "loaded" && (
         <div className="flex flex-col items-start" style={{ gap: spacing.sm }}>
           <Button variant="secondary" disabled={refreshing} onClick={refresh} style={{ minHeight: sizing.tapTarget }}>{refreshing ? "Refreshing…" : "Refresh transport details"}</Button>
           {refreshError && <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>Couldn&apos;t refresh transport details. Showing the last loaded details; try refreshing again.</p>}
         </div>
       )}
-      {state.kind === "loaded" && (state.children.length === 0 ? (
+      {!selectedChild && state.kind === "loaded" && (state.children.length === 0 ? (
         <Card className="flex flex-col" style={{ gap: spacing.sm }}>
           <h2 className="text-lg font-semibold" style={{ color: darkTheme.text.primary }}>No children linked yet</h2>
           <p className="text-sm" style={{ color: darkTheme.text.secondary }}>Once your school links your children to this account, their transport details will appear here. Contact your school if you expected to see a child.</p>
@@ -108,7 +114,7 @@ export default function ParentHome() {
         <section aria-label="Your children's transport" className="flex flex-col" style={{ gap: spacing.md }}>
           <p className="text-sm" style={{ color: darkTheme.text.secondary }}>{state.children.length} {state.children.length === 1 ? "child" : "children"} linked to your account</p>
           <ul className="grid min-w-0 grid-cols-1 sm:grid-cols-2" style={{ gap: spacing.lg, padding: 0, margin: 0 }}>
-            {state.children.map(child => <ChildTransportCard key={child.studentId} child={child} />)}
+            {state.children.map(child => <ChildTransportCard key={child.studentId} child={child} onAbsences={() => setSelectedChild(child)} />)}
           </ul>
         </section>
       ))}
