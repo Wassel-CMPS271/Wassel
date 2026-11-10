@@ -2,24 +2,36 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
 import type { ConfirmationStatus, Run } from "@/lib/api/runs";
-import { confirmStudentSample, endRunSample, getDriverTodaySample, startRunSample } from "@/lib/api/runs.sample";
+import { confirmStudent, endRun, getDriverToday, startRun } from "@/lib/api/runs";
 import { day, deferred, instant, run, student } from "@/test-support/driverContract";
 import DriverTodayPage from "./page";
 import { RunAction } from "./RunAction";
 
-// Temporary boundary only: the features still import runs.sample at the reviewed
-// heads. These tests do not exercise or reproduce that client's implementation.
-// The separate delivery-gate suite requires the final screen to use real HTTP.
+// Both source revisions share these spies. The separate unmocked HTTP gate
+// still fails when the production screen uses samples instead of request().
+const driverCalls = vi.hoisted(() => ({
+  getDriverToday: vi.fn(), startRun: vi.fn(), endRun: vi.fn(), confirmStudent: vi.fn(),
+}));
+vi.mock("@/lib/api/runs", async () => ({
+  ...await vi.importActual("@/lib/api/runs"), ...driverCalls,
+}));
 vi.mock("@/lib/api/runs.sample", () => ({
-  getDriverTodaySample: vi.fn(), startRunSample: vi.fn(),
-  endRunSample: vi.fn(), confirmStudentSample: vi.fn(),
+  getDriverTodaySample: driverCalls.getDriverToday, startRunSample: driverCalls.startRun,
+  endRunSample: driverCalls.endRun, confirmStudentSample: driverCalls.confirmStudent,
+}));
+
+// Standalone page tests supply the authenticated user normally supplied by
+// DriverLayout. The authorization suite exercises the actual RoleGuard.
+vi.mock("@/components/auth/RoleGuard", async () => ({
+  ...await vi.importActual("@/components/auth/RoleGuard"),
+  useCurrentUser: () => ({ id: "user-250", email: "independent@e2e.invalid", role: "DRIVER", schoolId: "school-250" }),
 }));
 
 beforeEach(() => vi.resetAllMocks());
 afterEach(cleanup);
 
 async function show(value = day()) {
-  vi.mocked(getDriverTodaySample).mockResolvedValue(value);
+  vi.mocked(getDriverToday).mockResolvedValue(value);
   render(<DriverTodayPage />);
   await screen.findByRole("heading", { name: value.runs.find(r => r.state !== "FINISHED")?.route.name ?? /all runs done|no route today|no school today/i });
   // Motion cards start at opacity 0. Keep real visibility assertions and wait
@@ -35,7 +47,7 @@ function row(position = 1) {
 
 describe("SCRUM-243: Today from acceptance criteria", () => {
   it("announces loading without displaying stop data", () => {
-    vi.mocked(getDriverTodaySample).mockReturnValue(new Promise(() => {}));
+    vi.mocked(getDriverToday).mockReturnValue(new Promise(() => {}));
     render(<DriverTodayPage />);
     expect(screen.getByRole("status")).toHaveTextContent(/loading/i);
     expect(screen.queryByRole("list", { name: "Stops" })).not.toBeInTheDocument();
@@ -103,12 +115,12 @@ describe("SCRUM-243: Today from acceptance criteria", () => {
   });
 
   it("shows a load failure in plain words and retries successfully", async () => {
-    vi.mocked(getDriverTodaySample).mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(day());
+    vi.mocked(getDriverToday).mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(day());
     render(<DriverTodayPage />);
     expect(await screen.findByRole("alert")).toHaveTextContent(/try again/i);
     fireEvent.click(screen.getByRole("button", { name: /try again/i }));
     await screen.findByText("Student1 Independent");
-    expect(getDriverTodaySample).toHaveBeenCalledTimes(2);
+    expect(getDriverToday).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -144,9 +156,9 @@ describe("SCRUM-244: legal actions and observable state changes", () => {
     const started = run();
     const picked = run({ stops: [student(1, { confirmation: { status: "PICKED_UP", at: instant } })], counts: { students: 1, absent: 0, pickedUp: 1, droppedOff: 0, notPresent: 0 } });
     const dropped = run({ stops: [student(1, { confirmation: { status: "DROPPED_OFF", at: instant } })], counts: { students: 1, absent: 0, pickedUp: 1, droppedOff: 1, notPresent: 0 } });
-    vi.mocked(startRunSample).mockResolvedValue(started);
-    vi.mocked(confirmStudentSample).mockResolvedValueOnce(picked).mockResolvedValueOnce(dropped);
-    vi.mocked(endRunSample).mockResolvedValue({ ...dropped, state: "FINISHED", endedAt: instant });
+    vi.mocked(startRun).mockResolvedValue(started);
+    vi.mocked(confirmStudent).mockResolvedValueOnce(picked).mockResolvedValueOnce(dropped);
+    vi.mocked(endRun).mockResolvedValue({ ...dropped, state: "FINISHED", endedAt: instant });
     await show(day([initial]));
     fireEvent.click(screen.getByRole("button", { name: "Start run" }));
     await screen.findByRole("button", { name: "End run" });
@@ -156,24 +168,24 @@ describe("SCRUM-244: legal actions and observable state changes", () => {
     await screen.findByText(/done.*dropped off/i);
     fireEvent.click(screen.getByRole("button", { name: "End run" }));
     await screen.findByRole("heading", { name: /all runs done/i });
-    expect(getDriverTodaySample).toHaveBeenCalledTimes(1);
-    expect(confirmStudentSample).toHaveBeenNthCalledWith(1, initial.id, initial.stops[0].studentId, "PICKED_UP");
-    expect(confirmStudentSample).toHaveBeenNthCalledWith(2, initial.id, initial.stops[0].studentId, "DROPPED_OFF");
+    expect(getDriverToday).toHaveBeenCalledTimes(1);
+    expect(confirmStudent).toHaveBeenNthCalledWith(1, initial.id, initial.stops[0].studentId, "PICKED_UP");
+    expect(confirmStudent).toHaveBeenNthCalledWith(2, initial.id, initial.stops[0].studentId, "DROPPED_OFF");
   });
 
   it("marks Not present and advances to the next student without a reload", async () => {
     const updated = run({ stops: [student(1, { confirmation: { status: "NOT_PRESENT", at: instant } }), student(2)] });
-    vi.mocked(confirmStudentSample).mockResolvedValue(updated);
+    vi.mocked(confirmStudent).mockResolvedValue(updated);
     await show(day([run({ stops: [student(1), student(2)] })]));
     fireEvent.click(within(row()).getByRole("button", { name: "Not present" }));
     await screen.findByText(/done.*not present/i);
     expect(row(2)).toHaveAttribute("aria-current", "step");
-    expect(getDriverTodaySample).toHaveBeenCalledTimes(1);
+    expect(getDriverToday).toHaveBeenCalledTimes(1);
   });
 
   it.each(["start", "end"] as const)("prevents double-submit of %s and updates after completion", async action => {
     const gate = deferred<Run>();
-    const call = action === "start" ? startRunSample : endRunSample;
+    const call = action === "start" ? startRun : endRun;
     vi.mocked(call).mockReturnValue(gate.promise);
     const onChange = vi.fn();
     render(<RunAction run={run({ state: action === "start" ? "NOT_STARTED" : "IN_PROGRESS", stops: [] })} onRunChange={onChange} />);
@@ -188,18 +200,18 @@ describe("SCRUM-244: legal actions and observable state changes", () => {
 
   it("prevents duplicate confirmations while leaving other students actionable", async () => {
     const gate = deferred<Run>();
-    vi.mocked(confirmStudentSample).mockReturnValue(gate.promise);
+    vi.mocked(confirmStudent).mockReturnValue(gate.promise);
     await show(day([run({ stops: [student(1), student(2)] })]));
     const button = within(row()).getByRole("button", { name: "Picked up" });
     act(() => { fireEvent.click(button); fireEvent.click(button); });
-    expect(confirmStudentSample).toHaveBeenCalledTimes(1);
+    expect(confirmStudent).toHaveBeenCalledTimes(1);
     expect(within(row()).getByRole("button", { name: "Not present" })).toBeDisabled();
     expect(within(row(2)).getByRole("button", { name: "Picked up" })).toBeEnabled();
     await act(async () => gate.resolve(run({ stops: [student(1, { confirmation: { status: "PICKED_UP", at: instant } }), student(2)] })));
   });
 
   it.each(["start", "end"] as const)("shows a failed %s action and permits an explicit retry", async action => {
-    const call = action === "start" ? startRunSample : endRunSample;
+    const call = action === "start" ? startRun : endRun;
     const updated = run({ state: action === "start" ? "IN_PROGRESS" : "FINISHED" });
     vi.mocked(call).mockRejectedValueOnce(new ApiError(503, "internal details")).mockResolvedValueOnce(updated);
     const onChange = vi.fn();
@@ -215,14 +227,14 @@ describe("SCRUM-244: legal actions and observable state changes", () => {
 
   it("keeps a failed confirmation scoped to its student and retries the same status", async () => {
     const updated = run({ stops: [student(1, { confirmation: { status: "NOT_PRESENT", at: instant } }), student(2)] });
-    vi.mocked(confirmStudentSample).mockRejectedValueOnce(new ApiError(409, "This student is no longer on the run")).mockResolvedValueOnce(updated);
+    vi.mocked(confirmStudent).mockRejectedValueOnce(new ApiError(409, "This student is no longer on the run")).mockResolvedValueOnce(updated);
     await show(day([run({ stops: [student(1), student(2)] })]));
     fireEvent.click(within(row()).getByRole("button", { name: "Not present" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("This student is no longer on the run");
     expect(within(row(2)).queryByRole("alert")).not.toBeInTheDocument();
     fireEvent.click(within(row()).getByRole("button", { name: "Try again" }));
     await screen.findByText(/done.*not present/i);
-    expect(vi.mocked(confirmStudentSample).mock.calls[1]).toEqual(vi.mocked(confirmStudentSample).mock.calls[0]);
+    expect(vi.mocked(confirmStudent).mock.calls[1]).toEqual(vi.mocked(confirmStudent).mock.calls[0]);
   });
 
   it("warns before ending with outstanding stops, supports Cancel and keyboard Escape", async () => {
@@ -230,26 +242,26 @@ describe("SCRUM-244: legal actions and observable state changes", () => {
     fireEvent.click(screen.getByRole("button", { name: "End run" }));
     expect(screen.getByRole("button", { name: "Confirm end run" })).toHaveFocus();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(endRunSample).not.toHaveBeenCalled();
+    expect(endRun).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "End run" }));
     fireEvent.keyDown(screen.getByRole("button", { name: "Confirm end run" }), { key: "Escape" });
     expect(screen.getByRole("button", { name: "End run" })).toHaveFocus();
   });
 
   it("does not warn just because all remaining stops are absent", async () => {
-    vi.mocked(endRunSample).mockResolvedValue(run({ state: "FINISHED" }));
+    vi.mocked(endRun).mockResolvedValue(run({ state: "FINISHED" }));
     render(<RunAction run={run({ stops: [student(1, { absent: true })], counts: { students: 1, absent: 1, pickedUp: 0, droppedOff: 0, notPresent: 0 } })} onRunChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "End run" }));
     expect(screen.queryByRole("button", { name: "Confirm end run" })).not.toBeInTheDocument();
     await act(async () => {});
-    expect(endRunSample).toHaveBeenCalledTimes(1);
+    expect(endRun).toHaveBeenCalledTimes(1);
   });
 
   it("warns before ending a morning run while children are still on the bus", () => {
-    vi.mocked(endRunSample).mockReturnValue(new Promise(() => {}));
+    vi.mocked(endRun).mockReturnValue(new Promise(() => {}));
     render(<RunAction run={run({ stops: [student(1, { confirmation: { status: "PICKED_UP", at: instant } })], counts: { students: 1, absent: 0, pickedUp: 1, droppedOff: 0, notPresent: 0 } })} onRunChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "End run" }));
-    expect(endRunSample, "The contract requires a warning before ending with children onboard").not.toHaveBeenCalled();
+    expect(endRun, "The contract requires a warning before ending with children onboard").not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Confirm end run" })).toBeVisible();
   });
 
@@ -264,7 +276,7 @@ describe("SCRUM-244: legal actions and observable state changes", () => {
     try {
       const longName = "Independent route with a deliberately long school and neighborhood name";
       const initial = run({ state: "NOT_STARTED", route: { ...run().route, name: longName } });
-      vi.mocked(startRunSample).mockResolvedValue(run({ route: initial.route }));
+      vi.mocked(startRun).mockResolvedValue(run({ route: initial.route }));
       await show(day([initial]));
       expect(screen.getByRole("heading", { name: longName })).toBeVisible();
       fireEvent.click(screen.getByRole("button", { name: "Start run" }));
@@ -278,7 +290,7 @@ describe("SCRUM-244: legal actions and observable state changes", () => {
 
   it("preserves two successful confirmations returned in reverse request order", async () => {
     const first = deferred<Run>(); const second = deferred<Run>();
-    vi.mocked(confirmStudentSample).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    vi.mocked(confirmStudent).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     await show(day([run({ stops: [student(1), student(2)] })]));
     fireEvent.click(within(row()).getByRole("button", { name: "Picked up" }));
     fireEvent.click(within(row(2)).getByRole("button", { name: "Not present" }));

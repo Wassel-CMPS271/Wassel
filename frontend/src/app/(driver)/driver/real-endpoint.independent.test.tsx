@@ -3,6 +3,12 @@ import { afterEach, expect, it, vi } from "vitest";
 import { day, run, student } from "@/test-support/driverContract";
 import DriverTodayPage from "./page";
 
+// Only the authenticated-user context is supplied; runs and request() remain real.
+vi.mock("@/components/auth/RoleGuard", async () => ({
+  ...await vi.importActual("@/components/auth/RoleGuard"),
+  useCurrentUser: () => ({ id: "user-250", email: "independent@e2e.invalid", role: "DRIVER", schoolId: "school-250" }),
+}));
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 // Completion gate for SCRUM-243/244. No runs/sample module mock here: if the
@@ -16,5 +22,5 @@ it("loads the signed-in driver's run from the real request()-based endpoint", as
   render(<DriverTodayPage />);
   await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/\/api\/driver\/runs\/today$/), expect.objectContaining({ credentials: "include" })));
   expect(await screen.findByRole("heading", { name: "HTTP contract route" })).toBeVisible();
-  expect(screen.getByText("HTTP Student")).toBeVisible();
+  await waitFor(() => expect(screen.getByText("HTTP Student")).toBeVisible());
 });

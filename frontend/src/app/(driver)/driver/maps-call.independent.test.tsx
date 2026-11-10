@@ -1,19 +1,34 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getDriverTodaySample } from "@/lib/api/runs.sample";
+import { getDriverToday } from "@/lib/api/runs";
 import { day, run, student } from "@/test-support/driverContract";
 import type { RunStop } from "@/lib/api/runs";
 import DriverTodayPage from "./page";
 
-vi.mock("@/lib/api/runs.sample", () => ({
-  getDriverTodaySample: vi.fn(), startRunSample: vi.fn(),
-  endRunSample: vi.fn(), confirmStudentSample: vi.fn(),
+// Both source revisions share these spies. The separate unmocked HTTP gate
+// still fails when the production screen uses samples instead of request().
+const driverCalls = vi.hoisted(() => ({
+  getDriverToday: vi.fn(), startRun: vi.fn(), endRun: vi.fn(), confirmStudent: vi.fn(),
 }));
+vi.mock("@/lib/api/runs", async () => ({
+  ...await vi.importActual("@/lib/api/runs"), ...driverCalls,
+}));
+vi.mock("@/lib/api/runs.sample", () => ({
+  getDriverTodaySample: driverCalls.getDriverToday, startRunSample: driverCalls.startRun,
+  endRunSample: driverCalls.endRun, confirmStudentSample: driverCalls.confirmStudent,
+}));
+// Standalone page tests supply the authenticated user normally supplied by
+// DriverLayout. The authorization suite exercises the actual RoleGuard.
+vi.mock("@/components/auth/RoleGuard", async () => ({
+  ...await vi.importActual("@/components/auth/RoleGuard"),
+  useCurrentUser: () => ({ id: "user-250", email: "independent@e2e.invalid", role: "DRIVER", schoolId: "school-250" }),
+}));
+
 beforeEach(() => vi.resetAllMocks());
 afterEach(cleanup);
 
 async function show(changes: Partial<RunStop> = {}) {
-  vi.mocked(getDriverTodaySample).mockResolvedValue(day([run({ stops: [student(1, changes)] })]));
+  vi.mocked(getDriverToday).mockResolvedValue(day([run({ stops: [student(1, changes)] })]));
   render(<DriverTodayPage />);
   const row = (await screen.findByText("Student1 Independent")).closest("li")!;
   await waitFor(() => expect(row).toBeVisible());

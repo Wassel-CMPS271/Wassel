@@ -5,7 +5,8 @@ import type { DriverDay, Run, RunStop } from "@/lib/api/runs";
 export const instant = "2026-10-30T05:00:00Z";
 
 export function student(position = 1, changes: Partial<RunStop> = {}): RunStop {
-  return {
+  const stop = {
+    removedFromRoute: false,
     studentId: `40000000-0000-4000-8000-${String(position).padStart(12, "0")}`,
     position, firstName: `Student${position}`, lastName: "Independent",
     address: `${position} Test Street`, latitude: 33.89 + position / 1000,
@@ -13,6 +14,7 @@ export function student(position = 1, changes: Partial<RunStop> = {}): RunStop {
     guardianPhone: "+961 70 123 456", absent: false, confirmation: null,
     ...changes,
   };
+  return stop;
 }
 
 export function run(changes: Partial<Run> = {}): Run {

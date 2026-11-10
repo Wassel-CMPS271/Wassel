@@ -1,5 +1,58 @@
 # SCRUM-250 — Independent driver frontend tests
 
+## Follow-up verification — 10 November 2026
+
+Accepted base: develop `8d62167fe2439843187218cabc40419304bd8d40`, including merged SCRUM-249 / PR #147. Preserved this worktree/branch, all 65 independent acceptance cases, original commits and historical evidence. No Majd production change was modified or merged. PR #144 remains a draft at `d890429ab09e24869cf3d389c7bad3776927332a`.
+
+| Executed check | Result |
+| --- | --- |
+| Original 65 cases on accepted develop | **64 passed / 1 failed / 0 skipped**: real-endpoint gate still fails |
+| Full frontend regression on this branch plus accepted develop | **816 passed / 1 same failure / 1 existing expected failure / 6 existing skips (824; 59 files)** |
+| Same 65 cases on isolated exact PR #144 | **65 passed / 0 failed / 0 skipped** |
+| Real PostgreSQL/Flyway Chromium probe on exact PR #144 | **1 passed**; actual frontend, backend, login/2FA and driver actions |
+| ESLint and production build on test branch | **Passed** |
+| Isolated candidate production build | **Passed**, using the existing auth E2E runner |
+| Standalone TypeScript | **13 existing develop diagnostics** (Admin invite fixtures, routing callback, Parent JSON enum inference); no SCRUM-250 diagnostic |
+
+### How isolation and all 65 cases were preserved
+
+Detached review checkout: `C:\Users\User\Desktop\Wassel-ticket-worktrees\SCRUM-250-PR144-review-20261110`. Its tracked files were clean before and after the check; the only additions are untracked independent tests/support and a separate generated test launcher. Its backend has no diff from accepted develop. Neither the active feature checkout nor Majd's branch was changed.
+
+The component suites now share the same spies for legacy sample imports and real run-client imports. Standalone page cases receive only the authenticated-user hook normally provided by DriverLayout; the authorization suite still uses the actual RoleGuard. The separate real-endpoint gate does not mock runs, request(), or the sample client. Therefore baseline sample wiring still fails and the candidate's real HTTP wiring passes.
+
+All original test titles and **106 assertion call sites** were compared to preserved commit `2c265ba7e467a3cb3d5cdc83b52dd04084d99d72` using the TypeScript syntax tree, allowing only the spy identifier rename. The final HTTP student visibility assertion now waits for the unchanged entrance animation, retaining `toBeVisible()` and the original timeout. The first candidate attempt's transient opacity failure is preserved separately. No assertion was removed, softened, skipped or marked expected-failure. The independent stop fixture includes `removedFromRoute: false` to satisfy both contract revisions.
+
+### Real browser evidence and its limits
+
+`driver-client-review.e2e.ts`, launched against the unchanged candidate, used the existing isolated auth/demo seed, native PostgreSQL, Flyway, the production Next frontend and real Spring APIs. No fetch interception, fake tokens or fabricated production responses were used.
+
+Verified: Head and Driver real password/emailed-code authentication; a real Head-created route assigned to the seeded authenticated driver and two students; actual GET `/api/driver/runs/today`; POST Start; PUT Picked up, Dropped off and Not present; saved confirmations after a full reload; POST End persisted as FINISHED; authenticated Parent GET/Start denied with 403; actual route deletion cleanup (204); 360px document without horizontal overflow or browser crashes. The resulting 360px screenshot was inspected. Generated disposable credentials were removed by the runner. Backend seed, frontend production build and browser all completed successfully.
+
+This is an **online run-client slice**, not GPS/offline/replay verification. It does not prove another driver's ownership boundary or a complete accessibility audit. The new GPS and replay clients in #144 are still null, so their unfinished behavior must not be called verified. Separate 65-case component/adapter coverage retains errors/retries, legal transitions, all-absent/no-run states, maps/tel and button/authorization criteria.
+
+### Reproduce without changing feature code
+
+Create a fresh detached review worktree at the exact candidate SHA and install its unchanged lockfile dependencies (or reuse a matching existing installation). The guarded test-only overlay refuses a wrong head, tracked changes, tracked target files or a different existing overlay; it never deletes a worktree or rewrites production files.
+
+```powershell
+node frontend/e2e/review-driver.mjs --checkout=C:/path/to/isolated-review --head=d890429ab09e24869cf3d389c7bad3776927332a --mode=unit
+# Use the same documented E2E_POSTGRES_BIN, E2E_MAVEN_CMD and JAVA_HOME as the existing auth runner.
+# Select an unused E2E_POSTGRES_PORT (this run used 55445).
+node frontend/e2e/review-driver.mjs --checkout=C:/path/to/isolated-review --head=d890429ab09e24869cf3d389c7bad3776927332a --mode=browser
+```
+
+Browser mode adapts only the test-file selection in a separate untracked copy of the existing candidate's auth launcher. The original runner and production configuration remain untouched. The browser probe is explicitly selected by this review launcher; normal routing/auth/absence CI selection is unchanged.
+
+Ignored evidence: this worktree's `tmp/SCRUM-250-20261110/{develop-65.log,full-develop.log,candidate-browser.log,assertion-preservation.json,lint.log,build.log,typecheck.log,results.json}`; isolated candidate's `tmp/SCRUM-250-20261110/{candidate-65.log,candidate-65-rerun.log}` and `frontend/e2e-artifacts/` (including the inspected screenshot). Raw auth logs/traces, generated databases and credentials are not committed or uploaded.
+
+### Exact remaining work for Majd
+
+1. Deliver the already working real run-client wiring to accepted develop: replace page sample Today/confirmation imports and RunAction sample Start/End imports with `runs.ts`, remove the production sample source and honor the current run contract, including removed stops. A separately completed minimal wiring change could unblock Sprint 3 without treating unfinished GPS work as ready. This testing branch does not make that production edit.
+2. Before #144 is ready, fix SCRUM-282's two reproduced driver defects: keep request deadlines active through body consumption and prevent cross-tab queue read/write loss. Preserve both failing regression tests.
+3. Reconcile the proposed GPS/replay interfaces with accepted SCRUM-261/263 contracts, wire real authenticated clients, and verify consent, permission denial, reconnect/idempotent replay, authorization/session expiry and reload/account isolation on real backend/mobile flows. Those dependencies remain unfinished.
+4. Integrate with latest develop, pass the same 65 cases and full CI on the actual integrated head, obtain independent review, and only then complete SCRUM-250. PR #148 remains a blocked draft and Jira remains In Progress while develop still fails the endpoint gate. No feature or blocked test PR was merged.
+
+
 ## Current-source verification — 9 November 2026
 
 Reused the existing branch/test files and merged current develop 8a249e8 without rewriting any preserved commit or changing Majd's production source. The former feature stack PRs #89/#93/#103 are merged. Their run screen/actions still use runs.sample.ts on develop. PR #144 contains real endpoint wiring but remains an unfinished draft and is not an accepted integration base.
