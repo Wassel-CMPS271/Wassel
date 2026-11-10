@@ -1,5 +1,44 @@
 # SCRUM-282 â€” Independent operations UI tests
 
+## Follow-up verification — 10 November 2026
+
+Accepted base: develop `8d62167fe2439843187218cabc40419304bd8d40`, including merged SCRUM-249 / PR #147. Reused this branch and all 29 existing independent cases. No feature branch was merged, no production file changed, and all four normal failing regression assertions remain unchanged.
+
+| Check executed on current source | Result |
+| --- | --- |
+| Exact candidate acceptance suites | **25 passed / 4 failed / 0 skipped (29)** |
+| Full frontend regression with candidate refs | **777 passed / 4 failed / 1 existing expected failure / 6 existing skips (788; 58 files)** |
+| ESLint | **Passed** |
+| Production build | **Passed** |
+| Standalone TypeScript | **13 existing develop diagnostics**, identical to SCRUM-250; no operations-specific diagnostic |
+
+Exact read-only sources: driver PR #144 `d890429ab09e24869cf3d389c7bad3776927332a`; roster PR #142 `b2fd4c3ab12819d12565fba325f8db821d937db4`. Neither draft has advanced. The source loader executes those Git blobs in memory and never modifies either author's checkout. Current Admin authorization cases execute this branch's accepted source.
+
+### Reproduced causes and required owner changes
+
+1. **#144 — deadline stops at response headers.** `frontend/src/lib/api/client.ts`, `request()`: the `finally` clears the abort timer immediately after `fetch()` resolves. A body stream stalled inside `response.json()` survives the 25ms deadline. Keep the deadline active through success/error-body consumption and clean up on every resolution/rejection; preserve the stalled-body acceptance test.
+2. **#144 — cross-tab data loss before replay.** `frontend/src/lib/offline/queue.ts`, `mutate()`: unlocked whole-array read/change/write lets tab B save between tab A's read and write. Both enqueues return success, but persisted student IDs are `[a]` instead of `[a,b]`. Serialize/atomically persist every mutation across tabs, including enqueue; a drain-only lock and server idempotency do not protect a tap lost before transmission. Verify concurrent enqueue/retry/dismiss, reload recovery and account separation.
+3. **#142 — real address client absent.** `frontend/src/lib/api/addressRequests.ts` still exports `addressRequestsApi = null`. Wire authenticated list/approve/reject to the agreed backend contract once available; verify actual methods, ownership, persistence and server errors. Fixture-driven decision cases do not satisfy this delivery gate.
+4. **#142 — unrelated draft lost on conflict.** `AddressRequestsSection.tsx` reloads after 409 using the loading skeleton, unmounting the other request row. When its delayed list response resolves, that row's typed rejection reason is gone. Preserve drafts keyed by request identity across refresh (or keep unaffected rows mounted), while applying the server's current decision. Retain the delayed-response regression test.
+
+### Reproduction
+
+From this worktree in PowerShell:
+
+```powershell
+$env:WASSEL_OPERATIONS_CANDIDATE='d890429ab09e24869cf3d389c7bad3776927332a'
+$env:WASSEL_ROSTER_CANDIDATE='b2fd4c3ab12819d12565fba325f8db821d937db4'
+npm --prefix frontend test -- gps-queue.independent.test.ts gps-permission.independent.test.tsx roster.independent.test.tsx operations-auth.independent.test.tsx --maxWorkers=2
+npm --prefix frontend test -- --maxWorkers=2
+npm --prefix frontend run lint
+npm --prefix frontend run build
+```
+
+Ignored evidence: `tmp/SCRUM-282-20261110/{candidate-29.log,full-candidate.log,lint.log,build.log,results.json}`. Prior logs and original test history remain preserved. Normal HEAD integration CI must continue to fail explicitly while the features are absent; candidate verification must continue to fail on these four defects. The two checks answer different questions and must not be replaced by one another.
+
+**Still blocked:** Majd must fix #144/#142, reconcile real GPS/replay/address clients with accepted backend contracts, and provide SCRUM-274's live-control/reassignment implementation. Actual server ownership, real reconnect/replay and 360px/accessibility workflows remain unverified for these new operations features. Do not infer a GPS/replay pass from SCRUM-250's separate online run-client probe. After dependencies land, add the missing SCRUM-274 acceptance matrix, rerun integrated HEAD, real-stack mobile/security flows and CI. Jira stays In Progress; PR #151 stays a blocked draft.
+
+
 ## Status â€” 9 November 2026
 
 PARTIALLY COMPLETE / BLOCKED by unfinished features and reproduced defects. Jira In Progress. Branch test/SCRUM-282-operations-ui-tests starts from develop 8a249e8; its diff is test/helper/report/CI only. No teammate production file, API or assertion was changed.
