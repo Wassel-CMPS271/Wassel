@@ -1,13 +1,14 @@
 import { useId } from "react";
 import { ChildRunStatus } from "./ChildRunStatus";
 import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 import { LicensePlate } from "@/components/ui/LicensePlate";
 import { ClockIcon, StudentIcon } from "@/components/ui/icons";
 import { focusRingClass, focusRingStyle } from "@/components/ui/focusRing";
 import type { Child } from "@/lib/api/myChildren";
 import { colors, darkTheme, iconSize, radius, sizing, spacing } from "@/styles/tokens";
 
-export function ChildTransportCard({ child }: { child: Child }) {
+export function ChildTransportCard({ child, onAbsences }: { child: Child; onAbsences?: () => void }) {
   const titleId = useId();
   const fullName = `${child.firstName} ${child.lastName}`;
   const driver = child.driver;
@@ -56,6 +57,7 @@ export function ChildTransportCard({ child }: { child: Child }) {
             )}
           </>
         )}
+        {onAbsences && <Button id={`absences-${child.studentId}`} variant="secondary" style={{ minHeight: sizing.tapTarget }} onClick={onAbsences} aria-label={`Manage absences for ${fullName}`}>Manage absences</Button>}
       </Card>
     </li>
   );
