@@ -66,6 +66,12 @@ const THROTTLE = {
 // instead of retrying on its own.
 const MAX_OPT_IN_ATTEMPTS = 3;
 
+// A fix cached during a soft pause (offline/hidden) that's already at least this old
+// once sending resumes no longer says where the bus is now — the pause itself can
+// last anywhere from seconds to a long while. It's dropped rather than sent, and the
+// hook waits for a fresh fix instead, same as a brand new opt-in.
+const MAX_RESUME_FIX_AGE_MS = 2 * 60 * 1000;
+
 // The contract's accuracy range is 0-10000 (docs/contracts/runs.md); a fix outside
 // that, or with a non-finite coordinate, is dropped here rather than sent and
 // rejected as an ApiValidationError.
@@ -398,10 +404,15 @@ export function useGpsSharing({
     // lastFixRef isn't cleared on a soft pause (there's nothing wrong with the fix
     // sent just before it), so this also guards against resending that same one
     // again on resuming when nothing new arrived while paused.
-    if (state.status === "requesting" && fix && fix !== lastSentRef.current) {
-      dispatch({ type: "positionReceived" });
-      void sendFix(fix, { force: true });
+    if (state.status !== "requesting" || !fix || fix === lastSentRef.current) return;
+    if (Date.now() - fix.at >= MAX_RESUME_FIX_AGE_MS) {
+      // Too stale to send as "now": drop it and wait for a fresh fix, rather than
+      // report a position from minutes ago as current.
+      lastFixRef.current = null;
+      return;
     }
+    dispatch({ type: "positionReceived" });
+    void sendFix(fix, { force: true });
   }, [state.status, sendFix]);
 
   // navigator.permissions is optional (missing on Safari as of this writing): without

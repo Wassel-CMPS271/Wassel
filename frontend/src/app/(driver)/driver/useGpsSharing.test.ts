@@ -812,7 +812,9 @@ describe("an opt-in that fails with a network error or a 5xx", () => {
     act(() => result.current.optIn());
     await waitFor(() => expect(connectivity.reportFailure).toHaveBeenCalled());
     act(() => connectivity.setState("offline")); // what reportFailure does for real
-    act(() => geolocation!.watchers[0].success(position({ timestamp: 0 })));
+    // Fresh (well under the 2-minute staleness cutoff), so it's still eligible to
+    // go out once the opt-in is confirmed below.
+    act(() => geolocation!.watchers[0].success(position({ timestamp: Date.now() })));
     await act(async () => {});
     expect(api.sendPosition).not.toHaveBeenCalled();
 
@@ -888,7 +890,8 @@ describe("soft pause: offline and hidden", () => {
     await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(1));
     act(() => connectivity.setState("offline"));
 
-    act(() => geolocation!.watchers[0].success(position({ latitude: 33.95, timestamp: 1_000 })));
+    // Fresh (well under the 2-minute staleness cutoff), so it goes out on resume.
+    act(() => geolocation!.watchers[0].success(position({ latitude: 33.95, timestamp: Date.now() })));
     expect(api.sendPosition).toHaveBeenCalledTimes(1); // still just the one from before
 
     act(() => connectivity.setState("online"));
@@ -914,6 +917,35 @@ describe("soft pause: offline and hidden", () => {
     expect(api.sendPosition).toHaveBeenCalledTimes(1);
   });
 
+  it("drops a fix cached during the pause once it's 2 minutes old, and waits for a fresh one instead of resending it", async () => {
+    const { result, connectivity, api } = setUp();
+    act(() => result.current.optIn());
+    act(() => geolocation!.watchers[0].success(position({ timestamp: 0 })));
+    await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(1));
+    act(() => connectivity.setState("offline"));
+
+    const staleTimestamp = Date.now() - 2 * 60 * 1000 - 1;
+    act(() => geolocation!.watchers[0].success(position({ latitude: 33.95, timestamp: staleTimestamp })));
+    expect(api.sendPosition).toHaveBeenCalledTimes(1);
+
+    act(() => connectivity.setState("online"));
+    await act(async () => {});
+
+    // Dropped, not resent: still just the fix from before the pause, and the hook
+    // goes back to "requesting" rather than straight to "sharing" on a stale fix.
+    expect(api.sendPosition).toHaveBeenCalledTimes(1);
+    expect(result.current.state.status).toBe("requesting");
+
+    act(() => geolocation!.watchers[0].success(position({ latitude: 33.96, timestamp: Date.now() })));
+
+    await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(2));
+    expect(api.sendPosition).toHaveBeenLastCalledWith(
+      "run-1",
+      expect.objectContaining({ latitude: 33.96 }),
+    );
+    expect(result.current.state.status).toBe("sharing");
+  });
+
   it("pauses when the page is hidden, and resumes (sending the cached fix) when visible again", async () => {
     const { result, api } = setUp();
     act(() => result.current.optIn());
@@ -929,7 +961,8 @@ describe("soft pause: offline and hidden", () => {
     );
     expect(geolocation!.clearWatch).not.toHaveBeenCalled();
 
-    act(() => geolocation!.watchers[0].success(position({ latitude: 33.95, timestamp: 1_000 })));
+    // Fresh (well under the 2-minute staleness cutoff), so it goes out on resume.
+    act(() => geolocation!.watchers[0].success(position({ latitude: 33.95, timestamp: Date.now() })));
     expect(api.sendPosition).toHaveBeenCalledTimes(1);
 
     act(() => setHidden(false));
