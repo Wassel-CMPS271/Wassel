@@ -1,16 +1,22 @@
 # Driver GPS and offline confirmation replay contract
 
-**DRAFT — to be agreed with the SCRUM-261/263 owner (Hashem).** Nothing below is implemented on
-either side yet. SCRUM-261 (the driver GPS API) and SCRUM-263 (the offline confirmation replay
-API) are not started; this page is the frontend's proposal for what they should look like, written
-for SCRUM-273 (driver GPS opt-in and offline queue UI). Until it is agreed and the backend lands,
-`frontend/src/lib/api/driverGps.ts` and `frontend/src/lib/api/confirmationReplay.ts` export `null`
-in place of a client, and the driver screens behave as they do today (no position sharing, no
-offline queue — see [Open questions](#open-questions)).
+Two things live here, at different stages:
 
-This builds on [`runs.md`](runs.md), which owns the run, confirmation and driver-day shapes. It
-does not restate those; `Run`, `ConfirmationStatus` and the confirmation state table are as that
-page defines them.
+- **Driver GPS (SCRUM-261 / PR #143) is not yet merged on `develop`.** Once it lands, the real
+  contract is [`runs.md`'s "Live location"](runs.md#live-location) section, `Run.locationSharing`
+  and the `BusLocation`/`RunLocation` shapes; this page no longer restates it — see
+  [Client behaviour](#client-behaviour-driver-gps) below for what `frontend/src/lib/api/driverGps.ts`
+  and the opt-in UI (SCRUM-273, PR #144) do with it. `driverGpsApi` only becomes real once PR #143
+  merges, and PR #144 stays a draft until then.
+- **Offline confirmation replay (SCRUM-263) is still DRAFT** — to be agreed with the SCRUM-263 owner
+  (Hashem). Nothing below it is implemented on either side yet. Until it is agreed and the backend
+  lands, `frontend/src/lib/api/confirmationReplay.ts` exports `null` in place of a client, and the
+  offline queue keeps every item on the device instead of sending it (see
+  [Open questions](#open-questions)).
+
+This builds on [`runs.md`](runs.md), which owns the run, confirmation and location shapes. It does
+not restate those; `Run`, `ConfirmationStatus` and the confirmation state table are as that page
+defines them.
 
 ## Conventions
 
@@ -19,82 +25,68 @@ UTC with a `Z`. Every endpoint here needs the signed-in user with the `DRIVER` r
 one of **today's** runs — same as `runs.md`'s driver endpoints, a run that is not today's (another
 date, or hidden by a holiday) is **404**, exactly like an unknown run.
 
+## Client behaviour (driver GPS)
+
+How `frontend/src/lib/api/driverGps.ts` and the opt-in UI use `runs.md`'s GPS endpoints; nothing
+here changes the contract, it only says what the client does with it.
+
+- **Sending.** While sharing, the hook throttles fixes to about every 10 seconds (matching
+  `runs.md`'s "send about every 10 seconds"), or sooner after 25 m of movement but never less than
+  5 seconds apart, and sends `PUT .../location` with a `timeoutMs` of about 10 seconds. Only one
+  send is in flight at a time: a fix that arrives meanwhile is skipped, not queued.
+- **Opting in.** No position is sent until `setSharing(true)` has answered with success. A network
+  failure or a 5xx keeps the opt-in and asks again when the connection is back (or on the
+  connectivity retry tick); after 3 failures in a row the card shows an error with Try again.
+  `setSharing` calls go out one at a time, in order, and an answer a newer call replaced is ignored.
+- **Not queued offline.** A position is never written to the offline queue or retried after the
+  fact: only the latest fix the device currently has is ever worth sending, so a stale one is never
+  shown as current. This is unrelated to the confirmation queue below, which does persist items.
+- **409 or 404 on opting in** pauses sharing as "refused" and the page refetches the day. A refused
+  pause is sticky: going offline and back, or the screen hiding and showing, never clears it. Only
+  a run change or the driver tapping Try again does; it is never retried on its own.
+- **409 or 404 on sending a position** pauses the same way, and the page refetches the day.
+  `setSharing(false)`'s answer then settles it: if the run is still `IN_PROGRESS`, sharing was
+  withdrawn (another driver, a reassignment) and the card goes back to "Share my location";
+  otherwise it stays refused. It never turns back on by itself, because consent belongs to the
+  driver who gave it. The client never parses `detail` to tell these apart.
+- **Any answer from the server** (400, 403, 5xx, with or without field errors) is not a network
+  failure, so it never reports a connectivity failure; only a fetch that fails or times out does.
+  A fix that's already out of range or non-finite on the device is skipped instead of sent.
+- **`STALE` is shown as "last seen"**, never as "late": `runs.md`'s freshness rule means a locked
+  phone or a backgrounded tab can make a position stale without anything being wrong, so the UI
+  never implies the driver is behind schedule.
+- **Opting out** (`setSharing(runId, { enabled: false })`) is sent on cleanup only when the server
+  was told sharing was on — it's allowed any time for the driver's own run and safe to repeat,
+  including right after End run.
+
 ## Shapes
 
-### LocationSharing
+### ConfirmationRequest (extended) — DRAFT
 
-Whether the driver is sharing their position on one run.
-
-| Field | Type | Notes |
-|---|---|---|
-| `enabled` | boolean | |
-| `since` | moment or null | when sharing last turned on; null while `enabled` is false |
-
-### Position
-
-The body of one position update. Not stored as its own resource the client can read back; the
-server only ever answers 204.
-
-| Field | Type | Notes |
-|---|---|---|
-| `latitude`, `longitude` | number | as `Stop.latitude`/`longitude` in `routing.md` |
-| `accuracyMeters` | number | the device's reported accuracy, so the backend (or a later screen) can discard a bad fix instead of trusting every reading equally |
-| `recordedAt` | moment | the device's clock when the fix was taken, not when the request arrived — the two can differ once a retry or a slow connection is involved |
-
-### ConfirmationRequest (extended)
-
-The existing `PUT .../confirmation` body (`runs.md#confirmations`), with two fields added for
-replay. Both are new; nothing about `status` changes.
+The existing `PUT .../confirmation` body (`runs.md#confirmations`), with one field added for
+replay. It is new; nothing about `status` changes.
 
 | Field | Type | Notes |
 |---|---|---|
 | `status` | `ConfirmationStatus` | unchanged |
 | `clientRequestId` | string | an idempotency key the client generates once per confirmation attempt and resends on every retry of that same attempt (see [Confirmation replay and idempotency](#confirmation-replay-and-idempotency)). Not a header: it travels in the body like the rest of the request |
-| `occurredAt` | moment, optional (omitted, not null) | **OPEN QUESTION** — see [Open questions](#open-questions). When sent, the time the driver tapped the button on their device, for the server to use instead of its own receive time, clamped so a late replay doesn't misrecord progress |
+
+There is no client-sent time. `runs.md` is explicit that the confirmation time is the server's,
+never the client's (see [Open questions](#open-questions)).
 
 ## Endpoints
 
 | Method | Path | Role | Body | Success | Status |
 |---|---|---|---|---|---|
-| GET | `/api/driver/runs/{runId}/location-sharing` | DRIVER | | 200 `LocationSharing` | proposed |
-| PUT | `/api/driver/runs/{runId}/location-sharing` | DRIVER | `{ enabled }` | 200 `LocationSharing` | proposed; the client turns sharing off with `{ enabled: false }` too |
-| DELETE | `/api/driver/runs/{runId}/location-sharing` | DRIVER | | 204 | alternative to `PUT { enabled: false }`, not used by the client (open question) |
-| POST | `/api/driver/runs/{runId}/positions` | DRIVER | `Position` | 204 | proposed |
-| PUT | `/api/driver/runs/{runId}/students/{studentId}/confirmation` | DRIVER | `ConfirmationRequest` (extended) | 200 `Run` | extends an existing endpoint (`runs.md`) |
+| PUT | `/api/driver/runs/{runId}/students/{studentId}/confirmation` | DRIVER | `ConfirmationRequest` (extended) | 200 `Run` | DRAFT; extends an existing endpoint (`runs.md`) |
 
 The confirmation endpoint's path and success shape are unchanged; only the body gains
-`clientRequestId` and `occurredAt`.
+`clientRequestId`. The GPS endpoints (`PUT .../location-sharing`, `PUT .../location`) are
+`runs.md`'s, not restated here.
 
 ## Rules
 
-### GPS consent
-
-- Turning sharing on (`PUT { enabled: true }`) is allowed only while the run is `IN_PROGRESS`
-  (SCRUM-273's decision: GPS is tied to an active, consented run, never to the driver in general).
-  Any other state is **409**, same wording style as `runs.md`'s run-state errors.
-- Turning sharing off is `PUT { enabled: false }` (what `DriverGpsApi.setSharing` sends; `DELETE`
-  is listed above as an alternative, see [Open questions](#open-questions)). It is always allowed for
-  one of today's runs, whatever its state, so a driver can always withdraw consent.
-- `GET` answers `{ enabled: false, since: null }` for a run sharing has never been turned on for;
-  it is not a 404 just because nothing has happened yet.
-- Sharing does not carry over between runs or between the morning and afternoon run of the same
-  route: each run starts with `enabled: false` (see [Open questions](#open-questions) on whether
-  that should instead be "once a day").
-
-### Position submission
-
-- Allowed only while `enabled` is true **and** the run is `IN_PROGRESS`. Either failing is **409**
-  (two different reasons, one status — the client already knows which one it expects, having just
-  read or set `LocationSharing` and the run's state).
-- A run that is not today's, or not this driver's, is **404**, as elsewhere.
-- Not queued by the client while offline (SCRUM-273's decision): only the latest fix is sent once
-  back online, so a stale position is never shown as current. The server does not need to care
-  about catching up a backlog.
-- **429 is reserved** for a rate limit (e.g. more than one fix in a short window), to stop a buggy
-  client from flooding the backend. Not necessarily enforced in the first version; documented here
-  so the client's error handling has somewhere to put it from day one.
-
-### Confirmation replay and idempotency
+### Confirmation replay and idempotency — DRAFT
 
 - `clientRequestId` is generated once per confirmation **attempt** — one tap of Picked up / Dropped
   off / Not present — and the same value is sent on every retry of that attempt, including a
@@ -134,42 +126,22 @@ what each status means for the UI before either is built.
 
 ## Errors
 
-In the same `ProblemDetail` shape as `runs.md`.
+In the same `ProblemDetail` shape as `runs.md`. GPS errors (409 on sharing/sending, 400 on a bad
+fix) are `runs.md`'s own, not restated here; these are the confirmation replay extension's.
 
 | Case | Status | Body |
 |---|---|---|
 | No session | 401 | empty |
 | Signed in with another role | 403 | `detail` |
 | A run that is not today's, not this driver's, or unknown | 404 | `detail` |
-| Turn sharing on, or send a position, while the run is not `IN_PROGRESS` | 409 | `detail`, naming the run's state |
-| Send a position while sharing is off | 409 | `detail` |
-| Too many position updates in a short time | 429 | `detail` (reserved; see [Position submission](#position-submission)) |
-| `clientRequestId` reused for a different `runId`/`studentId`/`status` | 422 | `detail` |
-| A confirmation move `runs.md`'s table refuses, on a key not seen before | 409 | as `runs.md` |
 | A student who is not a stop on the run | 404 | as `runs.md` |
+| A confirmation move `runs.md`'s table refuses, on a key not seen before | 409 | as `runs.md` |
+| `clientRequestId` reused for a different `runId`/`studentId`/`status` | 422 | `detail` |
 | Malformed body (bad numbers, missing `clientRequestId`, a date that isn't ISO-8601) | 400 | `detail: "Malformed request body"` |
 
 ## Open questions
 
-1. **`occurredAt`.** `runs.md` is explicit that confirmation time "is the server's, never the
-   client's" and "there is no undo". A client-supplied, server-clamped `occurredAt` is a change to
-   that rule and needs the owner's agreement, not just this page's. Until agreed, the driver UI
-   shows the local time of the tap as "saved at" and never assumes the server records that exact
-   moment.
-2. **Consent scope.** Per run (as drafted above — each run starts with sharing off) or per day
-   (turn on once, applies to both the morning and afternoon run)? Per-run is simpler to reason
-   about and matches "share positions only for a consented active run" in the ticket most
-   literally; per-day is fewer taps for the driver.
-3. **Does End run turn sharing off?** If a driver ends the run without explicitly stopping sharing
-   first, should the server turn it off for them (so the next run starts clean per question 2), or
-   leave it for the client to call `DELETE` itself before/after ending? Affects whether `RunAction`
-   needs to also call the GPS endpoint.
-4. **Who can see positions, and for how long?** Not just the driver's own screen — presumably the
-   head of transportation and/or the parent, for a "where's the bus" view, which this page doesn't
-   define (no read endpoint for anyone but the driver is proposed here). Retention: are positions
-   kept after the run ends, and if so for how long, or are they transient (last-known-position
-   only, nothing kept)?
-5. **Can replay ship against the existing PUT, without this page's extension?** If SCRUM-263 is
+1. **Can replay ship against the existing PUT, without this page's extension?** If SCRUM-263 is
    not ready when the rest of SCRUM-273 is, could the offline queue send plain
    `PUT .../confirmation { status }` (no `clientRequestId`) and rely only on `runs.md`'s existing
    "same status twice is a 200 no-op" rule for safety? That rule is weaker than a real idempotency
@@ -177,6 +149,11 @@ In the same `ProblemDetail` shape as `runs.md`.
    feedback, and it does nothing for `PICKED_UP` → `DROPPED_OFF`, a different status each time), so
    SCRUM-273's queue is written against this page's extended body and stays behind the `null` API
    (confirmations behave online-only, as today) until SCRUM-263 ships either this or an equivalent.
+2. **A client-sent confirmation time.** `runs.md` and the GPS rule above both say the server's own
+   receive time is the only time; a client-supplied, server-clamped one would be a change to that
+   rule and needs the owner's agreement, not just this page's. Until (and unless) that is agreed,
+   the driver UI shows the local time of the tap as "saved at" and never assumes the server records
+   that exact moment.
 
 ## Changing this contract
 
