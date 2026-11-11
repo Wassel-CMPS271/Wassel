@@ -36,9 +36,10 @@ export async function request<T = void>(
 ): Promise<T> {
   const controller = timeoutMs === undefined ? undefined : new AbortController();
   const timer = controller && setTimeout(() => controller.abort(), timeoutMs);
-  let response: Response;
+  // The timer runs until the body is read, not just until the headers arrive:
+  // a body that stalls would otherwise hang the call forever.
   try {
-    response = await fetch(`${BASE_URL}${path}`, {
+    const response = await fetch(`${BASE_URL}${path}`, {
       method,
       credentials: "include",
       // The backend's CORS only allows Content-Type, so send it only with a body.
@@ -46,20 +47,24 @@ export async function request<T = void>(
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller?.signal,
     });
+
+    if (response.ok) {
+      return (response.status === 204 ? undefined : await response.json()) as T;
+    }
+
+    // The body can be empty or not JSON (a 401 from /api/auth/me is empty). A
+    // timeout while reading it still rejects as an AbortError, not an ApiError.
+    const problem = await response.json().catch((error: unknown) => {
+      if (controller?.signal.aborted) throw error;
+      return undefined;
+    });
+    if (problem?.errors && typeof problem.errors === "object") {
+      throw new ApiValidationError(problem.errors);
+    }
+    throw new ApiError(response.status, problem?.detail, studentIdsOf(problem));
   } finally {
     clearTimeout(timer);
   }
-
-  if (response.ok) {
-    return (response.status === 204 ? undefined : await response.json()) as T;
-  }
-
-  // The body can be empty or not JSON (a 401 from /api/auth/me is empty).
-  const problem = await response.json().catch(() => undefined);
-  if (problem?.errors && typeof problem.errors === "object") {
-    throw new ApiValidationError(problem.errors);
-  }
-  throw new ApiError(response.status, problem?.detail, studentIdsOf(problem));
 }
 
 // Only a list of strings counts; anything else is dropped.
