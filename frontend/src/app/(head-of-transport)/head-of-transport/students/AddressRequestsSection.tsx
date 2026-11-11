@@ -267,9 +267,13 @@ export function AddressRequestsSection({ api, onApproved }: AddressRequestsSecti
   // move it to the section heading instead.
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  const load = useCallback(async () => {
+  // `background: true` reconciles the list after a 404/409 conflict without
+  // the loading skeleton, so the other rows — and anything open on them,
+  // like a typed rejection reason — stay mounted and keep their state
+  // instead of being torn down and rebuilt.
+  const load = useCallback(async (opts?: { background?: boolean }) => {
     if (!api) return;
-    setIsLoading(true);
+    if (!opts?.background) setIsLoading(true);
     setLoadError("");
     try {
       const data = await api.list();
@@ -277,9 +281,13 @@ export function AddressRequestsSection({ api, onApproved }: AddressRequestsSecti
       // decision, even if the API answers with more than that.
       setRequests(data.filter((request) => request.status === "pending"));
     } catch {
-      setLoadError("Couldn't load address requests. Please try again.");
+      if (opts?.background) {
+        setNotice("Couldn't refresh the list. Please try again.");
+      } else {
+        setLoadError("Couldn't load address requests. Please try again.");
+      }
     } finally {
-      setIsLoading(false);
+      if (!opts?.background) setIsLoading(false);
     }
   }, [api]);
 
@@ -287,18 +295,25 @@ export function AddressRequestsSection({ api, onApproved }: AddressRequestsSecti
     void load();
   }, [load]);
 
-  async function handleApprove(id: string) {
-    if (!api) return;
+  // Shared by approve and reject: look up the request, track its deciding
+  // state, show the outcome and (on a 404/409 conflict) reconcile the list
+  // in the background instead of surfacing it as a row error.
+  async function decide(
+    id: string,
+    call: () => Promise<AddressRequest>,
+    successNotice: (studentName: string) => string,
+  ): Promise<AddressRequest | undefined> {
+    if (!api) return undefined;
     const request = requests.find((item) => item.id === id);
-    if (!request) return;
+    if (!request) return undefined;
     setNotice("");
     setDecidingIds((prev) => new Set(prev).add(id));
     try {
-      await api.approve(id);
+      await call();
       setRequests((prev) => prev.filter((item) => item.id !== id));
-      setNotice(`Address approved for ${request.studentName}.`);
+      setNotice(successNotice(request.studentName));
       headingRef.current?.focus();
-      onApproved(request.studentId);
+      return request;
     } catch (err) {
       if (err instanceof ApiError && (err.status === 404 || err.status === 409)) {
         setNotice(
@@ -306,9 +321,9 @@ export function AddressRequestsSection({ api, onApproved }: AddressRequestsSecti
             ? "This request was already decided by someone else. Refreshed the list."
             : "This request is no longer available. Refreshed the list.",
         );
-        await load();
+        await load({ background: true });
         headingRef.current?.focus();
-        return;
+        return undefined;
       }
       throw new Error(decisionErrorMessage(err));
     } finally {
@@ -320,36 +335,15 @@ export function AddressRequestsSection({ api, onApproved }: AddressRequestsSecti
     }
   }
 
+  async function handleApprove(id: string) {
+    if (!api) return;
+    const decided = await decide(id, () => api.approve(id), (name) => `Address approved for ${name}.`);
+    if (decided) onApproved(decided.studentId);
+  }
+
   async function handleReject(id: string, reason?: string) {
     if (!api) return;
-    const request = requests.find((item) => item.id === id);
-    if (!request) return;
-    setNotice("");
-    setDecidingIds((prev) => new Set(prev).add(id));
-    try {
-      await api.reject(id, reason);
-      setRequests((prev) => prev.filter((item) => item.id !== id));
-      setNotice(`Address request rejected for ${request.studentName}.`);
-      headingRef.current?.focus();
-    } catch (err) {
-      if (err instanceof ApiError && (err.status === 404 || err.status === 409)) {
-        setNotice(
-          err.status === 409
-            ? "This request was already decided by someone else. Refreshed the list."
-            : "This request is no longer available. Refreshed the list.",
-        );
-        await load();
-        headingRef.current?.focus();
-        return;
-      }
-      throw new Error(decisionErrorMessage(err));
-    } finally {
-      setDecidingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
+    await decide(id, () => api.reject(id, reason), (name) => `Address request rejected for ${name}.`);
   }
 
   return (
@@ -432,7 +426,7 @@ export function AddressRequestsSection({ api, onApproved }: AddressRequestsSecti
               <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>
                 {loadError}
               </p>
-              <Button variant="secondary" onClick={load}>
+              <Button variant="secondary" onClick={() => load()}>
                 Try again
               </Button>
             </div>

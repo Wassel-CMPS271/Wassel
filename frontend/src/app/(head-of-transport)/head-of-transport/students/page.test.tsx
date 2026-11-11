@@ -29,6 +29,14 @@ vi.mock("@/lib/api/routes", async (importOriginal) => ({
   getRouteAssignments: vi.fn(),
 }));
 
+vi.mock("./AddressRequestsSection", () => ({
+  AddressRequestsSection: ({ onApproved }: { onApproved: (studentId: string) => void }) => (
+    <button type="button" onClick={() => onApproved("st-1")}>
+      Simulate address approval
+    </button>
+  ),
+}));
+
 vi.mock("next/dynamic", () => ({
   default: () =>
     function LeafletMapStub({ onPinChange }: { onPinChange?: (latitude: number, longitude: number) => void }) {
@@ -511,6 +519,43 @@ it("falls back to 'Linked'/'Not assigned' and keeps the roster and routes when t
   expect(within(row("Lina Daher")).getByText("No route")).toBeInTheDocument();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.queryByText(/rami@example\.com/)).not.toBeInTheDocument();
+});
+
+it("refreshes the roster in the background after an address request is approved, without showing the loading skeleton", async () => {
+  let resolveReload: (students: Student[]) => void = () => {};
+  vi.mocked(getStudents)
+    .mockResolvedValueOnce([LINA, HADI])
+    .mockReturnValueOnce(new Promise((resolve) => { resolveReload = resolve; }));
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+
+  fireEvent.click(screen.getByRole("button", { name: "Simulate address approval" }));
+
+  // The reload is in flight: the roster stays as it was, no skeleton.
+  expect(screen.getByText("Lina Daher")).toBeInTheDocument();
+  expect(screen.queryByText("Loading students…")).not.toBeInTheDocument();
+
+  resolveReload([{ ...LINA, address: "Verdun, Beirut" }, HADI]);
+
+  await waitFor(() => expect(getStudents).toHaveBeenCalledTimes(2));
+  expect(await within(row("Lina Daher")).findByText("Pickup address: Verdun, Beirut")).toBeInTheDocument();
+});
+
+it("keeps showing the roster and gives a toast notice if the background refresh after an approval fails", async () => {
+  vi.mocked(getStudents)
+    .mockResolvedValueOnce([LINA, HADI])
+    .mockRejectedValueOnce(new Error("down"));
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+
+  fireEvent.click(screen.getByRole("button", { name: "Simulate address approval" }));
+
+  await waitFor(() => expect(getStudents).toHaveBeenCalledTimes(2));
+  expect(screen.getByText("Lina Daher")).toBeInTheDocument();
+  expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  const toast = await screen.findByText("Couldn't refresh the roster after the approval. Please reload the page.");
+  expect(toast.closest('[role="status"]')).toBeInTheDocument();
 });
 
 it("says 'Linked' when the linked parent isn't in the parents list", async () => {

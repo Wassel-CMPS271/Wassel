@@ -107,6 +107,20 @@ export default function StudentsPage() {
     }
   }, []);
 
+  // After an address-request approval: an approval may change the student's
+  // saved address or pin (SCRUM-269's decision, not this screen's), so
+  // refresh the roster. Runs without the loading skeleton so the roster
+  // (and anything open on its rows) stays visible, and a failure here never
+  // replaces the roster with the error state, just a toast.
+  const reloadStudentsInBackground = useCallback(async () => {
+    try {
+      const data = await getStudents();
+      setStudents(data);
+    } catch {
+      pushToast("Couldn't refresh the roster after the approval. Please reload the page.");
+    }
+  }, [pushToast]);
+
   // Loaded in parallel with the roster, like the routes: a failure never
   // blocks the roster, the rows just fall back to "Linked"/"Not assigned".
   const loadParents = useCallback(async () => {
@@ -182,12 +196,8 @@ export default function StudentsPage() {
 
         <AddressRequestsSection
           api={addressRequestsApi}
-          // An approval may change the student's saved address or pin
-          // (SCRUM-269's decision, not this screen's); reload the roster so
-          // the row shows whatever actually got saved, same as any other
-          // save elsewhere on this page.
           onApproved={() => {
-            void loadStudents();
+            void reloadStudentsInBackground();
           }}
         />
 

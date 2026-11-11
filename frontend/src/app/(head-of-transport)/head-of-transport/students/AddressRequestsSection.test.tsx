@@ -269,6 +269,42 @@ it("shows a clear message and lets the user try again on a permission error", as
   expect(screen.getByText("Lina Daher")).toBeInTheDocument();
 });
 
+it("reconciles in the background after a 409, preserving another row's open reject box and typed reason", async () => {
+  const api = fakeApi();
+  api.list.mockResolvedValueOnce([LINA_REQUEST, HADI_REQUEST]);
+  api.approve.mockRejectedValue(new ApiError(409, "Already decided"));
+  let resolveReload: (data: AddressRequest[]) => void = () => {};
+  api.list.mockReturnValueOnce(new Promise((resolve) => { resolveReload = resolve; }));
+  render(<AddressRequestsSection api={api} onApproved={vi.fn()} />);
+
+  await screen.findByText("Lina Daher");
+
+  // Open Hadi's reject box and type a reason before Lina's request conflicts.
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Reject address change for Hadi Rizk" }));
+  const hadiReason = await screen.findByLabelText("Reason (optional)");
+  fireEvent.change(hadiReason, { target: { value: "Needs more info from the parent." } });
+
+  fireEvent.click(within(row("Lina Daher")).getByRole("button", { name: "Approve address change for Lina Daher" }));
+
+  expect(
+    await screen.findByText("This request was already decided by someone else. Refreshed the list."),
+  ).toBeInTheDocument();
+
+  // The reconciliation GET is still pending: Hadi's row, its open reject box
+  // and the typed reason must stay exactly as they were, not torn down into
+  // the loading skeleton.
+  expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
+  expect(screen.getByLabelText("Reason (optional)")).toHaveValue("Needs more info from the parent.");
+  expect(screen.queryByText("Loading address requests…")).not.toBeInTheDocument();
+
+  resolveReload([HADI_REQUEST]);
+
+  await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument());
+  expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
+  expect(screen.getByLabelText("Reason (optional)")).toHaveValue("Needs more info from the parent.");
+});
+
 it("moves focus to Confirm when rejecting, and Escape cancels and returns focus to Reject", async () => {
   const api = fakeApi();
   api.list.mockResolvedValue([LINA_REQUEST]);
