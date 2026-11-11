@@ -11,7 +11,7 @@ import type {
 } from "../api/confirmationReplay";
 import { ApiError, ApiValidationError } from "../api/errors";
 import type { Run } from "../api/runs";
-import { DEFAULT_LEASE_TTL_MS, leaseLock, type DrainLock } from "./lock";
+import { DEFAULT_LEASE_TTL_MS, leaseLock, type DrainLock, type WriteLock } from "./lock";
 import {
   DEFAULT_BACKOFF_MAX_MS,
   DEFAULT_SEND_TIMEOUT_MS,
@@ -29,6 +29,7 @@ import { StorageError, memoryStore, queueStorageKey, type KeyValueStore } from "
 const TODAY = "2026-11-09";
 const YESTERDAY = "2026-11-08";
 const KEY = queueStorageKey("driver-1");
+const PENDING = `${KEY}.pending.`;
 
 const DANA_PICKED: EnqueueInput = {
   runId: "run-1",
@@ -107,9 +108,25 @@ function makeQueue(options: Partial<OfflineQueueOptions> = {}): OfflineQueue {
   return queue;
 }
 
-function stored(store: KeyValueStore): QueueItem[] {
+// What the queue key itself holds.
+function inQueueKey(store: KeyValueStore): QueueItem[] {
   const raw = store.getItem(KEY);
   return raw === null ? [] : (JSON.parse(raw) as { items: QueueItem[] }).items;
+}
+
+// Every saved item: the queue key, then the pending keys enqueue() writes that no
+// change has merged yet.
+function stored(store: KeyValueStore): QueueItem[] {
+  const items = inQueueKey(store);
+  for (const key of store.keys(PENDING)) {
+    const { item } = JSON.parse(store.getItem(key)!) as { item: QueueItem };
+    if (!items.some((i) => i.id === item.id)) items.push(item);
+  }
+  return items;
+}
+
+function pendingKeys(store: KeyValueStore): string[] {
+  return store.keys(PENDING);
 }
 
 function items(queue: OfflineQueue) {
@@ -140,6 +157,10 @@ function failingStore(base: KeyValueStore = memoryStore()) {
       base.setItem(key, value);
     },
     removeItem: (key) => base.removeItem(key),
+    keys(prefix) {
+      if (state.unreadable) throw new StorageError("unavailable", "Can't read");
+      return base.keys(prefix);
+    },
     subscribe: (listener) => base.subscribe(listener),
   };
   return { store, state };
@@ -212,6 +233,51 @@ describe("enqueue", () => {
 
     expect(again.ok && again.duplicate).toBe(false);
     expect(again.ok && again.item.clientRequestId).not.toBe(first.ok && first.item.clientRequestId);
+  });
+
+  it("treats a tap repeated after a conflict as a new tap, held behind the failed one", async () => {
+    const server = fakeServer();
+    const queue = makeQueue({ api: server.api });
+    const first = queue.enqueue(DANA_PICKED);
+    server.failNext(new ApiError(409, "Dana is not on this run"));
+    await queue.drain();
+    expect(only(queue).state).toBe("conflict");
+
+    const again = queue.enqueue(DANA_PICKED);
+
+    expect(again.ok && again.duplicate).toBe(false);
+    expect(again.ok && again.item.clientRequestId).not.toBe(first.ok && first.item.clientRequestId);
+    expect(items(queue).map((i) => i.state)).toEqual(["conflict", "blocked"]);
+  });
+
+  it("keeps A, B, A as three taps, sent in order, so the last one is what's recorded", async () => {
+    const server = fakeServer();
+    const queue = makeQueue({ api: server.api });
+
+    const results = [DANA_PICKED, DANA_DROPPED, DANA_PICKED].map((tap) => queue.enqueue(tap));
+
+    expect(results.map((r) => r.ok && r.duplicate)).toEqual([false, false, false]);
+    expect(items(queue).map((i) => i.status)).toEqual(["PICKED_UP", "DROPPED_OFF", "PICKED_UP"]);
+    await queue.drain();
+    expect(server.calls.map((c) => c.status)).toEqual(["PICKED_UP", "DROPPED_OFF", "PICKED_UP"]);
+    expect(server.recorded.size).toBe(3);
+  });
+
+  it("still folds a repeat of the latest tap while that one is being sent", async () => {
+    const server = fakeServer();
+    const queue = makeQueue({ api: server.api });
+    const answer = server.holdNext();
+    const first = queue.enqueue(DANA_PICKED);
+    const draining = queue.drain();
+    await flush();
+    expect(only(queue).state).toBe("sending");
+
+    const again = queue.enqueue(DANA_PICKED);
+
+    expect(again).toEqual({ ok: true, item: first.ok && only(queue), duplicate: true });
+    answer.resolve();
+    await draining;
+    expect(server.calls).toHaveLength(1);
   });
 });
 
@@ -403,7 +469,7 @@ describe("the same key on every resend", () => {
       lastError: { kind: "rejected", message: "Malformed request body" },
     });
 
-    expect(queue.retry(failed.id)).toBe(true);
+    expect(await queue.retry(failed.id)).toBe(true);
     await queue.drain();
 
     expect(server.calls).toHaveLength(2);
@@ -524,7 +590,7 @@ describe("order per student", () => {
     server.failNext(new ApiError(409, "Not in progress"));
     await queue.drain();
 
-    expect(queue.discard(items(queue)[0].id)).toBe(true);
+    expect(await queue.discard(items(queue)[0].id)).toBe(true);
     await queue.drain();
 
     expect(server.calls.map((c) => c.status)).toEqual(["PICKED_UP", "DROPPED_OFF"]);
@@ -538,10 +604,13 @@ describe("order per student", () => {
     queue.enqueue(DANA_DROPPED);
     server.failNext(new ApiError(409, "Not in progress"));
     await queue.drain();
+    const gate = server.holdNext();
 
-    queue.retry(items(queue)[0].id);
+    expect(await queue.retry(items(queue)[0].id)).toBe(true);
+    await flush();
     // Try again starts sending at once; the next tap is no longer blocked.
     expect(items(queue).map((i) => i.state)).toEqual(["sending", "queued"]);
+    gate.resolve();
     await queue.drain();
 
     expect(server.calls.map((c) => c.status)).toEqual(["PICKED_UP", "PICKED_UP", "DROPPED_OFF"]);
@@ -638,7 +707,7 @@ describe("conflicts and rejections", () => {
     server.failNext(new ApiError(409, "Not in progress"));
     await queue.drain();
 
-    expect(queue.retry(only(queue).id)).toBe(true);
+    expect(await queue.retry(only(queue).id)).toBe(true);
     await queue.drain();
 
     expect(server.calls).toHaveLength(2);
@@ -687,14 +756,14 @@ describe("retry and discard", () => {
     await flush();
 
     for (const id of [sending.item.id, waiting.item.id, "unknown"]) {
-      expect(queue.retry(id)).toBe(false);
-      expect(queue.discard(id)).toBe(false);
+      expect(await queue.retry(id)).toBe(false);
+      expect(await queue.discard(id)).toBe(false);
     }
 
     gate.resolve();
     await draining;
-    expect(queue.retry(sending.item.id)).toBe(false);
-    expect(queue.discard(sending.item.id)).toBe(false);
+    expect(await queue.retry(sending.item.id)).toBe(false);
+    expect(await queue.discard(sending.item.id)).toBe(false);
   });
 
   it("discard removes the item from storage", async () => {
@@ -705,7 +774,7 @@ describe("retry and discard", () => {
     server.failNext(new ApiError(404, "Not on this run"));
     await queue.drain();
 
-    expect(queue.discard(only(queue).id)).toBe(true);
+    expect(await queue.discard(only(queue).id)).toBe(true);
 
     expect(items(queue)).toEqual([]);
     expect(stored(store)).toEqual([]);
@@ -726,8 +795,8 @@ describe("items from another day", () => {
       state: "conflict",
       lastError: { kind: "conflict", message: STALE_MESSAGE },
     });
-    expect(queue.retry(item.id)).toBe(false);
-    expect(queue.discard(item.id)).toBe(true);
+    expect(await queue.retry(item.id)).toBe(false);
+    expect(await queue.discard(item.id)).toBe(true);
   });
 
   it("stop being replayed once the day is over", async () => {
@@ -943,6 +1012,305 @@ describe("two tabs", () => {
     await a.drain();
     expect(server.calls.map((c) => c.studentId)).toEqual(["dana", "tarek"]);
     expect(items(b).map((i) => i.state)).toEqual(["synced", "synced"]);
+  });
+});
+
+describe("two tabs changing storage at once", () => {
+  // The write lock both tabs share. hold() takes it the way another tab in the
+  // middle of a change would, until the test lets it go.
+  function sharedWriteLock() {
+    let tail: Promise<unknown> = Promise.resolve();
+    const lock: WriteLock = {
+      run(fn) {
+        const result = tail.then(fn);
+        tail = result.catch(() => {});
+        return result;
+      },
+    };
+    function hold() {
+      const gate = deferred();
+      tail = tail.then(() => gate.promise);
+      return gate;
+    }
+    return { lock, hold };
+  }
+
+  // b's storage events can be held back, for a tab whose snapshot is out of date.
+  function twoTabs() {
+    const shared = memoryStore();
+    const server = fakeServer();
+    const writeLock = sharedWriteLock();
+    const bEvents = { muted: false };
+    const bBase = shared.tab();
+    const bStore: KeyValueStore = {
+      ...bBase,
+      subscribe: (listener) =>
+        bBase.subscribe((key) => {
+          if (!bEvents.muted) listener(key);
+        }),
+    };
+    const tab = (store: KeyValueStore, tabId: string) =>
+      makeQueue({
+        store,
+        api: server.api,
+        lock: leaseLock({ store, key: `${KEY}.lease`, tabId }),
+        writeLock: writeLock.lock,
+      });
+    return {
+      server,
+      shared,
+      writeLock,
+      bEvents,
+      a: tab(shared, "tab-a"),
+      b: tab(bStore, "tab-b"),
+    };
+  }
+
+  it("keep a tap made in one tab while the other is between sending and recording the answer", async () => {
+    const { server, shared, writeLock, a, b } = twoTabs();
+    const answer = server.holdNext();
+    a.enqueue(DANA_PICKED);
+    const aDraining = a.drain();
+    await flush();
+    expect(stored(shared)[0].state).toBe("sending");
+
+    const tarek = b.enqueue(TAREK_PICKED);
+    // a's answer arrives while b is in the middle of a change: a waits its turn.
+    const held = writeLock.hold();
+    answer.resolve();
+    await flush();
+    expect(stored(shared).map((i) => [i.studentId, i.state])).toEqual([
+      ["dana", "sending"],
+      ["tarek", "queued"],
+    ]);
+
+    held.resolve();
+    await aDraining;
+
+    expect(tarek.ok).toBe(true);
+    expect(inQueueKey(shared).map((i) => [i.studentId, i.state])).toEqual([
+      ["dana", "synced"],
+      ["tarek", "synced"],
+    ]);
+    expect(pendingKeys(shared)).toEqual([]);
+    expect(server.recorded.size).toBe(2);
+  });
+
+  it("save a tap at once while another tab holds the write lock, and show it in both", async () => {
+    const { shared, writeLock, a, b } = twoTabs();
+    const held = writeLock.hold();
+
+    const result = b.enqueue(DANA_PICKED);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // In storage before enqueue() returned, under a key of its own; the queue key
+    // waits for the lock.
+    expect(pendingKeys(shared)).toEqual([`${PENDING}${result.item.id}`]);
+    expect(shared.getItem(KEY)).toBeNull();
+    expect(only(a).id).toBe(result.item.id);
+    expect(only(b).id).toBe(result.item.id);
+
+    held.resolve();
+    await flush();
+    expect(inQueueKey(shared)).toEqual([result.item]);
+    expect(pendingKeys(shared)).toEqual([]);
+    expect(only(a).id).toBe(result.item.id);
+  });
+
+  it("merge the same tap made in both tabs at the same moment into one item", async () => {
+    const { server, shared, writeLock, a, b } = twoTabs();
+    const held = writeLock.hold();
+    const fromB = b.enqueue(DANA_PICKED);
+    if (!fromB.ok) throw new Error("enqueue failed");
+    // a's tap of the same stop, written in the same instant, before either tab could
+    // see the other's key.
+    shared.setItem(
+      `${PENDING}from-a`,
+      JSON.stringify({ v: 1, item: { ...fromB.item, id: "from-a", clientRequestId: "k-from-a" } }),
+    );
+    expect(pendingKeys(shared)).toHaveLength(2);
+
+    held.resolve();
+    await flush();
+
+    expect(inQueueKey(shared)).toHaveLength(1);
+    expect(pendingKeys(shared)).toEqual([]);
+    expect(items(a)).toHaveLength(1);
+    expect(items(b)).toHaveLength(1);
+    await a.drain();
+    expect(server.calls).toHaveLength(1);
+  });
+
+  // A pending key written by the other tab, as if its tap came in after `after`
+  // before either tab could see the other's keys.
+  function pendingFromOtherTab(store: KeyValueStore, like: QueueItem, after: QueueItem, id: string) {
+    store.setItem(
+      `${PENDING}${id}`,
+      JSON.stringify({
+        v: 1,
+        item: { ...like, id, clientRequestId: `k-${id}`, createdAt: after.createdAt + 1 },
+      }),
+    );
+  }
+
+  it("merge A, B (one tab) and A (the other) as three taps, in order, the last one winning", async () => {
+    const { server, shared, writeLock, a, b } = twoTabs();
+    const held = writeLock.hold();
+    const picked = b.enqueue(DANA_PICKED);
+    const dropped = b.enqueue(DANA_DROPPED);
+    if (!picked.ok || !dropped.ok) throw new Error("enqueue failed");
+    pendingFromOtherTab(shared, picked.item, dropped.item, "from-a");
+    expect(pendingKeys(shared)).toHaveLength(3);
+
+    held.resolve();
+    await flush();
+
+    expect(inQueueKey(shared).map((i) => [i.id, i.status])).toEqual([
+      [picked.item.id, "PICKED_UP"],
+      [dropped.item.id, "DROPPED_OFF"],
+      ["from-a", "PICKED_UP"],
+    ]);
+    expect(pendingKeys(shared)).toEqual([]);
+    expect(items(a)).toHaveLength(3);
+    await a.drain();
+    expect(server.calls.map((c) => c.status)).toEqual(["PICKED_UP", "DROPPED_OFF", "PICKED_UP"]);
+    expect(server.recorded.size).toBe(3);
+  });
+
+  it("merge a tap the other tab repeated after a conflict as a new item", async () => {
+    const { server, shared, a, b } = twoTabs();
+    const first = a.enqueue(DANA_PICKED);
+    if (!first.ok) throw new Error("enqueue failed");
+    server.failNext(new ApiError(409, "Dana is not on this run"));
+    await a.drain();
+    expect(only(b).state).toBe("conflict");
+
+    pendingFromOtherTab(shared, first.item, first.item, "from-b");
+    await flush();
+    await a.retry("missing"); // Any change merges the pending keys.
+
+    expect(inQueueKey(shared).map((i) => [i.id, i.state])).toEqual([
+      [first.item.id, "conflict"],
+      ["from-b", "blocked"],
+    ]);
+    expect(pendingKeys(shared)).toEqual([]);
+  });
+
+  it("refuse a discard from a tab whose snapshot is out of date, and never bring the item back", async () => {
+    const { server, shared, bEvents, a, b } = twoTabs();
+    const saved = a.enqueue(DANA_PICKED);
+    if (!saved.ok) throw new Error("enqueue failed");
+    server.failNext(new ApiError(400, "Malformed request body"));
+    await a.drain();
+    expect(only(b).state).toBe("error");
+
+    // a sends it again; b hasn't heard yet and still shows it failed.
+    bEvents.muted = true;
+    const answer = server.holdNext();
+    expect(await a.retry(saved.item.id)).toBe(true);
+    await flush();
+    expect(stored(shared)[0].state).toBe("sending");
+    expect(only(b).state).toBe("error");
+
+    expect(await b.discard(saved.item.id)).toBe(false);
+    expect(only(b).state).toBe("sending");
+
+    answer.resolve();
+    await flush();
+    expect(only(a).state).toBe("synced");
+    expect(server.recorded.size).toBe(1);
+    await vi.advanceTimersByTimeAsync(DEFAULT_SYNCED_DISPLAY_MS);
+    expect(stored(shared)).toEqual([]);
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+    expect(stored(shared)).toEqual([]);
+    expect(server.calls).toHaveLength(2);
+  });
+
+  it("don't duplicate an item when a tab died between writing the queue and removing its pending key", async () => {
+    const store = memoryStore();
+    const before = makeQueue({ store, api: null });
+    const saved = before.enqueue(DANA_PICKED);
+    if (!saved.ok) throw new Error("enqueue failed");
+    const pendingKey = `${PENDING}${saved.item.id}`;
+    const leftover = store.getItem(pendingKey)!;
+    await flush();
+    expect(inQueueKey(store)).toHaveLength(1);
+    // The crash: the queue key was written, the pending key never removed.
+    store.setItem(pendingKey, leftover);
+    before.dispose();
+
+    const server = fakeServer();
+    const after = makeQueue({ store, api: server.api });
+    expect(only(after).id).toBe(saved.item.id);
+    await after.drain();
+
+    expect(server.calls).toHaveLength(1);
+    expect(pendingKeys(store)).toEqual([]);
+    expect(inQueueKey(store)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(DEFAULT_SYNCED_DISPLAY_MS);
+    expect(stored(store)).toEqual([]);
+  });
+
+  it("pick up a pending key left by a tab that closed before merging it", async () => {
+    const shared = memoryStore();
+    const left: QueueItem = {
+      id: "i-left",
+      clientRequestId: "k-left",
+      ...DANA_PICKED,
+      occurredAt: "2026-11-09T04:59:00.000Z",
+      createdAt: Date.now() - 60_000,
+      attempts: 0,
+      state: "queued",
+    };
+    const server = fakeServer();
+    const queue = makeQueue({ store: shared, api: server.api });
+    shared.tab().setItem(`${PENDING}${left.id}`, JSON.stringify({ v: 1, item: left }));
+    expect(only(queue).id).toBe("i-left");
+
+    await queue.drain();
+
+    expect(server.calls.map((c) => c.clientRequestId)).toEqual(["k-left"]);
+    expect(pendingKeys(shared)).toEqual([]);
+    expect(inQueueKey(shared)).toEqual([expect.objectContaining({ id: "i-left", state: "synced" })]);
+  });
+
+  it("refuse a tap whose pending key can't be written (storage full)", () => {
+    const base = memoryStore();
+    const { store, state } = failingStore(base);
+    const queue = makeQueue({ store });
+    state.fullWrites = true;
+
+    const result = queue.enqueue(DANA_PICKED);
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).toBeInstanceOf(StorageError);
+    expect(!result.ok && result.error.kind).toBe("quota");
+    expect(pendingKeys(base)).toEqual([]);
+    expect(stored(base)).toEqual([]);
+  });
+
+  it("report a corrupt pending key, and leave the queue key as it was", async () => {
+    const shared = memoryStore();
+    const server = fakeServer();
+    const queue = makeQueue({ store: shared, api: null });
+    queue.enqueue(DANA_PICKED);
+    await flush();
+    const before = shared.getItem(KEY);
+    expect(before).not.toBeNull();
+
+    shared.tab().setItem(`${PENDING}broken`, "{not json");
+
+    expect(queue.getSnapshot().storageError?.kind).toBe("corrupt");
+    const refused = queue.enqueue(TAREK_PICKED);
+    expect(refused).toEqual({ ok: false, error: expect.objectContaining({ kind: "corrupt" }) });
+    const sender = makeQueue({ store: shared.tab(), api: server.api });
+    await sender.drain();
+
+    expect(sender.getSnapshot().storageError?.kind).toBe("corrupt");
+    expect(server.confirm).not.toHaveBeenCalled();
+    expect(shared.getItem(KEY)).toBe(before);
+    expect(shared.getItem(`${PENDING}broken`)).toBe("{not json");
   });
 });
 

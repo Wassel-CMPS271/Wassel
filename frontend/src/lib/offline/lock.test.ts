@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_LEASE_TTL_MS,
   createDrainLock,
+  createWriteLock,
+  inTabWriteLock,
   leaseLock,
   webLock,
+  webWriteLock,
   type LockManagerLike,
 } from "./lock";
 import { memoryStore, StorageError, type KeyValueStore } from "./storage";
@@ -146,6 +149,9 @@ describe("leaseLock", () => {
       removeItem: () => {
         throw new StorageError("unavailable", "No");
       },
+      keys: () => {
+        throw new StorageError("unavailable", "No");
+      },
       subscribe: () => () => {},
     };
 
@@ -205,5 +211,63 @@ describe("createDrainLock", () => {
     });
 
     expect(store.getItem("q.lease")).toBeNull();
+  });
+});
+
+describe("webWriteLock", () => {
+  it("waits for an exclusive lock named <name>.write, never asking only if it's free", async () => {
+    const { manager, request } = fakeLocks();
+
+    expect(await webWriteLock("q", manager).run(() => "done")).toBe("done");
+
+    expect(request).toHaveBeenCalledWith("q.write", { mode: "exclusive" }, expect.any(Function));
+    expect(request.mock.calls[0][1]).not.toHaveProperty("ifAvailable");
+  });
+});
+
+describe("inTabWriteLock", () => {
+  it("runs this tab's changes one at a time, in the order they were asked for", async () => {
+    const lock = inTabWriteLock();
+    const order: string[] = [];
+
+    const first = lock.run(() => {
+      order.push("first");
+      return 1;
+    });
+    const second = lock.run(() => {
+      order.push("second");
+      return 2;
+    });
+    // Neither runs inside run() itself: each waits for the ones before it.
+    expect(order).toEqual([]);
+
+    expect(await Promise.all([first, second])).toEqual([1, 2]);
+    expect(order).toEqual(["first", "second"]);
+  });
+
+  it("keeps going after a change that throws", async () => {
+    const lock = inTabWriteLock();
+
+    const failing = lock.run(() => {
+      throw new Error("boom");
+    });
+    const next = lock.run(() => "next");
+
+    await expect(failing).rejects.toThrow("boom");
+    expect(await next).toBe("next");
+  });
+});
+
+describe("createWriteLock", () => {
+  it("uses navigator.locks when the browser has it", async () => {
+    const { manager, request } = fakeLocks();
+
+    await createWriteLock({ name: "q", locks: manager }).run(() => {});
+
+    expect(request).toHaveBeenCalledWith("q.write", { mode: "exclusive" }, expect.any(Function));
+  });
+
+  it("falls back to the in-tab chain without it (as in jsdom)", async () => {
+    expect(await createWriteLock({ name: "q" }).run(() => 1)).toBe(1);
   });
 });

@@ -24,6 +24,8 @@ export interface KeyValueStore {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
+  // Every key that starts with prefix, in no particular order.
+  keys(prefix: string): string[];
   // Calls the listener with the key another tab changed (null: everything was
   // cleared). Not called for this store's own writes, like the storage event.
   subscribe(listener: (key: string | null) => void): () => void;
@@ -71,6 +73,19 @@ export function localStorageStore(win: Window = window): KeyValueStore {
         area.removeItem(key);
       } catch {
         throw new StorageError("unavailable", "Storage on this device can't be written");
+      }
+    },
+    keys(prefix) {
+      const area = storage();
+      try {
+        const found: string[] = [];
+        for (let i = 0; i < area.length; i++) {
+          const key = area.key(i);
+          if (key !== null && key.startsWith(prefix)) found.push(key);
+        }
+        return found;
+      } catch {
+        throw new StorageError("unavailable", "Storage on this device can't be read");
       }
     },
     subscribe(listener) {
@@ -139,6 +154,7 @@ function memoryHandle(shared: MemoryShared): MemoryStore {
       shared.data.delete(key);
       notifyOthers(key);
     },
+    keys: (prefix) => [...shared.data.keys()].filter((key) => key.startsWith(prefix)),
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

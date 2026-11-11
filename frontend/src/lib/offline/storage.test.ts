@@ -62,15 +62,29 @@ describe("localStorageStore", () => {
     expect(storageError(() => store.setItem("k", "v")).kind).toBe("quota");
   });
 
+  it("lists the keys that start with a prefix", () => {
+    const store = localStorageStore();
+    store.setItem("q.pending.a", "1");
+    store.setItem("q.pending.b", "2");
+    store.setItem("q", "3");
+    store.setItem("other.pending.c", "4");
+
+    expect(store.keys("q.pending.").sort()).toEqual(["q.pending.a", "q.pending.b"]);
+    expect(store.keys("none.")).toEqual([]);
+  });
+
   it("turns any other failure into an unavailable error", () => {
     const fail = () => {
       throw new Error("Blocked");
     };
-    const store = localStorageStore(windowWith({ getItem: fail, setItem: fail, removeItem: fail }));
+    const store = localStorageStore(
+      windowWith({ getItem: fail, setItem: fail, removeItem: fail, key: fail, length: 1 }),
+    );
 
     expect(storageError(() => store.getItem("k")).kind).toBe("unavailable");
     expect(storageError(() => store.setItem("k", "v")).kind).toBe("unavailable");
     expect(storageError(() => store.removeItem("k")).kind).toBe("unavailable");
+    expect(storageError(() => store.keys("k")).kind).toBe("unavailable");
   });
 
   it("is unavailable when localStorage itself can't be touched (blocked site data)", () => {
@@ -82,6 +96,7 @@ describe("localStorageStore", () => {
 
     expect(storageError(() => store.getItem("k")).kind).toBe("unavailable");
     expect(storageError(() => store.setItem("k", "v")).kind).toBe("unavailable");
+    expect(storageError(() => store.keys("k")).kind).toBe("unavailable");
   });
 
   it("hears other tabs' localStorage changes, not sessionStorage's", () => {
@@ -130,6 +145,20 @@ describe("memoryStore", () => {
     unsubscribeB();
     a.setItem("k", "w");
     expect(heardByB).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists the keys that start with a prefix, the same from every tab", () => {
+    const a = memoryStore();
+    const b = a.tab();
+    a.setItem("q.pending.a", "1");
+    b.setItem("q.pending.b", "2");
+    a.setItem("q", "3");
+
+    expect(a.keys("q.pending.").sort()).toEqual(["q.pending.a", "q.pending.b"]);
+    expect(b.keys("q.pending.").sort()).toEqual(["q.pending.a", "q.pending.b"]);
+    b.removeItem("q.pending.a");
+    expect(a.keys("q.pending.")).toEqual(["q.pending.b"]);
+    expect(memoryStore().keys("q")).toEqual([]);
   });
 
   it("keeps separate stores apart", () => {

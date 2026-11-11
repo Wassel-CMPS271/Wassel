@@ -113,8 +113,10 @@ describe("useOfflineQueue", () => {
     });
 
     expect(enqueued.ok).toBe(true);
-    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!);
-    expect(stored.items).toHaveLength(1);
+    if (!enqueued.ok) return;
+    // Saved under the driver's key at once, as a pending key the next change merges.
+    const pending = JSON.parse(window.localStorage.getItem(`${STORAGE_KEY}.pending.${enqueued.item.id}`)!);
+    expect(pending.item).toEqual(enqueued.item);
   });
 
   it("drains whatever was left in storage from a previous visit, on mount", async () => {

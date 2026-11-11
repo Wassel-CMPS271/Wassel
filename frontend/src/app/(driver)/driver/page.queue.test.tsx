@@ -12,6 +12,7 @@ import type { ConfirmationReplayInput } from "@/lib/api/confirmationReplay";
 import { ApiError } from "@/lib/api/errors";
 import { confirmStudent, getDriverToday, type DriverDay, type Run } from "@/lib/api/runs";
 import { todayInBeirut } from "@/lib/offline/queue";
+import { queueStorageKey } from "@/lib/offline/storage";
 import sample from "../../../../../docs/contracts/samples/runs/driver-today.json";
 import DriverTodayPage from "./page";
 
@@ -44,6 +45,19 @@ const DAY: DriverDay = {
   date: TODAY,
   runs: (sample as unknown as DriverDay).runs.map((run) => ({ ...run, date: TODAY })),
 };
+
+// Everything saved on the phone for this driver: the queue key and any pending key
+// enqueue() wrote that hasn't been merged yet.
+function savedItems(): Array<{ state: string }> {
+  const key = queueStorageKey("driver-1");
+  const raw = window.localStorage.getItem(key);
+  const items: Array<{ state: string }> = raw === null ? [] : JSON.parse(raw).items;
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const other = window.localStorage.key(i)!;
+    if (other.startsWith(`${key}.pending.`)) items.push(JSON.parse(window.localStorage.getItem(other)!).item);
+  }
+  return items;
+}
 
 function card(name: string) {
   return screen.getByText(name).closest("li")!;
@@ -160,9 +174,11 @@ it("Try again on the card retries the same item through the real queue", async (
 
   fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Try again" }));
 
+  // retry() is async now (it waits for the write lock); the card follows once it lands.
   await within(card("Dana Fares")).findByText("Done · Picked up");
   expect(confirm).toHaveBeenCalledTimes(2);
   expect(confirm.mock.calls[1][0].clientRequestId).toBe(confirm.mock.calls[0][0].clientRequestId);
+  expect(savedItems().map((item) => item.state)).toEqual(["synced"]);
 });
 
 it("Dismiss on a conflict removes it through the real queue, without resending it", async () => {
@@ -176,6 +192,11 @@ it("Dismiss on a conflict removes it through the real queue, without resending i
 
   fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Dismiss" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+  // discard() is async now (it waits for the write lock): the conflict goes once it
+  // has landed, and storage holds nothing more for this driver.
+  await vi.waitFor(() => expect(within(card("Dana Fares")).queryByText(/Conflict/)).not.toBeInTheDocument());
+  expect(savedItems()).toEqual([]);
 
   // Nothing left to send, but this also checks there's no leftover timer
   // quietly resending the discarded item.

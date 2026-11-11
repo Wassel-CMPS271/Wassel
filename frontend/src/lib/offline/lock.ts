@@ -7,6 +7,10 @@
 // crashes). Where it's missing, a lease in storage stands in: a tab id and an expiry,
 // renewed before each send, so a tab that died mid-send blocks the others only until
 // the lease runs out.
+//
+// The write lock is a different thing: it serializes each change to the stored queue
+// (read, change, write) across tabs, and is held only for that one synchronous step,
+// never across a send. See WriteLock below.
 
 import type { KeyValueStore } from "./storage";
 
@@ -22,7 +26,7 @@ export interface DrainLock {
 export interface LockManagerLike {
   request<T>(
     name: string,
-    options: { ifAvailable: true },
+    options: { ifAvailable?: boolean; mode?: "exclusive" | "shared" },
     callback: (lock: unknown) => Promise<T>,
   ): Promise<T>;
 }
@@ -136,4 +140,45 @@ export function createDrainLock({
   locks = (globalThis.navigator as { locks?: LockManagerLike } | undefined)?.locks,
 }: DrainLockOptions): DrainLock {
   return locks ? webLock(name, locks) : leaseLock({ store, key: `${name}.lease`, tabId });
+}
+
+export interface WriteLock {
+  // Waits for the lock (unlike DrainLock, it never gives up), runs fn, releases it.
+  // fn must be synchronous: the lock is held for one change to storage, not a send.
+  run<T>(fn: () => T): Promise<T>;
+}
+
+// An exclusive Web Lock named `${name}.write`, waited for: a change from another tab
+// queues behind this one instead of interleaving with it.
+export function webWriteLock(name: string, locks: LockManagerLike): WriteLock {
+  return {
+    run: (fn) => locks.request(`${name}.write`, { mode: "exclusive" }, async () => fn()),
+  };
+}
+
+// Without Web Locks: a promise chain, so this tab's own changes go one at a time.
+// Best effort across tabs, which it can't see. A tap still can't be lost, because
+// enqueue() writes each new item to a key of its own (queue.ts).
+export function inTabWriteLock(): WriteLock {
+  let tail: Promise<unknown> = Promise.resolve();
+  return {
+    run(fn) {
+      const result = tail.then(fn);
+      tail = result.catch(() => {});
+      return result;
+    },
+  };
+}
+
+export interface WriteLockOptions {
+  name: string;
+  locks?: LockManagerLike | undefined;
+}
+
+// navigator.locks when the browser has it, the in-tab chain otherwise.
+export function createWriteLock({
+  name,
+  locks = (globalThis.navigator as { locks?: LockManagerLike } | undefined)?.locks,
+}: WriteLockOptions): WriteLock {
+  return locks ? webWriteLock(name, locks) : inTabWriteLock();
 }
