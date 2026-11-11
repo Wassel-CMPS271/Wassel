@@ -9,8 +9,8 @@ import { createServer } from "node:net";
 const args = process.argv.slice(2);
 const suiteIndex = args.findIndex(arg => arg.startsWith("--suite="));
 const suite = suiteIndex < 0 ? "routing" : args.splice(suiteIndex, 1)[0].slice("--suite=".length);
-if (!["routing", "auth"].includes(suite)) throw new Error("Unknown E2E suite");
-const authentication = suite === "auth";
+if (!["routing", "auth", "absences"].includes(suite)) throw new Error("Unknown E2E suite");
+const authentication = suite !== "routing"; // Absences reuse the isolated production demo/auth seed.
 const webPort = authentication ? 4180 : 4173;
 const apiPort = authentication ? 18177 : 18080;
 const postgresPort = Number(process.env.E2E_POSTGRES_PORT || (authentication ? 55439 : 55437));
@@ -154,7 +154,7 @@ try {
   // delete-on-run artifacts are ignored by git and never uploaded by CI.
   const credentials = resolve(artifacts, "credentials.json");
   writeFileSync(credentials, JSON.stringify(authentication ? { password: env.WASSEL_E2E_PASSWORD, accounts: { ADMIN: "admin@auth-e2e.invalid", HEAD_OF_TRANSPORT: "auth+head@auth-e2e.invalid", DRIVER: "auth+driver-karim@auth-e2e.invalid", PARENT: "auth+parent@auth-e2e.invalid" } } : { email: "routing-head@e2e.invalid", password: env.WASSEL_E2E_PASSWORD }), { mode: 0o600 });
-  await run(process.execPath, ["node_modules/@playwright/test/cli.js", "test", ...(authentication ? ["auth.e2e.ts", "auth-revocation.e2e.ts"] : ["routing.e2e.ts"]), ...args], frontend);
+  await run(process.execPath, ["node_modules/@playwright/test/cli.js", "test", ...(suite === "absences" ? ["absences.e2e.ts"] : authentication ? ["auth.e2e.ts", "auth-revocation.e2e.ts"] : ["routing.e2e.ts"]), ...args], frontend);
 } catch (error) {
   console.error(`E2E FAILED: ${error.message}`); process.exitCode = 1;
 } finally {
