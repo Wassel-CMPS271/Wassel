@@ -23,8 +23,11 @@ function pluralStops(count: number): string {
   return count === 1 ? "1 confirmation" : `${count} confirmations`;
 }
 
-// role="status": announced without interrupting, the way the page's other
-// non-error notices are (frontend/CLAUDE.md).
+// role="status" + an explicit aria-live="polite": announced without
+// interrupting or stealing focus, the way the page's other non-error notices
+// are (frontend/CLAUDE.md) — explicit because the banner's own text changes
+// in place (online -> offline -> signed out, the saved count) and must be
+// re-announced each time, not just on mount.
 export function ConnectionBanner({
   state,
   paused,
@@ -47,7 +50,7 @@ export function ConnectionBanner({
 
   if (paused) {
     return (
-      <div role="status" style={style}>
+      <div role="status" aria-live="polite" style={style}>
         <p className="text-sm" style={{ color: darkTheme.text.primary }}>
           You&apos;re signed out. Sign in again, then send{" "}
           {savedCount > 0 ? pluralStops(savedCount) : "what's saved on this phone"}.
@@ -61,7 +64,7 @@ export function ConnectionBanner({
 
   if (!replayAvailable) {
     return (
-      <div role="status" style={style}>
+      <div role="status" aria-live="polite" style={style}>
         <p className="text-sm" style={{ color: darkTheme.text.primary }}>
           {state === "offline" ? "You're offline." : "Checking your connection…"} Offline saving
           isn&apos;t available yet, so confirmations can&apos;t be sent until you&apos;re back
@@ -72,7 +75,7 @@ export function ConnectionBanner({
   }
 
   return (
-    <div role="status" style={style}>
+    <div role="status" aria-live="polite" style={style}>
       <p className="text-sm" style={{ color: darkTheme.text.primary }}>
         {state === "offline" ? "You're offline." : "Checking your connection…"}{" "}
         {savedCount > 0

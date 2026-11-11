@@ -167,6 +167,9 @@ it("shows Waiting to send with Try again for a blocked item", () => {
   expect(onRetryQueueItem).toHaveBeenCalledTimes(1);
 });
 
+const DISMISS_LABEL = "Dismiss saved tap for Dana Fares";
+const CONFIRM_DISMISS_LABEL = "Confirm dismiss saved tap for Dana Fares";
+
 it("shows Conflict with the server's detail, and Dismiss behind a confirm step", () => {
   const onDismissQueueItem = vi.fn();
   renderCard({
@@ -181,26 +184,61 @@ it("shows Conflict with the server's detail, and Dismiss behind a confirm step",
   expect(within(card()).getByText("Dana is not on this run")).toBeInTheDocument();
   expect(within(card()).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
 
-  fireEvent.click(within(card()).getByRole("button", { name: "Dismiss" }));
+  fireEvent.click(within(card()).getByRole("button", { name: DISMISS_LABEL }));
   expect(onDismissQueueItem).not.toHaveBeenCalled();
-  expect(screen.getByRole("button", { name: "Confirm" })).toHaveFocus();
+  expect(screen.getByRole("button", { name: CONFIRM_DISMISS_LABEL })).toHaveFocus();
 
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(screen.getByRole("button", { name: "Dismiss" })).toHaveFocus();
+  expect(screen.getByRole("button", { name: DISMISS_LABEL })).toHaveFocus();
   expect(onDismissQueueItem).not.toHaveBeenCalled();
 
-  fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  fireEvent.click(screen.getByRole("button", { name: DISMISS_LABEL }));
+  fireEvent.click(screen.getByRole("button", { name: CONFIRM_DISMISS_LABEL }));
   expect(onDismissQueueItem).toHaveBeenCalledTimes(1);
 });
 
 it("cancels the Dismiss confirm step on Escape", () => {
   renderCard({ queueItem: queueItem({ state: "conflict", lastError: { kind: "conflict", message: "x" } }) });
 
-  fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
-  fireEvent.keyDown(screen.getByRole("button", { name: "Confirm" }), { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: DISMISS_LABEL }));
+  fireEvent.keyDown(screen.getByRole("button", { name: CONFIRM_DISMISS_LABEL }), { key: "Escape" });
 
-  expect(screen.getByRole("button", { name: "Dismiss" })).toHaveFocus();
+  expect(screen.getByRole("button", { name: DISMISS_LABEL })).toHaveFocus();
+});
+
+it("includes the student's name in the Dismiss and Confirm labels, for a different student", () => {
+  renderCard({
+    stop: { ...BASE_STOP, firstName: "Omar", lastName: "Khalil" },
+    queueItem: queueItem({ state: "conflict", lastError: { kind: "conflict", message: "x" } }),
+  });
+
+  const dismiss = screen.getByRole("button", { name: "Dismiss saved tap for Omar Khalil" });
+  fireEvent.click(dismiss);
+  expect(
+    screen.getByRole("button", { name: "Confirm dismiss saved tap for Omar Khalil" }),
+  ).toBeInTheDocument();
+});
+
+it("announces the queue pill's status changes via an aria-live polite region, without moving focus", () => {
+  const { rerender } = render(
+    <ul>
+      <StopCard {...BASE_PROPS} queueItem={queueItem({ state: "queued" })} />
+    </ul>,
+  );
+  const liveRegion = screen.getByText(/Saved on phone/).closest('[aria-live="polite"]');
+  expect(liveRegion).not.toBeNull();
+  expect(liveRegion).toHaveAttribute("aria-live", "polite");
+
+  document.body.focus();
+  rerender(
+    <ul>
+      <StopCard {...BASE_PROPS} queueItem={queueItem({ state: "sending" })} />
+    </ul>,
+  );
+
+  expect(within(card()).getByText(/Sending…/)).toBeInTheDocument();
+  // Updating the pill must not steal focus away from wherever it was.
+  expect(document.activeElement).toBe(document.body);
 });
 
 it("moves focus to Try again once a queue item settles from sending to error", () => {

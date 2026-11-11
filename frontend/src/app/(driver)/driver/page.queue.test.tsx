@@ -190,8 +190,10 @@ it("Dismiss on a conflict removes it through the real queue, without resending i
   fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Picked up" }));
   await within(card("Dana Fares")).findByText(/Conflict/);
 
-  fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Dismiss" }));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  fireEvent.click(
+    within(card("Dana Fares")).getByRole("button", { name: "Dismiss saved tap for Dana Fares" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Confirm dismiss saved tap for Dana Fares" }));
 
   // discard() is async now (it waits for the write lock): the conflict goes once it
   // has landed, and storage holds nothing more for this driver.

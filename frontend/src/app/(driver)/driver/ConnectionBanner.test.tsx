@@ -74,3 +74,16 @@ it("the paused notice takes priority over the offline/unavailable wording", () =
 
   expect(screen.getByRole("status")).toHaveTextContent("You're signed out.");
 });
+
+it('marks the banner aria-live="polite" so its wording changes are announced without stealing focus', () => {
+  const { rerender } = render(<ConnectionBanner {...BASE} state="offline" savedCount={0} />);
+
+  const banner = screen.getByRole("status");
+  expect(banner).toHaveAttribute("aria-live", "polite");
+
+  document.body.focus();
+  rerender(<ConnectionBanner {...BASE} state="offline" savedCount={2} />);
+
+  expect(screen.getByRole("status")).toHaveTextContent("2 confirmations");
+  expect(document.activeElement).toBe(document.body);
+});

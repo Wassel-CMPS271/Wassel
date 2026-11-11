@@ -122,10 +122,12 @@ function queuePillStyle(state: QueueItem["state"]): CSSProperties | undefined {
 // Confirm and back to the triggering button).
 function QueueStatus({
   item,
+  name,
   onRetry,
   onDismiss,
 }: {
   item: QueueItem;
+  name: string;
   onRetry: () => void;
   onDismiss: () => void;
 }) {
@@ -158,7 +160,15 @@ function QueueStatus({
 
   return (
     <div className="flex flex-col" style={{ gap: spacing.xs }}>
-      <div className="flex items-center flex-wrap" style={{ gap: spacing.sm }}>
+      {/* aria-live, not role="status": this already sits inside the stop's
+          labelled group, and a second status landmark per stop would be noisy
+          on a run with many stops. Announces queued -> sending -> sent/error
+          without moving focus. */}
+      <div
+        className="flex items-center flex-wrap"
+        style={{ gap: spacing.sm }}
+        aria-live="polite"
+      >
         <Pill style={queuePillStyle(item.state)}>
           {item.state === "synced" && <CheckIcon size={14} />}
           {QUEUE_LABELS[item.state]}
@@ -205,6 +215,7 @@ function QueueStatus({
             <Button
               ref={confirmRef}
               variant="danger"
+              aria-label={`Confirm dismiss saved tap for ${name}`}
               onClick={confirmDismiss}
               style={{ minHeight: sizing.tapTarget }}
             >
@@ -219,6 +230,7 @@ function QueueStatus({
             data-stop-retry
             ref={dismissRef}
             variant="secondary"
+            aria-label={`Dismiss saved tap for ${name}`}
             onClick={() => setConfirmingDismiss(true)}
             style={{ minHeight: sizing.tapTarget, alignSelf: "flex-start" }}
           >
@@ -453,6 +465,7 @@ export function StopCard({
               {queueItem && (
                 <QueueStatus
                   item={queueItem}
+                  name={name}
                   onRetry={() => onRetryQueueItem?.()}
                   onDismiss={() => onDismissQueueItem?.()}
                 />
