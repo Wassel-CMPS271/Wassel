@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_RETRY_INTERVAL_MS, createConnectivity, type Connectivity } from "./connectivity";
+import { ApiError, ApiValidationError } from "../api/errors";
+import { DEFAULT_RETRY_INTERVAL_MS, createConnectivity, reportIfNetwork, type Connectivity } from "./connectivity";
 
 let connectivity: Connectivity | undefined;
 
@@ -143,5 +144,40 @@ describe("createConnectivity", () => {
 
     expect(retry).not.toHaveBeenCalled();
     expect(changed).not.toHaveBeenCalled();
+  });
+});
+
+describe("reportIfNetwork", () => {
+  function spy() {
+    return { reportSuccess: vi.fn(), reportFailure: vi.fn() } as unknown as Connectivity & {
+      reportSuccess: ReturnType<typeof vi.fn>;
+      reportFailure: ReturnType<typeof vi.fn>;
+    };
+  }
+
+  it.each([
+    ["a TypeError (network down)", new TypeError("Failed to fetch")],
+    ["an AbortError (timeout)", Object.assign(new Error("aborted"), { name: "AbortError" })],
+  ])("reports a failure for %s", (_label, error) => {
+    const connectivity = spy();
+    reportIfNetwork(connectivity, error);
+    expect(connectivity.reportFailure).toHaveBeenCalledTimes(1);
+    expect(connectivity.reportSuccess).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["ApiError(400)", new ApiError(400, "Bad request")],
+    ["ApiError(403)", new ApiError(403)],
+    ["ApiError(500)", new ApiError(500)],
+    ["ApiValidationError", new ApiValidationError({ latitude: "out of range" })],
+  ])("reports success for %s: the server answered", (_label, error) => {
+    const connectivity = spy();
+    reportIfNetwork(connectivity, error);
+    expect(connectivity.reportSuccess).toHaveBeenCalledTimes(1);
+    expect(connectivity.reportFailure).not.toHaveBeenCalled();
+  });
+
+  it("does nothing without a connectivity", () => {
+    expect(() => reportIfNetwork(null, new TypeError("x"))).not.toThrow();
   });
 });

@@ -1,21 +1,13 @@
-// Driver GPS API types — SCRUM-273, written from the DRAFT contract
-// docs/contracts/driver-gps-offline.md. SCRUM-261 (the backend) is not started, so
-// `driverGpsApi` is null: there is no fake or sample implementation, and nothing in a
-// production path calls these endpoints yet (frontend/CLAUDE.md: every module calls the
-// real backend, no mocks). SCRUM-261's PR replaces the null with a request()-based
-// client built from this file's interface, the way runs.ts's functions are built.
+// Driver GPS API client — SCRUM-273, built from docs/contracts/runs.md's "Live
+// location" section (SCRUM-261 / PR #143 is not yet merged on develop; this client
+// is only real once that lands). One module per backend area
+// (frontend/CLAUDE.md): every call goes through request() in client.ts.
 //
-// Proposed endpoints (not implemented; see the contract for open questions):
-//   GET    /api/driver/runs/{runId}/location-sharing              -> LocationSharing
-//   PUT    /api/driver/runs/{runId}/location-sharing  { enabled } -> LocationSharing
-//          (also how sharing is turned off; DELETE is only an alternative in the contract)
-//   POST   /api/driver/runs/{runId}/positions          Position   -> 204
+//   PUT /api/driver/runs/{runId}/location-sharing  { enabled } -> 200 Run
+//   PUT /api/driver/runs/{runId}/location  { latitude, longitude, accuracyMeters } -> 204
 
-export interface LocationSharing {
-  enabled: boolean;
-  // Moment, null while enabled is false.
-  since: string | null;
-}
+import { request } from "./client";
+import type { Run } from "./runs";
 
 export interface LocationSharingInput {
   enabled: boolean;
@@ -26,17 +18,33 @@ export interface PositionInput {
   longitude: number;
   // The device's reported accuracy, so a bad fix can be told from a good one.
   accuracyMeters: number;
-  // Moment: when the device took the fix, not when the request arrived.
-  recordedAt: string;
 }
 
 export interface DriverGpsApi {
-  getSharing(runId: string): Promise<LocationSharing>;
-  setSharing(runId: string, input: LocationSharingInput): Promise<LocationSharing>;
+  setSharing(runId: string, input: LocationSharingInput): Promise<Run>;
   sendPosition(runId: string, input: PositionInput): Promise<void>;
 }
 
-// SCRUM-261 not merged. While this is null, the GPS consent hook (SCRUM-273) shows
-// sharing as unavailable instead of calling anything, exactly as the screen behaves
-// today (no position sharing at all).
-export const driverGpsApi: DriverGpsApi | null = null;
+export function setLocationSharing(runId: string, enabled: boolean): Promise<Run> {
+  return request<Run>(`/api/driver/runs/${runId}/location-sharing`, {
+    method: "PUT",
+    body: { enabled },
+  });
+}
+
+// A send that never comes back shouldn't pile up behind the next one: about 10s,
+// matching the ~10s send interval the hook throttles to (docs/contracts/driver-gps-offline.md).
+const SEND_LOCATION_TIMEOUT_MS = 10_000;
+
+export function sendLocation(runId: string, input: PositionInput): Promise<void> {
+  return request<void>(`/api/driver/runs/${runId}/location`, {
+    method: "PUT",
+    body: input,
+    timeoutMs: SEND_LOCATION_TIMEOUT_MS,
+  });
+}
+
+export const driverGpsApi: DriverGpsApi = {
+  setSharing: (runId, input) => setLocationSharing(runId, input.enabled),
+  sendPosition: sendLocation,
+};

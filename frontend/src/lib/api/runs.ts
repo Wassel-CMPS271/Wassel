@@ -77,6 +77,9 @@ export interface RunSummary {
   vehicle: RouteVehicle;
   driver: RouteDriver;
   counts: RunCounts;
+  // true while the driver is sharing this run's position (docs/contracts/runs.md#live-location).
+  // Only the driver and the head of transportation get it: a parent never learns why a position is missing.
+  locationSharing: boolean;
 }
 
 export interface Run extends RunSummary {

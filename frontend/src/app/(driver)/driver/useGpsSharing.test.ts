@@ -2,12 +2,13 @@
 // with Object.defineProperty, since neither exists in jsdom), a fake DriverGpsApi and
 // a hand-rolled Connectivity. Throttling is driven entirely by each fix's own
 // `timestamp`/coordinates (what the real hook reads), not by wall-clock time, so
-// these don't need fake timers the way the offline queue's backoff does.
+// these don't need fake timers the way the offline queue's backoff does. Calls the
+// tests need to hold open use deferred() below.
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DriverGpsApi } from "@/lib/api/driverGps";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import type { Run } from "@/lib/api/runs";
 import type { Connectivity, ConnectivityState } from "@/lib/offline/connectivity";
 import { useGpsSharing } from "./useGpsSharing";
@@ -25,6 +26,7 @@ function run(overrides: Partial<Run> = {}): Run {
     vehicle: { id: "v-1", plateNumber: "A 123456", capacity: 14 },
     driver: { id: "d-1", firstName: "Karim", lastName: "Haddad" },
     counts: { students: 0, absent: 0, pickedUp: 0, droppedOff: 0, notPresent: 0 },
+    locationSharing: false,
     stops: [],
     ...overrides,
   };
@@ -95,24 +97,31 @@ function fakeApi(): DriverGpsApi & {
   sendPosition: ReturnType<typeof vi.fn>;
 } {
   return {
-    getSharing: vi.fn().mockResolvedValue({ enabled: false, since: null }),
-    setSharing: vi.fn().mockResolvedValue({ enabled: true, since: "2026-11-09T05:00:00Z" }),
+    setSharing: vi.fn().mockResolvedValue(run()),
     sendPosition: vi.fn().mockResolvedValue(undefined),
   };
 }
 
 function fakeConnectivity(initial: ConnectivityState = "online"): Connectivity & {
   setState: (state: ConnectivityState) => void;
+  retry: () => void;
 } {
   let state = initial;
   const listeners = new Set<() => void>();
+  const retryListeners = new Set<() => void>();
   return {
     getState: () => state,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    onRetry: () => () => {},
+    onRetry: (listener) => {
+      retryListeners.add(listener);
+      return () => retryListeners.delete(listener);
+    },
+    retry() {
+      for (const listener of [...retryListeners]) listener();
+    },
     reportSuccess: vi.fn(),
     reportFailure: vi.fn(),
     dispose: () => {},
@@ -121,6 +130,25 @@ function fakeConnectivity(initial: ConnectivityState = "online"): Connectivity &
       for (const listener of [...listeners]) listener();
     },
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function enabledArgs(api: ReturnType<typeof fakeApi>): boolean[] {
+  return api.setSharing.mock.calls.map((call) => (call[1] as { enabled: boolean }).enabled);
+}
+
+function hide(hidden: boolean) {
+  setHidden(hidden);
+  document.dispatchEvent(new Event("visibilitychange"));
 }
 
 let geolocation: FakeGeolocation | undefined;
@@ -170,17 +198,21 @@ function setUp(overrides: { run?: Run; api?: ReturnType<typeof fakeApi> } = {}) 
   installGeolocation();
   const api = overrides.api ?? fakeApi();
   const connectivity = fakeConnectivity();
-  const rendered = renderHook((props: { run: Run }) => useGpsSharing({ run: props.run, api, connectivity }), {
-    initialProps: { run: overrides.run ?? run() },
-  });
-  return { ...rendered, api, connectivity };
+  const onRunChange = vi.fn();
+  const onRefreshRequested = vi.fn();
+  const rendered = renderHook(
+    (props: { run: Run }) =>
+      useGpsSharing({ run: props.run, api, connectivity, onRunChange, onRefreshRequested }),
+    { initialProps: { run: overrides.run ?? run() } },
+  );
+  return { ...rendered, api, connectivity, onRunChange, onRefreshRequested };
 }
 
 describe("availability", () => {
   it("is unavailable with no api", () => {
     installGeolocation();
     const { result } = renderHook(() =>
-      useGpsSharing({ run: run(), api: null, connectivity: fakeConnectivity() }),
+      useGpsSharing({ run: run(), api: null, connectivity: fakeConnectivity(), onRunChange: vi.fn(), onRefreshRequested: vi.fn() }),
     );
 
     expect(result.current.state.status).toBe("unavailable");
@@ -189,7 +221,7 @@ describe("availability", () => {
   it("is unavailable with no navigator.geolocation", () => {
     installPermissions(undefined);
     const { result } = renderHook(() =>
-      useGpsSharing({ run: run(), api: fakeApi(), connectivity: fakeConnectivity() }),
+      useGpsSharing({ run: run(), api: fakeApi(), connectivity: fakeConnectivity(), onRunChange: vi.fn(), onRefreshRequested: vi.fn() }),
     );
 
     expect(result.current.state.status).toBe("unavailable");
@@ -200,7 +232,7 @@ describe("availability", () => {
     setSecureContext(false);
 
     const { result } = renderHook(() =>
-      useGpsSharing({ run: run(), api: fakeApi(), connectivity: fakeConnectivity() }),
+      useGpsSharing({ run: run(), api: fakeApi(), connectivity: fakeConnectivity(), onRunChange: vi.fn(), onRefreshRequested: vi.fn() }),
     );
 
     expect(result.current.state.status).toBe("unavailable");
@@ -217,7 +249,7 @@ describe("availability", () => {
   it("requests and sends nothing at all with a null api, even if the driver calls optIn", () => {
     installGeolocation();
     const { result } = renderHook(() =>
-      useGpsSharing({ run: run(), api: null, connectivity: fakeConnectivity() }),
+      useGpsSharing({ run: run(), api: null, connectivity: fakeConnectivity(), onRunChange: vi.fn(), onRefreshRequested: vi.fn() }),
     );
 
     act(() => result.current.optIn());
@@ -267,11 +299,22 @@ describe("the sharing flow and throttling", () => {
       latitude: 33.89,
       longitude: 35.5,
       accuracyMeters: 10,
-      recordedAt: new Date(1_000).toISOString(),
     });
   });
 
-  it("doesn't resend a fix less than 15s and 25m after the last one sent", async () => {
+  it("doesn't send a fix with an out-of-range accuracy", async () => {
+    const { result, api } = setUp();
+    act(() => result.current.optIn());
+
+    act(() =>
+      geolocation!.watchers[0].success(position({ accuracy: 10_001, timestamp: 1_000 })),
+    );
+    await act(async () => {});
+
+    expect(api.sendPosition).not.toHaveBeenCalled();
+  });
+
+  it("doesn't resend a fix less than 10s and 25m after the last one sent", async () => {
     const { result, api } = setUp();
     act(() => result.current.optIn());
     act(() => geolocation!.watchers[0].success(position({ timestamp: 0 })));
@@ -283,26 +326,60 @@ describe("the sharing flow and throttling", () => {
     expect(api.sendPosition).toHaveBeenCalledTimes(1);
   });
 
-  it("resends once 15s have passed, even with no movement", async () => {
+  it("resends once 10s have passed, even with no movement", async () => {
     const { result, api } = setUp();
     act(() => result.current.optIn());
     act(() => geolocation!.watchers[0].success(position({ timestamp: 0 })));
     await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(1));
 
-    act(() => geolocation!.watchers[0].success(position({ timestamp: 15_000 })));
+    act(() => geolocation!.watchers[0].success(position({ timestamp: 10_000 })));
     await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(2));
   });
 
-  it("resends once 25m have been covered, even with no time passed", async () => {
+  it("resends once 25m have been covered, before 10s have passed", async () => {
     const { result, api } = setUp();
     act(() => result.current.optIn());
     act(() => geolocation!.watchers[0].success(position({ latitude: 33.89, longitude: 35.5, timestamp: 0 })));
     await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(1));
 
-    // ~28m north of the last sent fix.
+    // ~28m north of the last sent fix, 5s later.
     act(() =>
-      geolocation!.watchers[0].success(position({ latitude: 33.89025, longitude: 35.5, timestamp: 0 })),
+      geolocation!.watchers[0].success(position({ latitude: 33.89025, longitude: 35.5, timestamp: 5_000 })),
     );
+    await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(2));
+  });
+
+  it("doesn't resend within 5s of the last send, even past 25m", async () => {
+    const { result, api } = setUp();
+    act(() => result.current.optIn());
+    act(() => geolocation!.watchers[0].success(position({ latitude: 33.89, longitude: 35.5, timestamp: 0 })));
+    await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(1));
+
+    // ~55m north, under 5s later.
+    act(() =>
+      geolocation!.watchers[0].success(position({ latitude: 33.8905, longitude: 35.5, timestamp: 4_999 })),
+    );
+    await act(async () => {});
+
+    expect(api.sendPosition).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips a fix while the previous send is still in flight", async () => {
+    const api = fakeApi();
+    const pending = deferred<void>();
+    api.sendPosition.mockReturnValueOnce(pending.promise);
+    const { result } = setUp({ api });
+    act(() => result.current.optIn());
+    act(() => geolocation!.watchers[0].success(position({ timestamp: 0 })));
+    await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(1));
+
+    // Past the 10s interval, but the first send hasn't answered yet.
+    act(() => geolocation!.watchers[0].success(position({ timestamp: 10_000 })));
+    await act(async () => {});
+    expect(api.sendPosition).toHaveBeenCalledTimes(1);
+
+    await act(async () => pending.resolve());
+    act(() => geolocation!.watchers[0].success(position({ timestamp: 20_000 })));
     await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(2));
   });
 
@@ -323,6 +400,65 @@ describe("the sharing flow and throttling", () => {
     act(() => geolocation!.watchers[0].success(position()));
     await waitFor(() => expect(connectivity.reportFailure).toHaveBeenCalled());
     expect(result.current.state.status).toBe("sharing"); // a send failure isn't a GPS error
+  });
+
+  it.each([
+    ["ApiError(400)", new ApiError(400, "Bad request")],
+    ["ApiError(403)", new ApiError(403, "Forbidden")],
+    ["ApiError(500)", new ApiError(500, "Internal error")],
+  ])("doesn't report a network failure for %s (the server was reached)", async (_label, error) => {
+    const api = fakeApi();
+    api.sendPosition.mockRejectedValueOnce(error);
+    const { result, connectivity } = setUp({ api });
+    act(() => result.current.optIn());
+
+    act(() => geolocation!.watchers[0].success(position()));
+    await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+
+    expect(connectivity.reportFailure).not.toHaveBeenCalled();
+    expect(connectivity.reportSuccess).toHaveBeenCalled();
+    expect(result.current.state.status).toBe("sharing");
+  });
+
+  it("doesn't report a network failure for a 400 (the server was reached, the fix was rejected)", async () => {
+    const api = fakeApi();
+    api.sendPosition.mockRejectedValueOnce(new ApiValidationError({ latitude: "must be between -90 and 90" }));
+    const { result, connectivity } = setUp({ api });
+    act(() => result.current.optIn());
+
+    act(() => geolocation!.watchers[0].success(position()));
+    await act(async () => {});
+
+    expect(connectivity.reportFailure).not.toHaveBeenCalled();
+    expect(result.current.state.status).toBe("sharing");
+  });
+});
+
+describe("onRunChange", () => {
+  it("is called with the Run setSharing(true) resolves with, on opt-in", async () => {
+    const api = fakeApi();
+    const updated = run({ locationSharing: true });
+    api.setSharing.mockResolvedValueOnce(updated);
+    const { result, onRunChange } = setUp({ api });
+
+    act(() => result.current.optIn());
+
+    await waitFor(() => expect(onRunChange).toHaveBeenCalledWith(updated));
+  });
+
+  it("is called with the Run setSharing(false) resolves with, on opt-out", async () => {
+    const api = fakeApi();
+    const onOff = run({ locationSharing: false });
+    api.setSharing.mockResolvedValueOnce(run({ locationSharing: true })); // the opt-in call
+    api.setSharing.mockResolvedValueOnce(onOff); // the opt-out call
+    const { result, onRunChange } = setUp({ api });
+    act(() => result.current.optIn());
+    await waitFor(() => expect(api.setSharing).toHaveBeenCalledTimes(1));
+
+    act(() => result.current.optOut());
+
+    await waitFor(() => expect(onRunChange).toHaveBeenLastCalledWith(onOff));
   });
 });
 
@@ -400,19 +536,155 @@ describe("stopping", () => {
     expect(api.setSharing).toHaveBeenLastCalledWith("run-1", { enabled: false });
   });
 
-  it("a 409 from sendPosition is treated the same as the run leaving IN_PROGRESS", async () => {
+  it("a 409 from sendPosition pauses as refused, asks for a refetch, and stays paused when the run is no longer IN_PROGRESS", async () => {
     const api = fakeApi();
     api.sendPosition.mockRejectedValueOnce(new ApiError(409, "Not in progress"));
-    const { result } = setUp({ api });
+    const { result, onRefreshRequested } = setUp({ api });
     act(() => result.current.optIn());
+    await waitFor(() => expect(api.setSharing).toHaveBeenCalledTimes(1));
+    // The teardown's own setSharing(false) call is what tells the hook which of the
+    // two outcomes this is — here, the run genuinely isn't IN_PROGRESS any more.
+    api.setSharing.mockResolvedValueOnce(run({ state: "FINISHED" }));
 
     act(() => geolocation!.watchers[0].success(position()));
 
-    await waitFor(() =>
-      expect(result.current.state).toMatchObject({ status: "paused", blockedReason: "runNotInProgress" }),
-    );
     await waitFor(() => expect(geolocation!.clearWatch).toHaveBeenCalled());
     await waitFor(() => expect(api.setSharing).toHaveBeenLastCalledWith("run-1", { enabled: false }));
+    await waitFor(() =>
+      expect(result.current.state).toMatchObject({ status: "paused", blockedReason: "refused" }),
+    );
+    expect(onRefreshRequested).toHaveBeenCalledTimes(1);
+    // Consent is retained for a plain pause: still stuck at "paused" well after the
+    // refetch resolved, not bounced to "off".
+    await act(async () => {});
+    expect(result.current.state).toMatchObject({ status: "paused", blockedReason: "refused" });
+    expect(enabledArgs(api)).toEqual([true, false]);
+  });
+
+  it("a 409 from sendPosition drops to off when the refetched run is still IN_PROGRESS with sharing off, and never re-opts-in on its own", async () => {
+    const api = fakeApi(); // setSharing's default already resolves { state: "IN_PROGRESS", locationSharing: false }
+    api.sendPosition.mockRejectedValueOnce(new ApiError(409, "Location sharing is off for this run"));
+    const { result, onRunChange } = setUp({ api });
+    act(() => result.current.optIn());
+    await waitFor(() => expect(api.setSharing).toHaveBeenCalledTimes(1));
+
+    act(() => geolocation!.watchers[0].success(position()));
+
+    await waitFor(() => expect(api.setSharing).toHaveBeenLastCalledWith("run-1", { enabled: false }));
+    await waitFor(() =>
+      expect(result.current.state).toEqual({
+        status: "off",
+        consent: false,
+        blocked: false,
+        blockedReason: undefined,
+      }),
+    );
+    expect(onRunChange).toHaveBeenLastCalledWith(run());
+    // Settles at "off" — no further setSharing(true) call follows on its own.
+    expect(api.setSharing).toHaveBeenCalledTimes(2);
+    await act(async () => {});
+    expect(api.setSharing).toHaveBeenCalledTimes(2);
+
+    // Off and unblocked: the Share button works again.
+    act(() => result.current.optIn());
+    expect(result.current.state.status).toBe("requesting");
+    expect(enabledArgs(api)).toEqual([true, false, true]);
+  });
+
+  it("a send 409 whose setSharing(false) rejects never calls setSharing(true) again", async () => {
+    const api = fakeApi();
+    api.sendPosition.mockRejectedValueOnce(new ApiError(409, "x"));
+    const { result, connectivity } = setUp({ api });
+    act(() => result.current.optIn());
+    await waitFor(() => expect(api.setSharing).toHaveBeenCalledTimes(1));
+    api.setSharing.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    act(() => geolocation!.watchers[0].success(position()));
+    await waitFor(() => expect(api.setSharing).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(result.current.state).toMatchObject({ status: "paused", blockedReason: "refused" });
+
+    act(() => connectivity.setState("offline"));
+    act(() => connectivity.setState("online"));
+    act(() => connectivity.retry());
+    act(() => hide(true));
+    act(() => hide(false));
+    await act(async () => {});
+
+    expect(enabledArgs(api)).toEqual([true, false]);
+    expect(result.current.state).toMatchObject({ status: "paused", blockedReason: "refused" });
+  });
+
+  it.each([409, 404])(
+    "a %i on opt-in pauses as refused and asks for a refetch, instead of retrying setSharing(true) on its own",
+    async (status) => {
+      const api = fakeApi();
+      api.setSharing.mockRejectedValueOnce(new ApiError(status, "Refused"));
+      const { result, onRefreshRequested } = setUp({ api });
+
+      act(() => result.current.optIn());
+
+      await waitFor(() =>
+        expect(result.current.state).toMatchObject({ status: "paused", blockedReason: "refused" }),
+      );
+      expect(onRefreshRequested).toHaveBeenCalledTimes(1);
+      expect(api.setSharing).toHaveBeenCalledTimes(1);
+      expect(geolocation!.clearWatch).toHaveBeenCalled();
+
+      // Nothing retries it on its own while nothing has changed.
+      await act(async () => {});
+      expect(api.setSharing).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("a 409 on opt-in stays refused through offline -> online and visibilitychange", async () => {
+    const api = fakeApi();
+    api.setSharing.mockRejectedValueOnce(new ApiError(409, "Run is not in progress"));
+    const { result, connectivity } = setUp({ api });
+    act(() => result.current.optIn());
+    await waitFor(() =>
+      expect(result.current.state).toMatchObject({ status: "paused", blockedReason: "refused" }),
+    );
+
+    act(() => connectivity.setState("offline"));
+    act(() => connectivity.setState("online"));
+    act(() => connectivity.retry());
+    act(() => hide(true));
+    act(() => hide(false));
+    await act(async () => {});
+
+    expect(api.setSharing).toHaveBeenCalledTimes(1);
+    expect(api.sendPosition).not.toHaveBeenCalled();
+    expect(result.current.state).toMatchObject({ status: "paused", blockedReason: "refused" });
+  });
+
+  it("a refused pause is cleared by the driver tapping Try again", async () => {
+    const api = fakeApi();
+    api.setSharing.mockRejectedValueOnce(new ApiError(409, "Run is not in progress"));
+    const { result } = setUp({ api });
+    act(() => result.current.optIn());
+    await waitFor(() =>
+      expect(result.current.state).toMatchObject({ status: "paused", blockedReason: "refused" }),
+    );
+
+    act(() => result.current.retry());
+
+    expect(result.current.state.status).toBe("requesting");
+    expect(enabledArgs(api)).toEqual([true, true]);
+  });
+
+  it("a refused pause is cleared by a run change", async () => {
+    const api = fakeApi();
+    api.setSharing.mockRejectedValueOnce(new ApiError(409, "Run is not in progress"));
+    const { result, rerender } = setUp({ api });
+    act(() => result.current.optIn());
+    await waitFor(() =>
+      expect(result.current.state).toMatchObject({ status: "paused", blockedReason: "refused" }),
+    );
+
+    rerender({ run: run({ id: "run-2" }) });
+
+    expect(result.current.state).toEqual({ status: "off", consent: false, blocked: false });
   });
 
   it("unmounting while sharing clears the watch and turns server sharing off", async () => {
@@ -455,6 +727,142 @@ describe("stopping", () => {
 
     expect(api.sendPosition).not.toHaveBeenCalled();
     expect(result.current.state.status).toBe("off");
+  });
+});
+
+describe("setSharing ordering", () => {
+  it("never sends a false and a true side by side: a later call waits for the earlier one", async () => {
+    const api = fakeApi();
+    const optInCall = deferred<Run>();
+    api.setSharing.mockReturnValueOnce(optInCall.promise);
+    const { result } = setUp({ api });
+    act(() => result.current.optIn());
+
+    act(() => result.current.optOut());
+    await act(async () => {});
+    // The opt-out is queued behind the unanswered opt-in, not sent alongside it.
+    expect(enabledArgs(api)).toEqual([true]);
+
+    await act(async () => optInCall.resolve(run({ locationSharing: true })));
+    await waitFor(() => expect(enabledArgs(api)).toEqual([true, false]));
+  });
+
+  it("ignores the answer of a call a newer one replaced", async () => {
+    const api = fakeApi();
+    const optInCall = deferred<Run>();
+    api.setSharing.mockReturnValueOnce(optInCall.promise);
+    const offRun = run({ locationSharing: false });
+    api.setSharing.mockResolvedValueOnce(offRun);
+    const { result, onRunChange } = setUp({ api });
+    act(() => result.current.optIn());
+    act(() => result.current.optOut());
+
+    await act(async () => optInCall.resolve(run({ locationSharing: true })));
+    await waitFor(() => expect(api.setSharing).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+
+    // Only the opt-out's answer reaches the page.
+    expect(onRunChange).toHaveBeenCalledTimes(1);
+    expect(onRunChange).toHaveBeenCalledWith(offRun);
+  });
+
+  it("a rejected opt-in that a newer opt-in replaced doesn't undo it", async () => {
+    const api = fakeApi();
+    const firstOptIn = deferred<Run>();
+    api.setSharing.mockReturnValueOnce(firstOptIn.promise);
+    const { result } = setUp({ api });
+    act(() => result.current.optIn());
+    act(() => result.current.optOut());
+    act(() => result.current.optIn());
+
+    await act(async () => firstOptIn.reject(new ApiError(500, "x")));
+    await waitFor(() => expect(enabledArgs(api)).toEqual([true, false, true]));
+    await act(async () => {});
+
+    // The newer opt-in was answered: sharing is on and positions go out.
+    act(() => geolocation!.watchers.at(-1)!.success(position()));
+    await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(1));
+    expect(result.current.state.status).toBe("sharing");
+    // And the stale rejection didn't make the hook ask again.
+    expect(enabledArgs(api)).toEqual([true, false, true]);
+  });
+});
+
+describe("an opt-in that fails with a network error or a 5xx", () => {
+  it("sends no positions until the server confirms sharing is on", async () => {
+    const api = fakeApi();
+    const optInCall = deferred<Run>();
+    api.setSharing.mockReturnValueOnce(optInCall.promise);
+    const { result } = setUp({ api });
+    act(() => result.current.optIn());
+
+    act(() => geolocation!.watchers[0].success(position({ timestamp: 0 })));
+    await act(async () => {});
+    expect(api.sendPosition).not.toHaveBeenCalled();
+
+    // Confirmed: the fix held back meanwhile goes out at once.
+    await act(async () => optInCall.resolve(run({ locationSharing: true })));
+    await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(1));
+  });
+
+  it("retries the opt-in once the connection is back, and only then sends", async () => {
+    const api = fakeApi();
+    api.setSharing.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const { result, connectivity } = setUp({ api });
+    act(() => result.current.optIn());
+    await waitFor(() => expect(connectivity.reportFailure).toHaveBeenCalled());
+    act(() => connectivity.setState("offline")); // what reportFailure does for real
+    act(() => geolocation!.watchers[0].success(position({ timestamp: 0 })));
+    await act(async () => {});
+    expect(api.sendPosition).not.toHaveBeenCalled();
+
+    // A retry tick while still offline doesn't try again.
+    act(() => connectivity.retry());
+    expect(api.setSharing).toHaveBeenCalledTimes(1);
+
+    act(() => connectivity.setState("online"));
+    await waitFor(() => expect(enabledArgs(api)).toEqual([true, true]));
+    await waitFor(() => expect(api.sendPosition).toHaveBeenCalledTimes(1));
+  });
+
+  it("retries a 5xx on the connectivity retry tick, without reporting a network failure", async () => {
+    const api = fakeApi();
+    api.setSharing.mockRejectedValueOnce(new ApiError(503, "Unavailable"));
+    const { result, connectivity } = setUp({ api });
+    act(() => result.current.optIn());
+    await act(async () => {});
+    expect(connectivity.reportFailure).not.toHaveBeenCalled();
+
+    act(() => connectivity.retry());
+
+    await waitFor(() => expect(enabledArgs(api)).toEqual([true, true]));
+    expect(result.current.state.status).toBe("requesting");
+  });
+
+  it("shows an error after 3 failures in a row, and a tap tries again", async () => {
+    const api = fakeApi();
+    api.setSharing.mockRejectedValue(new ApiError(500, "x"));
+    const { result, connectivity } = setUp({ api });
+    act(() => result.current.optIn());
+    await act(async () => {});
+    act(() => connectivity.retry());
+    await act(async () => {});
+    act(() => connectivity.retry());
+
+    await waitFor(() => expect(result.current.state).toMatchObject({ status: "error", errorCode: "server" }));
+    expect(api.setSharing).toHaveBeenCalledTimes(3);
+    expect(geolocation!.clearWatch).toHaveBeenCalled();
+    // In the error state the retry tick doesn't ask any more...
+    act(() => connectivity.retry());
+    await act(async () => {});
+    expect(api.setSharing).toHaveBeenCalledTimes(3);
+    expect(api.setSharing).not.toHaveBeenCalledWith("run-1", { enabled: false });
+
+    // ...the driver's tap does.
+    api.setSharing.mockResolvedValue(run({ locationSharing: true }));
+    act(() => result.current.retry());
+    expect(result.current.state.status).toBe("requesting");
+    expect(api.setSharing).toHaveBeenCalledTimes(4);
   });
 });
 

@@ -43,7 +43,7 @@ export function classifyFailure(error: unknown): Failure {
 
 // fetch rejects with a TypeError when the network is down, and with an AbortError
 // when request()'s timeoutMs fires. Either says nothing reached the server's answer.
-function isNetworkFailure(error: unknown): boolean {
+export function isNetworkFailure(error: unknown): boolean {
   if (error instanceof TypeError) return true;
   const name = (error as { name?: unknown } | null)?.name;
   return name === "AbortError" || name === "TimeoutError";

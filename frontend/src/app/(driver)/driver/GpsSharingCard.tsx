@@ -17,6 +17,8 @@ export interface GpsSharingCardProps {
   run: Run;
   api: DriverGpsApi | null;
   connectivity: Connectivity;
+  onRunChange: (run: Run) => void;
+  onRefreshRequested: () => void;
 }
 
 const cardStyle = {
@@ -65,8 +67,14 @@ function SoonCard() {
   );
 }
 
-export function GpsSharingCard({ run, api, connectivity }: GpsSharingCardProps) {
-  const { state, optIn, optOut, retry } = useGpsSharing({ run, api, connectivity });
+export function GpsSharingCard({ run, api, connectivity, onRunChange, onRefreshRequested }: GpsSharingCardProps) {
+  const { state, optIn, optOut, retry } = useGpsSharing({
+    run,
+    api,
+    connectivity,
+    onRunChange,
+    onRefreshRequested,
+  });
 
   if (api === null) return <SoonCard />;
 
@@ -135,6 +143,28 @@ export function GpsSharingCard({ run, api, connectivity }: GpsSharingCardProps) 
       );
 
     case "paused": {
+      // The server said no: nothing resumes this on its own, so the driver gets a
+      // tap to ask again.
+      if (state.blockedReason === "refused") {
+        return (
+          <Card style={cardStyle}>
+            <div role="status" className="flex items-center" style={{ gap: spacing.sm }}>
+              <Dot color={darkTheme.status.inactiveDot} />
+              <p className="text-sm" style={{ color: darkTheme.text.secondary }}>
+                Location sharing was stopped for this run.
+              </p>
+            </div>
+            <div className="flex flex-wrap" style={{ gap: spacing.sm }}>
+              <Button variant="secondary" onClick={retry} style={{ minHeight: sizing.tapTarget }}>
+                Try again
+              </Button>
+              <Button variant="ghost" onClick={optOut} style={{ minHeight: sizing.tapTarget }}>
+                Stop sharing
+              </Button>
+            </div>
+          </Card>
+        );
+      }
       const reasonText =
         state.blockedReason === "offline"
           ? "Paused — you're offline. It resumes on its own once you're back online."
@@ -185,9 +215,11 @@ export function GpsSharingCard({ run, api, connectivity }: GpsSharingCardProps) 
 
     case "error": {
       const message =
-        state.errorCode === 3
-          ? "Getting your location is taking too long."
-          : "Couldn't get your location. Check your device's location settings.";
+        state.errorCode === "server"
+          ? "Couldn't turn on location sharing. Check your connection and try again."
+          : state.errorCode === 3
+            ? "Getting your location is taking too long."
+            : "Couldn't get your location. Check your device's location settings.";
       return (
         <Card style={cardStyle}>
           <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>

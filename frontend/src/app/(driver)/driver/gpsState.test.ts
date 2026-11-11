@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_MIN_SEND_GAP_MS,
+  DEFAULT_MIN_SEND_INTERVAL_MS,
   initialGpsState,
   isAvailable,
   isGpsActive,
@@ -9,7 +11,7 @@ import {
   type GpsState,
 } from "./gpsState";
 
-const THROTTLE = { minIntervalMs: 15_000, minDistanceMeters: 25 };
+const THROTTLE = { minIntervalMs: 15_000, minDistanceMeters: 25, minGapMs: 0 };
 
 function fix(overrides: Partial<GpsFix> = {}): GpsFix {
   return { latitude: 33.89, longitude: 35.5, accuracyMeters: 10, at: 1_000_000, ...overrides };
@@ -31,6 +33,13 @@ const PAUSED_RUN: GpsState = {
   consent: true,
   blocked: true,
   blockedReason: "runNotInProgress",
+};
+const REFUSED: GpsState = {
+  status: "paused",
+  consent: true,
+  blocked: true,
+  blockedReason: "refused",
+  heldCondition: { blocked: false },
 };
 
 describe("initialGpsState", () => {
@@ -64,8 +73,9 @@ describe("isGpsActive", () => {
     expect(isGpsActive({ ...PAUSED_OFFLINE, blockedReason: "hidden" })).toBe(true);
   });
 
-  it("is false for the one hard pause (the run isn't IN_PROGRESS)", () => {
+  it("is false for the hard pauses (the run isn't IN_PROGRESS, or the server refused)", () => {
     expect(isGpsActive(PAUSED_RUN)).toBe(false);
+    expect(isGpsActive(REFUSED)).toBe(false);
   });
 
   it("is false off/denied/error/unavailable", () => {
@@ -313,18 +323,109 @@ describe("nextGpsState: conditions", () => {
   });
 });
 
-describe("nextGpsState: sendConflict (a 409 from sendPosition)", () => {
-  it("pauses as runNotInProgress from sharing", () => {
-    expect(nextGpsState(SHARING, { type: "sendConflict" })).toEqual({
-      ...SHARING,
-      status: "paused",
-      blocked: true,
-      blockedReason: "runNotInProgress",
+describe("nextGpsState: sendConflict (a 409 or 404 from setSharing(true) or sendPosition)", () => {
+  it("pauses as refused from sharing, holding on to the current conditions", () => {
+    expect(nextGpsState(SHARING, { type: "sendConflict" })).toEqual(REFUSED);
+  });
+
+  it("holds a soft pause's condition too", () => {
+    expect(nextGpsState(PAUSED_OFFLINE, { type: "sendConflict" })).toEqual({
+      ...REFUSED,
+      heldCondition: { blocked: true, reason: "offline" },
     });
   });
 
-  it("is ignored without consent", () => {
+  it("is ignored without consent, and when already refused", () => {
     expect(nextGpsState(OFF, { type: "sendConflict" })).toBe(OFF);
+    expect(nextGpsState(REFUSED, { type: "sendConflict" })).toBe(REFUSED);
+  });
+});
+
+describe("nextGpsState: a refused pause is sticky", () => {
+  it("isn't cleared by any conditions event, which only updates the held condition", () => {
+    const offline = nextGpsState(REFUSED, { type: "conditions", blocked: true, reason: "offline" });
+    expect(offline).toEqual({ ...REFUSED, heldCondition: { blocked: true, reason: "offline" } });
+
+    const online = nextGpsState(offline, { type: "conditions", blocked: false });
+    expect(online).toEqual({ ...REFUSED, heldCondition: { blocked: false, reason: undefined } });
+    expect(isGpsActive(online)).toBe(false);
+  });
+
+  it("isn't turned into denied by a permission change", () => {
+    expect(nextGpsState(REFUSED, { type: "permissionDenied" })).toBe(REFUSED);
+  });
+
+  it("is cleared by a driver tap: optIn or retry start again from the held condition", () => {
+    expect(nextGpsState(REFUSED, { type: "retry" })).toEqual(REQUESTING);
+    expect(nextGpsState(REFUSED, { type: "optIn" })).toEqual(REQUESTING);
+    expect(
+      nextGpsState({ ...REFUSED, heldCondition: { blocked: true, reason: "hidden" } }, { type: "retry" }),
+    ).toEqual({ status: "paused", consent: true, blocked: true, blockedReason: "hidden" });
+  });
+
+  it("is cleared by a reset (a run change)", () => {
+    expect(nextGpsState(REFUSED, { type: "reset", available: true })).toEqual(OFF);
+  });
+
+  it("opting out lands on off with the held condition", () => {
+    expect(
+      nextGpsState({ ...REFUSED, heldCondition: { blocked: true, reason: "offline" } }, { type: "optOut" }),
+    ).toEqual({ status: "off", consent: false, blocked: true, blockedReason: "offline" });
+  });
+});
+
+describe("nextGpsState: sharingWithdrawn", () => {
+  it("drops a refused pause to off, unblocked, so Share works again (the run is known to be IN_PROGRESS)", () => {
+    const withdrawn = nextGpsState(
+      { ...REFUSED, heldCondition: { blocked: true, reason: "runNotInProgress" } },
+      { type: "sharingWithdrawn" },
+    );
+    expect(withdrawn).toEqual({ status: "off", consent: false, blocked: false, blockedReason: undefined });
+    expect(nextGpsState(withdrawn, { type: "optIn" }).status).toBe("requesting");
+  });
+
+  it("keeps an offline or hidden condition, which still blocks", () => {
+    expect(
+      nextGpsState({ ...REFUSED, heldCondition: { blocked: true, reason: "hidden" } }, { type: "sharingWithdrawn" }),
+    ).toEqual({ status: "off", consent: false, blocked: true, blockedReason: "hidden" });
+  });
+
+  it("is ignored outside a refused pause", () => {
+    expect(nextGpsState(OFF, { type: "sharingWithdrawn" })).toBe(OFF);
+    expect(nextGpsState(SHARING, { type: "sharingWithdrawn" })).toBe(SHARING);
+    expect(nextGpsState(PAUSED_RUN, { type: "sharingWithdrawn" })).toBe(PAUSED_RUN);
+  });
+});
+
+describe("nextGpsState: sharingFailed (setSharing(true) kept failing)", () => {
+  it("goes to error with errorCode server from an active state", () => {
+    expect(nextGpsState(SHARING, { type: "sharingFailed" })).toEqual({ ...SHARING, status: "error", errorCode: "server" });
+    expect(nextGpsState(PAUSED_OFFLINE, { type: "sharingFailed" })).toMatchObject({
+      status: "error",
+      errorCode: "server",
+    });
+  });
+
+  it("is ignored when not active", () => {
+    expect(nextGpsState(OFF, { type: "sharingFailed" })).toBe(OFF);
+    expect(nextGpsState(REFUSED, { type: "sharingFailed" })).toBe(REFUSED);
+  });
+
+  it("retry starts again, clearing the error code", () => {
+    const failed = nextGpsState(SHARING, { type: "sharingFailed" });
+    expect(nextGpsState(failed, { type: "retry" })).toEqual(REQUESTING);
+  });
+});
+
+describe("DEFAULT_MIN_SEND_INTERVAL_MS", () => {
+  it("is 10s, matching docs/contracts/runs.md's 'about every 10 seconds'", () => {
+    expect(DEFAULT_MIN_SEND_INTERVAL_MS).toBe(10_000);
+  });
+});
+
+describe("DEFAULT_MIN_SEND_GAP_MS", () => {
+  it("is 5s", () => {
+    expect(DEFAULT_MIN_SEND_GAP_MS).toBe(5_000);
   });
 });
 
@@ -347,6 +448,14 @@ describe("shouldSendFix", () => {
     );
     // ~28m north: over it.
     expect(shouldSendFix(last, fix({ latitude: 33.89025, longitude: 35.5, at: 0 }), THROTTLE)).toBe(true);
+  });
+
+  it("never sends sooner than minGapMs after the last, even past minDistanceMeters", () => {
+    const gapped = { ...THROTTLE, minGapMs: 5_000 };
+    const last = fix({ latitude: 33.89, longitude: 35.5, at: 0 });
+    // ~28m north, but only 4.999s later: held back.
+    expect(shouldSendFix(last, fix({ latitude: 33.89025, longitude: 35.5, at: 4_999 }), gapped)).toBe(false);
+    expect(shouldSendFix(last, fix({ latitude: 33.89025, longitude: 35.5, at: 5_000 }), gapped)).toBe(true);
   });
 
   it("sends on whichever threshold is reached first", () => {

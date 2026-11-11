@@ -9,12 +9,14 @@
 //
 // Proposed endpoint (extends the existing one in runs.md; not implemented yet):
 //   PUT /api/driver/runs/{runId}/students/{studentId}/confirmation
-//       { status, clientRequestId, occurredAt? } -> Run
+//       { status, clientRequestId } -> Run
 //
 // clientRequestId is a key the caller generates once per confirmation attempt and
 // resends unchanged on every retry of that same attempt (see the contract's
-// "Confirmation replay and idempotency"). occurredAt is optional and an open question
-// there: runs.md says the confirmation time is the server's, never the client's.
+// "Confirmation replay and idempotency"). No client-sent time: runs.md says the
+// confirmation time is the server's, never the client's, and the same rule for
+// location (docs/contracts/driver-gps-offline.md) points the same way. The queue
+// keeps its own `occurredAt` locally for display only; it is never sent.
 
 import type { ConfirmationStatus, Run } from "./runs";
 
@@ -23,8 +25,6 @@ export interface ConfirmationReplayInput {
   studentId: string;
   status: ConfirmationStatus;
   clientRequestId: string;
-  // Moment; omitted while occurredAt stays an open question (see the contract).
-  occurredAt?: string;
 }
 
 export interface ConfirmationReplayOptions {

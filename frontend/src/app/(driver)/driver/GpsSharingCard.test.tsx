@@ -1,6 +1,7 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DriverGpsApi } from "@/lib/api/driverGps";
+import { ApiError } from "@/lib/api/errors";
 import type { Run } from "@/lib/api/runs";
 import type { Connectivity } from "@/lib/offline/connectivity";
 import { GpsSharingCard } from "./GpsSharingCard";
@@ -18,6 +19,7 @@ function run(overrides: Partial<Run> = {}): Run {
     vehicle: { id: "v-1", plateNumber: "A 123456", capacity: 14 },
     driver: { id: "d-1", firstName: "Karim", lastName: "Haddad" },
     counts: { students: 0, absent: 0, pickedUp: 0, droppedOff: 0, notPresent: 0 },
+    locationSharing: false,
     stops: [],
     ...overrides,
   };
@@ -38,17 +40,23 @@ function fakeGeolocation() {
 
 function fakeApi(): DriverGpsApi {
   return {
-    getSharing: vi.fn().mockResolvedValue({ enabled: false, since: null }),
-    setSharing: vi.fn().mockResolvedValue({ enabled: true, since: null }),
+    setSharing: vi.fn().mockResolvedValue(run()),
     sendPosition: vi.fn().mockResolvedValue(undefined),
   };
 }
 
-function fakeConnectivity(): Connectivity {
+function fakeConnectivity(): Connectivity & { retry: () => void } {
+  const retryListeners = new Set<() => void>();
   return {
     getState: () => "online",
     subscribe: () => () => {},
-    onRetry: () => () => {},
+    onRetry: (listener) => {
+      retryListeners.add(listener);
+      return () => retryListeners.delete(listener);
+    },
+    retry() {
+      for (const listener of [...retryListeners]) listener();
+    },
     reportSuccess: vi.fn(),
     reportFailure: vi.fn(),
     dispose: () => {},
@@ -82,8 +90,18 @@ function setUp(overrides: { run?: Run; api?: DriverGpsApi | null } = {}) {
   Object.defineProperty(navigator, "geolocation", { configurable: true, value: geolocation });
   const api = overrides.api === undefined ? fakeApi() : overrides.api;
   const connectivity = fakeConnectivity();
-  render(<GpsSharingCard run={overrides.run ?? run()} api={api} connectivity={connectivity} />);
-  return { api, connectivity };
+  const onRunChange = vi.fn();
+  const onRefreshRequested = vi.fn();
+  render(
+    <GpsSharingCard
+      run={overrides.run ?? run()}
+      api={api}
+      connectivity={connectivity}
+      onRunChange={onRunChange}
+      onRefreshRequested={onRefreshRequested}
+    />,
+  );
+  return { api, connectivity, onRunChange, onRefreshRequested };
 }
 
 describe("GpsSharingCard", () => {
@@ -98,7 +116,15 @@ describe("GpsSharingCard", () => {
 
   it("says location isn't available on this device/browser when the API exists but geolocation doesn't", () => {
     const api = fakeApi();
-    render(<GpsSharingCard run={run()} api={api} connectivity={fakeConnectivity()} />);
+    render(
+      <GpsSharingCard
+        run={run()}
+        api={api}
+        connectivity={fakeConnectivity()}
+        onRunChange={vi.fn()}
+        onRefreshRequested={vi.fn()}
+      />,
+    );
 
     expect(screen.getByText(/isn't available on this device or browser/)).toBeInTheDocument();
     expect(screen.queryByText("Soon")).not.toBeInTheDocument();
@@ -121,6 +147,14 @@ describe("GpsSharingCard", () => {
 
     expect(screen.getByText("Requesting your location…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Requesting…" })).toBeDisabled();
+  });
+
+  it("calls onRunChange with the Run setSharing resolves with", async () => {
+    const { onRunChange } = setUp();
+
+    act(() => screen.getByRole("button", { name: "Share my location" }).click());
+
+    await waitFor(() => expect(onRunChange).toHaveBeenCalledWith(run()));
   });
 
   it("shows sharing with a dot and Stop sharing once a fix arrives, and opting out returns to off", () => {
@@ -203,5 +237,36 @@ describe("GpsSharingCard", () => {
 
     expect(screen.getByText("Requesting your location…")).toBeInTheDocument();
     expect(geolocation!.watchPosition).toHaveBeenCalledTimes(2);
+  });
+
+  it("says sharing was stopped when the server refuses it, asks the page to refetch, and Try again asks again", async () => {
+    const api = fakeApi();
+    vi.mocked(api.setSharing).mockRejectedValueOnce(new ApiError(409, "Run is not in progress"));
+    const { onRefreshRequested } = setUp({ api });
+
+    act(() => screen.getByRole("button", { name: "Share my location" }).click());
+
+    expect(await screen.findByText("Location sharing was stopped for this run.")).toBeInTheDocument();
+    expect(onRefreshRequested).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Stop sharing" })).toBeInTheDocument();
+
+    act(() => screen.getByRole("button", { name: "Try again" }).click());
+
+    expect(screen.getByText("Requesting your location…")).toBeInTheDocument();
+    expect(api.setSharing).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a connection error once turning sharing on keeps failing", async () => {
+    const api = fakeApi();
+    vi.mocked(api.setSharing).mockRejectedValue(new ApiError(503, "Unavailable"));
+    const { connectivity } = setUp({ api });
+    act(() => screen.getByRole("button", { name: "Share my location" }).click());
+    await act(async () => {});
+    act(() => connectivity.retry());
+    await act(async () => {});
+    act(() => connectivity.retry());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't turn on location sharing");
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 });

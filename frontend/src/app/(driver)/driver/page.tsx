@@ -20,7 +20,7 @@ import {
   type DriverDay,
   type Run,
 } from "@/lib/api/runs";
-import { createConnectivity, type Connectivity } from "@/lib/offline/connectivity";
+import { createConnectivity, reportIfNetwork, type Connectivity } from "@/lib/offline/connectivity";
 import type { OfflineQueue, QueueItem } from "@/lib/offline/queue";
 import { colors, darkTheme, radius, sizing, spacing } from "@/styles/tokens";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -191,6 +191,7 @@ export default function DriverTodayPage() {
           day={day}
           onRunChange={replaceRun}
           onStopChange={replaceStop}
+          onRefresh={refresh}
           connectivity={connectivity}
           queue={queue}
           queueItems={snapshot.items}
@@ -199,17 +200,6 @@ export default function DriverTodayPage() {
       )}
     </main>
   );
-}
-
-// fetch rejects with a TypeError when the network is down and an AbortError on
-// a timeout; anything else (an HTTP answer) means the server was reachable.
-function reportIfNetwork(connectivity: Connectivity | null, error: unknown) {
-  const name = (error as { name?: unknown } | null)?.name;
-  if (error instanceof TypeError || name === "AbortError" || name === "TimeoutError") {
-    connectivity?.reportFailure();
-  } else {
-    connectivity?.reportSuccess();
-  }
 }
 
 interface StopError {
@@ -240,6 +230,7 @@ function Today({
   day,
   onRunChange,
   onStopChange,
+  onRefresh,
   connectivity,
   queue,
   queueItems,
@@ -248,6 +239,8 @@ function Today({
   day: DriverDay;
   onRunChange: (run: Run) => void;
   onStopChange: (run: Run, studentId: string) => void;
+  // Reloads the day in place, keeping Today (and the GPS card) mounted.
+  onRefresh: () => void;
   connectivity: Connectivity;
   queue: OfflineQueue;
   queueItems: readonly QueueItem[];
@@ -372,7 +365,13 @@ function Today({
           offline={connectivityState === "offline"}
           hasUnsentConfirmations={hasUnsentForRun}
         />
-        <GpsSharingCard run={run} api={driverGpsApi} connectivity={connectivity} />
+        <GpsSharingCard
+          run={run}
+          api={driverGpsApi}
+          connectivity={connectivity}
+          onRunChange={onRunChange}
+          onRefreshRequested={onRefresh}
+        />
         <p className="text-sm" style={{ color: darkTheme.text.secondary }}>
           {doneCount} of {run.stops.length} stops done
           {skipCount > 0 && ` · ${skipCount} to skip`}

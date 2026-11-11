@@ -9,6 +9,8 @@
 // every retryIntervalMs while the tab is visible (a phone moving between towers often
 // fires no event at all).
 
+import { isNetworkFailure } from "./classify";
+
 export type ConnectivityState = "online" | "offline" | "unknown";
 
 export interface Connectivity {
@@ -97,4 +99,15 @@ export function createConnectivity({
       retryListeners.clear();
     },
   };
+}
+
+// Reports what a failed call says about the connection. Only a network failure or a
+// timeout (see isNetworkFailure) means the server wasn't reached; anything else, an
+// ApiError or ApiValidationError of any status included, is an answer from it.
+export function reportIfNetwork(connectivity: Connectivity | null, error: unknown) {
+  if (isNetworkFailure(error)) {
+    connectivity?.reportFailure();
+  } else {
+    connectivity?.reportSuccess();
+  }
 }
