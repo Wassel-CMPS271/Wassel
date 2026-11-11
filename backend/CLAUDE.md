@@ -438,6 +438,22 @@ that's the structure this codebase moved away from.
   skip or absence), and never a reason for `UNAVAILABLE`. Known limits: no throttle on how often a position may be sent, no history,
   the driver's consent does not survive a driver change but SCRUM-264 (reassignment) must also call `stopSharing`, and a browser pauses
   GPS when the phone is locked, so `STALE` is common on real phones.
+  Live ETA and stop progress (SCRUM-262): no endpoint and no migration of its own, only new fields on the two reads above
+  (`BusLocation.stopsLeft/plannedTime/estimate`, `RunLocation.remainingStops/nextStop`; rules in `docs/contracts/runs.md`
+  "Live ETA and stop progress"). `RunService.childBusLocation` and `locationsToday` read each route once with
+  `RouteService.findStops` (stops in order, with pins and morning arrival times) and take the stops still to do from the same
+  `pending`/`isDone` as `stopsLeft` (`toDo`, afternoon reversed), so the progress follows the same rules as the parent's `todayRun` (the two are separate reads, so a confirmation between them shows on the next poll).
+  `LiveEta.estimate` adds the legs bus, each stop still to do, target with `StraightLineTravelTimes` (30 km/h, whole minutes
+  rounded up per leg; `LiveEta` takes that type, so it cannot be handed the road client): a moving bus is a new uncached point
+  every few seconds and the provider's free quota is small. The planned times still come from the route's cached schedule
+  (`RouteService.findStops`, not `@Transactional`, empty for a deleted route), which asks the provider only when a pin is new,
+  never per poll; `ParentService.busLocation` is not `@Transactional` either, so a cold cache never holds a connection. An estimate exists only while the position is `LIVE` (`RunLocation.LIVE_FOR`,
+  the one freshness threshold), starts from the fix's receive time and is never earlier than the answer, so `secondsAway` is
+  never negative. A stop without a pin adds no leg and, as the target, gives no estimate. `plannedTime` is the morning
+  `arrivalTime` only and is never used to compute the estimate. The head's list now also drops a run whose route has been
+  deleted (the contract already said such runs are not listed), and the parent read answers `UNAVAILABLE` if the route goes
+  between its reads: `findStops` is empty rather than throwing, because `runs` must not import `routes`' exceptions. Known limits: the estimate runs early (straight lines, no time at stops), a passed but
+  unconfirmed stop still adds a leg, and per-stop lists and a delay value are left out (SCRUM-268 owns lateness).
 - `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
   of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
   are in `docs/contracts/runs.md` (owned jointly with the `runs` module, SCRUM-232/239); build
