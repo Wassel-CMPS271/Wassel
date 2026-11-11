@@ -50,7 +50,8 @@ public class DriverRunController {
 	@PutMapping("/{runId}/students/{studentId}/confirmation")
 	public RunResponse confirm(@AuthenticationPrincipal User driver, @PathVariable UUID runId,
 			@PathVariable UUID studentId, @Valid @RequestBody ConfirmationRequest request) {
-		return runService.confirm(signedIn(driver), runId, studentId, request.status());
+		return runService.confirm(signedIn(driver), runId, studentId, request.status(),
+				request.key());
 	}
 
 	private static User signedIn(User driver) {

@@ -18,13 +18,16 @@ import com.wassel.backend.runs.dto.RunRouteResponse;
 import com.wassel.backend.runs.dto.RunStopResponse;
 import com.wassel.backend.runs.dto.RunsDayResponse;
 import com.wassel.backend.runs.entity.Confirmation;
+import com.wassel.backend.runs.entity.ConfirmationKey;
 import com.wassel.backend.runs.entity.ConfirmationStatus;
 import com.wassel.backend.runs.entity.Run;
 import com.wassel.backend.runs.entity.RunDirection;
 import com.wassel.backend.runs.entity.RunState;
 import com.wassel.backend.runs.exception.ConfirmationConflictException;
+import com.wassel.backend.runs.exception.ConfirmationKeyReusedException;
 import com.wassel.backend.runs.exception.RunNotFoundException;
 import com.wassel.backend.runs.exception.RunStateConflictException;
+import com.wassel.backend.runs.repository.ConfirmationKeyRepository;
 import com.wassel.backend.runs.repository.ConfirmationRepository;
 import com.wassel.backend.runs.repository.RunRepository;
 import com.wassel.backend.schools.dto.SchoolTimesResponse;
@@ -73,6 +76,8 @@ public class RunService {
 	private final RunRepository runRepository;
 
 	private final ConfirmationRepository confirmationRepository;
+
+	private final ConfirmationKeyRepository confirmationKeyRepository;
 
 	private final StudentService studentService;
 
@@ -170,8 +175,13 @@ public class RunService {
 	 * is locked first, so another confirmation of the student, or the run ending, waits instead of interleaving.
 	 * The status a student already has is kept even when a later one exists: a retry that arrives after the next
 	 * tap is not a mistake. Not {@code @Transactional}, for the reason {@link #driverDay} gives.
+	 * With a {@code clientRequestId} (SCRUM-263, "Offline replay" in the contract) a key this driver already used
+	 * for the same run, student and status is answered 200 right after the 404 check, writing nothing, even after
+	 * the run ended; a key used for anything else is {@link ConfirmationKeyReusedException}. The key is saved on
+	 * every path that answers 200, before the confirmation row, so a refusal stores none.
 	 */
-	public RunResponse confirm(User driver, UUID runId, UUID studentId, ConfirmationStatus status) {
+	public RunResponse confirm(User driver, UUID runId, UUID studentId, ConfirmationStatus status,
+			UUID clientRequestId) {
 		UUID schoolId = driver.getSchoolId();
 		LocalDate today = LocalDate.now(clock);
 		DayType dayType = dayTypeOf(schoolId, today);
@@ -180,6 +190,14 @@ public class RunService {
 			Run locked = runRepository.findLockedBySchoolIdAndId(schoolId, runId)
 					.filter(found -> found.getRouteId().equals(route.id()) && found.getRunDate().equals(today))
 					.orElseThrow(RunService::runNotFound);
+			if (clientRequestId != null) {
+				Optional<ConfirmationKey> used = confirmationKeyRepository
+						.findBySchoolIdAndDriverUserIdAndClientRequestId(schoolId, driver.getId(), clientRequestId);
+				if (used.isPresent()) {
+					requireSameTap(used.get(), runId, studentId, status);
+					return locked;
+				}
+			}
 			List<ConfirmationStatus> had = confirmationRepository
 					.findBySchoolIdAndRunIdAndStudentId(schoolId, runId, studentId).stream()
 					.map(Confirmation::getStatus).toList();
@@ -190,6 +208,7 @@ public class RunService {
 				throw new RunStateConflictException("Run is " + locked.getState() + ", so it cannot be confirmed");
 			}
 			if (had.contains(status)) {
+				saveKey(driver, runId, studentId, status, clientRequestId);
 				return locked;
 			}
 			ConfirmationStatus current = had.stream().max(Comparator.naturalOrder()).orElse(null);
@@ -202,11 +221,36 @@ public class RunService {
 				throw new ConfirmationConflictException("Student " + (current == null ? "has no confirmation yet"
 						: "is " + current) + ", so they cannot be marked " + status);
 			}
+			saveKey(driver, runId, studentId, status, clientRequestId);
 			// The time is read after the lock, so rows are saved in the order the rule saw them.
 			confirmationRepository.insertIfMissing(schoolId, runId, studentId, status.name(), Instant.now(clock));
 			return locked;
 		});
 		return driverAnswer(run, route, dayType);
+	}
+
+	/**
+	 * Remembers the key of a confirmation that is about to answer 200. Zero rows added means another request of this
+	 * driver, on another run (this run's are serialised by its lock), saved the key first and committed: fine when it was
+	 * the same tap, otherwise the key is reused and the whole transaction, with no confirmation row yet, rolls back.
+	 */
+	private void saveKey(User driver, UUID runId, UUID studentId, ConfirmationStatus status, UUID clientRequestId) {
+		if (clientRequestId == null) {
+			return;
+		}
+		UUID schoolId = driver.getSchoolId();
+		if (confirmationKeyRepository.insertIfMissing(schoolId, driver.getId(), clientRequestId, runId, studentId,
+				status.name(), Instant.now(clock)) == 0) {
+			requireSameTap(confirmationKeyRepository.findBySchoolIdAndDriverUserIdAndClientRequestId(
+					schoolId, driver.getId(), clientRequestId).orElseThrow(), runId, studentId, status);
+		}
+	}
+
+	private static void requireSameTap(ConfirmationKey key, UUID runId, UUID studentId, ConfirmationStatus status) {
+		if (!key.getRunId().equals(runId) || !key.getStudentId().equals(studentId)
+				|| key.getStatus() != status) {
+			throw new ConfirmationKeyReusedException(key.getClientRequestId());
+		}
 	}
 
 	/** One run as the driver sees it, with the confirmations as stored now. */
