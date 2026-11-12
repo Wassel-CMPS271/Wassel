@@ -25,15 +25,9 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 
@@ -72,30 +66,9 @@ public abstract class CriteriaTestSupport {
 		clock.set(MondayClockConfig.MONDAY);
 	}
 
-	/**
-	 * Runs the calls at the same instant (every thread waits at a barrier first) and returns what each answered, in the
-	 * order given. For the race checks: a call returns the HTTP status of its request.
-	 */
+	/** See {@link Parallel#inParallel}. */
 	protected static List<Integer> inParallel(List<Callable<Integer>> calls) throws Exception {
-		ExecutorService pool = Executors.newFixedThreadPool(calls.size());
-		try {
-			CyclicBarrier gate = new CyclicBarrier(calls.size());
-			List<Future<Integer>> pending = new ArrayList<>();
-			for (Callable<Integer> call : calls) {
-				pending.add(pool.submit(() -> {
-					gate.await();
-					return call.call();
-				}));
-			}
-			List<Integer> statuses = new ArrayList<>();
-			for (Future<Integer> answer : pending) {
-				statuses.add(answer.get(60, TimeUnit.SECONDS));
-			}
-			return statuses;
-		}
-		finally {
-			pool.shutdownNow();
-		}
+		return Parallel.inParallel(calls);
 	}
 
 	protected static RequestPostProcessor loggedInAs(Role role, UUID schoolId, UUID userId) {

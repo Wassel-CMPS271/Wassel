@@ -2,16 +2,21 @@ package com.wassel.backend.runs.service;
 
 import com.wassel.backend.absences.service.AbsenceService;
 import com.wassel.backend.drivers.service.DriverService;
+import com.wassel.backend.routes.dto.DriverReassignment;
 import com.wassel.backend.routes.dto.DriverRouteResponse;
 import com.wassel.backend.routes.dto.DriverRouteStop;
 import com.wassel.backend.routes.dto.RouteDriverSummary;
 import com.wassel.backend.routes.dto.RouteSummaryResponse;
 import com.wassel.backend.routes.dto.RouteVehicleSummary;
+import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.routes.service.RouteService;
 import com.wassel.backend.runs.dto.ChildOnRoute;
 import com.wassel.backend.runs.dto.ChildRunResponse;
 import com.wassel.backend.runs.dto.ConfirmationResponse;
 import com.wassel.backend.runs.dto.DayType;
+import com.wassel.backend.runs.dto.ReassignRunRequest;
+import com.wassel.backend.runs.dto.ReassignmentActorResponse;
+import com.wassel.backend.runs.dto.ReassignmentResponse;
 import com.wassel.backend.runs.dto.RunCountsResponse;
 import com.wassel.backend.runs.dto.RunResponse;
 import com.wassel.backend.runs.dto.RunRouteResponse;
@@ -21,11 +26,13 @@ import com.wassel.backend.runs.entity.Confirmation;
 import com.wassel.backend.runs.entity.ConfirmationStatus;
 import com.wassel.backend.runs.entity.Run;
 import com.wassel.backend.runs.entity.RunDirection;
+import com.wassel.backend.runs.entity.RunReassignment;
 import com.wassel.backend.runs.entity.RunState;
 import com.wassel.backend.runs.exception.ConfirmationConflictException;
 import com.wassel.backend.runs.exception.RunNotFoundException;
 import com.wassel.backend.runs.exception.RunStateConflictException;
 import com.wassel.backend.runs.repository.ConfirmationRepository;
+import com.wassel.backend.runs.repository.RunReassignmentRepository;
 import com.wassel.backend.runs.repository.RunRepository;
 import com.wassel.backend.schools.dto.SchoolTimesResponse;
 import com.wassel.backend.schools.service.HalfDayService;
@@ -34,6 +41,7 @@ import com.wassel.backend.schools.service.SchoolSettingsService;
 import com.wassel.backend.students.dto.StudentResponse;
 import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.users.entity.User;
+import com.wassel.backend.users.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +56,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -73,6 +82,10 @@ public class RunService {
 	private final RunRepository runRepository;
 
 	private final ConfirmationRepository confirmationRepository;
+
+	private final RunReassignmentRepository reassignmentRepository;
+
+	private final UserService userService;
 
 	private final StudentService studentService;
 
@@ -135,7 +148,8 @@ public class RunService {
 	/**
 	 * A driver may act on a run only if it is in their list right now: one of today's runs on their own route,
 	 * on a day that is not a holiday. Anything else (another driver's, another school's, unknown, yesterday's,
-	 * hidden by a holiday) is the same 404. The move is one conditional update, so simultaneous requests keep
+	 * hidden by a holiday) is the same 404, re-checked under the run's lock so a reassignment that commits first wins
+	 * ({@link #lockOwnedRun}). The move is one conditional update, so simultaneous requests keep
 	 * the first time; the run is then re-read, which tells a repeat (already in the target state, 200) from a
 	 * conflict (409), and gives the answer the times as stored.
 	 */
@@ -147,7 +161,7 @@ public class RunService {
 		Instant now = Instant.now(clock);
 		// The route lookup above may wait on the road provider, so only the checks and the update are in a transaction.
 		Run run = transactionTemplate.execute(status -> {
-			todaysRun(schoolId, today, route.id(), runId).orElseThrow(RunService::runNotFound);
+			lockOwnedRun(schoolId, today, route, runId);
 			if (target == RunState.IN_PROGRESS) {
 				runRepository.markStarted(schoolId, runId, now);
 			} else {
@@ -177,9 +191,7 @@ public class RunService {
 		DayType dayType = dayTypeOf(schoolId, today);
 		DriverRouteResponse route = routeOf(driver, dayType).orElseThrow(RunService::runNotFound);
 		Run run = transactionTemplate.execute(tx -> {
-			Run locked = runRepository.findLockedBySchoolIdAndId(schoolId, runId)
-					.filter(found -> found.getRouteId().equals(route.id()) && found.getRunDate().equals(today))
-					.orElseThrow(RunService::runNotFound);
+			Run locked = lockOwnedRun(schoolId, today, route, runId);
 			List<ConfirmationStatus> had = confirmationRepository
 					.findBySchoolIdAndRunIdAndStudentId(schoolId, runId, studentId).stream()
 					.map(Confirmation::getStatus).toList();
@@ -207,6 +219,111 @@ public class RunService {
 			return locked;
 		});
 		return driverAnswer(run, route, dayType);
+	}
+
+	/**
+	 * Locks the run, then checks it is still the driver's: today's run of the route they were found on, and that route
+	 * still theirs. The route was read before the lock, so a reassignment (SCRUM-264) that committed while this waited
+	 * must win: the old driver gets the same 404 as for any run that is not theirs. Every write a driver makes to a
+	 * run must take its lock here, before it writes: start, end and confirm do, and so must any later one (location
+	 * sharing, replaying queued confirmations), or a request in flight when a reassignment commits could still write.
+	 */
+	private Run lockOwnedRun(UUID schoolId, LocalDate today, DriverRouteResponse route, UUID runId) {
+		Run locked = runRepository.findLockedBySchoolIdAndId(schoolId, runId)
+				.filter(found -> found.getRouteId().equals(route.id()) && found.getRunDate().equals(today))
+				.orElseThrow(RunService::runNotFound);
+		routeService.findDriverIdOfRoute(schoolId, route.id()).filter(route.driver().id()::equals)
+				.orElseThrow(RunService::runNotFound);
+		return locked;
+	}
+
+	/** The answer to a reassignment: the run as the head's list shows it, and whether the driver changed. */
+	public record Reassigned(boolean changed, RunResponse run) {
+	}
+
+	/**
+	 * Gives today's run's route to another driver (SCRUM-264, docs/contracts/runs.md "Reassigning a run's driver"). The
+	 * route's driver changes from now on; the run, its state and its confirmations are not touched. In one
+	 * transaction: the route's runs for today are locked (id order), then the route (inside
+	 * {@link RouteService#reassignDriver}), and the audit row is written with the change or not at all. Not
+	 * {@code @Transactional}: the answer is built after the commit by {@link #runsDay}.
+	 */
+	public Reassigned reassign(User head, UUID runId, ReassignRunRequest request) {
+		UUID schoolId = head.getSchoolId();
+		LocalDate today = LocalDate.now(clock);
+		Run seen = runRepository.findBySchoolIdAndId(schoolId, runId).orElseThrow(RunService::runNotFound);
+		boolean changed = transactionTemplate
+				.execute(tx -> reassignLocked(head, seen.getRouteId(), runId, today, request));
+		// The answer is the day the change was made on, so a day that turns over right after the commit does not hide
+		// the run. A transaction of its own, because runsDay is called on this class and its annotation is not applied.
+		// shortcut: reads the whole day to answer with one run (one source of truth for RunSummary); narrow it if a school's day gets slow
+		RunsDayResponse day = transactionTemplate.execute(tx -> runsDay(schoolId, today));
+		RunResponse summary = day.runs().stream().filter(found -> found.id().equals(runId)).findAny()
+				.orElseThrow(RunService::runNotFound);
+		return new Reassigned(changed, summary);
+	}
+
+	/**
+	 * The checks and the change of {@link #reassign}, in the caller's transaction: lock the route's runs, check them,
+	 * change the driver, write the audit row. The state and the day's type are read after the locks, never from the
+	 * earlier read. A holiday added in the same instant is not locked against, which is harmless: the run is still
+	 * today's.
+	 */
+	private boolean reassignLocked(User head, UUID routeId, UUID runId, LocalDate today, ReassignRunRequest request) {
+		UUID schoolId = head.getSchoolId();
+		Optional<Run> locked = runRepository.findLockedBySchoolIdAndRouteIdAndRunDateOrderByIdAsc(schoolId, routeId, today)
+				.stream().filter(found -> found.getId().equals(runId)).findAny();
+		if (locked.isEmpty() || dayTypeOf(schoolId, today) == DayType.HOLIDAY) {
+			throw new RunStateConflictException("Only today's runs can be reassigned.");
+		}
+		Run run = locked.get();
+		if (run.getState() == RunState.FINISHED) {
+			throw new RunStateConflictException("Run is " + run.getState() + ", so it cannot be reassigned");
+		}
+		DriverReassignment result;
+		try {
+			result = routeService.reassignDriver(schoolId, routeId, request.fromDriverId(), request.driverId());
+		} catch (RouteNotFoundException deleted) {
+			// The route was deleted but its runs are still rows: the run is as gone as an unknown one.
+			throw runNotFound();
+		}
+		if (result.changed()) {
+			// The time is read after the locks, so changes are listed in the order they were made.
+			reassignmentRepository.save(RunReassignment.builder().schoolId(schoolId).runId(runId).routeId(routeId)
+					.runDate(today).runState(run.getState()).fromDriverId(result.from().id())
+					.toDriverId(result.to().id()).changedByUserId(head.getId()).changedAt(Instant.now(clock))
+					.reason(request.reason()).build());
+		}
+		return result.changed();
+	}
+
+	/** Every reassignment of the run's route on the run's date, newest first (the contract's {@code Reassignment[]}). */
+	@Transactional(readOnly = true)
+	public List<ReassignmentResponse> reassignments(UUID schoolId, UUID runId) {
+		Run run = runRepository.findBySchoolIdAndId(schoolId, runId).orElseThrow(RunService::runNotFound);
+		Map<UUID, RouteDriverSummary> drivers = new HashMap<>();
+		Map<UUID, Run> runs = new HashMap<>();
+		Map<UUID, ReassignmentActorResponse> actors = new HashMap<>();
+		return reassignmentRepository.findBySchoolIdAndRouteIdAndRunDateOrderByChangedAtDescIdDesc(schoolId,
+				run.getRouteId(), run.getRunDate()).stream().map(row -> {
+					Run acted = runs.computeIfAbsent(row.getRunId(),
+							id -> runRepository.findBySchoolIdAndId(schoolId, id).orElseThrow(RunService::runNotFound));
+					return new ReassignmentResponse(row.getId(), row.getRunId(), acted.getDirection(), row.getRunState(),
+							driverOf(drivers, schoolId, row.getFromDriverId()), driverOf(drivers, schoolId, row.getToDriverId()),
+							actors.computeIfAbsent(row.getChangedByUserId(), id -> actorOf(schoolId, id)),
+							row.getChangedAt(), row.getReason());
+				}).toList();
+	}
+
+	/** The head who made a change: their email, or null when the account is gone. Only the school's own users are read. */
+	private ReassignmentActorResponse actorOf(UUID schoolId, UUID userId) {
+		return new ReassignmentActorResponse(userId,
+				userService.findInSchool(schoolId, userId).map(User::getEmail).orElse(null));
+	}
+
+	private RouteDriverSummary driverOf(Map<UUID, RouteDriverSummary> known, UUID schoolId, UUID driverId) {
+		return known.computeIfAbsent(driverId,
+				id -> RouteDriverSummary.of(driverService.getOwnedDriver(schoolId, id)));
 	}
 
 	/** One run as the driver sees it, with the confirmations as stored now. */

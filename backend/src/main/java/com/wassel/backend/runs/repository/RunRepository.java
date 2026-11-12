@@ -21,15 +21,27 @@ import java.util.UUID;
  */
 public interface RunRepository extends JpaRepository<Run, UUID> {
 
+	Optional<Run> findBySchoolIdAndId(UUID schoolId, UUID id);
+
 	List<Run> findBySchoolIdAndRunDateAndRouteIdIn(UUID schoolId, LocalDate runDate, Collection<UUID> routeIds);
 
 	/**
 	 * The run with its row locked until the transaction ends. A confirmation takes it so that its checks (the run is
 	 * in progress, what the student already has) and its insert are not interleaved with another confirmation of
-	 * the same student or with the run ending. The first row lock in the codebase; it is held for milliseconds.
+	 * the same student or with the run ending. It is held for milliseconds.
 	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	Optional<Run> findLockedBySchoolIdAndId(UUID schoolId, UUID id);
+
+	/**
+	 * The route's runs on the date with their rows locked until the transaction ends, in id order (SCRUM-264). A
+	 * reassignment takes them before it checks or changes anything, so it waits for a run being started, ended or
+	 * confirmed and the other way round. Lock order of a reassignment: the route's run rows (by id), then the route row.
+	 * Capacity checks lock a vehicle before a route (SCRUM-259); a reassignment takes no vehicle lock, so the two
+	 * never wait on each other in a circle.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	List<Run> findLockedBySchoolIdAndRouteIdAndRunDateOrderByIdAsc(UUID schoolId, UUID routeId, LocalDate runDate);
 
 	/**
 	 * Creates the route's morning and afternoon run for the date, leaving any that exist. One statement, so
