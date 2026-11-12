@@ -26,6 +26,8 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
 
 	long countBySchoolIdAndRouteId(UUID schoolId, UUID routeId);
 
+	long countBySchoolIdAndStatusAndRouteIdIsNotNull(UUID schoolId, StudentStatus status);
+
 	boolean existsBySchoolIdAndIdAndRouteId(UUID schoolId, UUID id, UUID routeId);
 
 	List<Student> findBySchoolIdAndRouteIdOrderByStopPositionAsc(UUID schoolId, UUID routeId);

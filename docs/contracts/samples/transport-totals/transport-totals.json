@@ -1,0 +1,42 @@
+{
+  "from": "2026-11-03",
+  "to": "2026-11-05",
+  "studentsOnRoutes": 42,
+  "total": {
+    "runs": 8,
+    "runsFinished": 6,
+    "pickedUp": 70,
+    "droppedOff": 66,
+    "notPresent": 4,
+    "absent": 7
+  },
+  "days": [
+    {
+      "date": "2026-11-03",
+      "runs": 4,
+      "runsFinished": 4,
+      "pickedUp": 38,
+      "droppedOff": 38,
+      "notPresent": 1,
+      "absent": 3
+    },
+    {
+      "date": "2026-11-04",
+      "runs": 4,
+      "runsFinished": 2,
+      "pickedUp": 32,
+      "droppedOff": 28,
+      "notPresent": 3,
+      "absent": 4
+    },
+    {
+      "date": "2026-11-05",
+      "runs": 0,
+      "runsFinished": 0,
+      "pickedUp": 0,
+      "droppedOff": 0,
+      "notPresent": 0,
+      "absent": 0
+    }
+  ]
+}

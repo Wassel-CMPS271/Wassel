@@ -181,6 +181,12 @@ public class StudentService {
 		return studentRepository.countBySchoolIdAndRouteId(schoolId, routeId);
 	}
 
+	/** How many active students are on a route now, for the {@code reports} module's transport totals (SCRUM-271). */
+	@Transactional(readOnly = true)
+	public long countOnRoutes(UUID schoolId) {
+		return studentRepository.countBySchoolIdAndStatusAndRouteIdIsNotNull(schoolId, StudentStatus.ACTIVE);
+	}
+
 	/**
 	 * Whether this student is already a stop on this exact route, so the routes module can skip
 	 * the capacity check for them: re-adding them takes no new seat, since they're already

@@ -18,6 +18,7 @@ import com.wassel.backend.runs.dto.LocationRequest;
 import com.wassel.backend.runs.dto.LocationStatus;
 import com.wassel.backend.runs.dto.RunLocationResponse;
 import com.wassel.backend.runs.dto.ConfirmationResponse;
+import com.wassel.backend.runs.dto.DailyRunTotals;
 import com.wassel.backend.runs.dto.DayType;
 import com.wassel.backend.runs.dto.EstimateResponse;
 import com.wassel.backend.runs.dto.NextStopResponse;
@@ -32,6 +33,7 @@ import com.wassel.backend.runs.entity.Run;
 import com.wassel.backend.runs.entity.RunDirection;
 import com.wassel.backend.runs.entity.RunLocation;
 import com.wassel.backend.runs.entity.RunState;
+import com.wassel.backend.runs.event.ConfirmationRecordedEvent;
 import com.wassel.backend.runs.exception.ConfirmationConflictException;
 import com.wassel.backend.runs.exception.RunNotFoundException;
 import com.wassel.backend.runs.exception.RunStateConflictException;
@@ -46,6 +48,7 @@ import com.wassel.backend.students.dto.StudentResponse;
 import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.users.entity.User;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -65,6 +68,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.BinaryOperator;
 import java.util.UUID;
 import java.util.function.Function;
@@ -109,6 +113,8 @@ public class RunService {
 	private final Clock clock;
 
 	private final TransactionTemplate transactionTemplate;
+
+	private final ApplicationEventPublisher events;
 
 	/**
 	 * Today's two runs of the signed-in driver's route, with stops. Empty when they have no route, or on a holiday.
@@ -224,7 +230,12 @@ public class RunService {
 						: "is " + current) + ", so they cannot be marked " + status);
 			}
 			// The time is read after the lock, so rows are saved in the order the rule saw them.
-			confirmationRepository.insertIfMissing(schoolId, runId, studentId, status.name(), Instant.now(clock));
+			Instant now = Instant.now(clock);
+			// Only a status saved for the first time is an event; listeners run in this transaction (SCRUM-267).
+			if (confirmationRepository.insertIfMissing(schoolId, runId, studentId, status.name(), now) == 1) {
+				events.publishEvent(new ConfirmationRecordedEvent(schoolId, runId, studentId,
+						locked.getDirection().name(), status.name(), now));
+			}
 			return locked;
 		});
 		return driverAnswer(run, route, dayType);
@@ -402,6 +413,29 @@ public class RunService {
 		}
 		return runLocationRepository.findBySchoolIdAndRunIdIn(schoolId, runs.stream().map(Run::getId).toList()).stream()
 				.filter(RunLocation::isSharing).map(RunLocation::getRunId).collect(Collectors.toSet());
+	}
+
+	/**
+	 * For the {@code reports} module (SCRUM-271): the run figures of each date in the range that has a run or a
+	 * confirmation, from two grouped queries and nothing else (no road time, no roster). A date with neither is not
+	 * in the list; the caller fills it with zeros.
+	 */
+	@Transactional(readOnly = true)
+	public List<DailyRunTotals> dailyTotals(UUID schoolId, LocalDate from, LocalDate to) {
+		Map<LocalDate, long[]> byDate = new TreeMap<>();
+		for (Object[] row : runRepository.countByDate(schoolId, from, to)) {
+			long[] figures = byDate.computeIfAbsent((LocalDate) row[0], date -> new long[5]);
+			figures[0] = ((Number) row[1]).longValue();
+			figures[1] = ((Number) row[2]).longValue();
+		}
+		for (Object[] row : confirmationRepository.riderCountsByDate(schoolId, from, to)) {
+			long[] figures = byDate.computeIfAbsent(LocalDate.parse(row[0].toString()), date -> new long[5]);
+			figures[2] = ((Number) row[1]).longValue();
+			figures[3] = ((Number) row[2]).longValue();
+			figures[4] = ((Number) row[3]).longValue();
+		}
+		return byDate.entrySet().stream().map(entry -> new DailyRunTotals(entry.getKey(), entry.getValue()[0],
+				entry.getValue()[1], entry.getValue()[2], entry.getValue()[3], entry.getValue()[4])).toList();
 	}
 
 	/** One run as the driver sees it, with the confirmations as stored now. */
