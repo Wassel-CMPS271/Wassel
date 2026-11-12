@@ -27,6 +27,7 @@ import com.wassel.backend.runs.dto.RunResponse;
 import com.wassel.backend.runs.dto.RunRouteResponse;
 import com.wassel.backend.runs.dto.RunStopResponse;
 import com.wassel.backend.runs.dto.RunsDayResponse;
+import com.wassel.backend.runs.dto.WaitingStop;
 import com.wassel.backend.runs.entity.Confirmation;
 import com.wassel.backend.runs.entity.ConfirmationStatus;
 import com.wassel.backend.runs.entity.Run;
@@ -48,6 +49,7 @@ import com.wassel.backend.students.dto.StudentResponse;
 import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.users.entity.User;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -84,6 +86,7 @@ import java.util.stream.Stream;
  * request from the {@link Clock}.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class RunService {
 
@@ -339,8 +342,78 @@ public class RunService {
 		if (dayTypeOf(schoolId, today) == DayType.HOLIDAY) {
 			return List.of();
 		}
-		List<Run> found = runRepository.findBySchoolIdAndRunDateAndState(schoolId, today, RunState.IN_PROGRESS);
-		// One read per route with a run in progress; a deleted route's run is left out (its read is empty).
+		Instant now = Instant.now(clock);
+		return progressOf(schoolId, today,
+				runRepository.findBySchoolIdAndRunDateAndState(schoolId, today, RunState.IN_PROGRESS), now).stream()
+				.map(progress -> {
+					Run run = progress.run();
+					NextStopResponse next = null;
+					if (!progress.toDo().isEmpty()) {
+						StopResponse stop = progress.toDo().getFirst();
+						next = new NextStopResponse(stop.studentId(), stop.firstName(), stop.lastName(),
+								plannedTime(run.getDirection(), stop), estimateIfLive(progress.bus(), List.of(stop), now));
+					}
+					return new RunLocationResponse(run.getId(), progress.bus().status(), progress.bus().position(),
+							progress.toDo().size(), next);
+				}).toList();
+	}
+
+	/**
+	 * For the inbox's late alerts (SCRUM-268): every child still waiting on a morning run that is in progress today and
+	 * whose stop has a planned time, with that time and the live estimate. It reads every school, which no other read
+	 * here does, so it is a job's call and works through the schools one at a time: a school whose read fails is logged
+	 * and left out, and the next call tries it again. A holiday has no runs to show, as in {@link #locationsToday}; an
+	 * afternoon run has no planned times, so nothing is asked of it.
+	 */
+	public List<WaitingStop> waitingStopsToday() {
+		LocalDate today = LocalDate.now(clock);
+		Map<UUID, List<Run>> bySchool = runRepository
+				.findByRunDateAndStateAndDirection(today, RunState.IN_PROGRESS, RunDirection.MORNING).stream()
+				.collect(Collectors.groupingBy(Run::getSchoolId));
+		List<WaitingStop> waiting = new ArrayList<>();
+		bySchool.forEach((schoolId, runs) -> {
+			try {
+				waiting.addAll(waitingStopsOf(schoolId, today, runs));
+			}
+			catch (RuntimeException e) {
+				log.error("Could not read the waiting stops of school {}; the next call tries again", schoolId, e);
+			}
+		});
+		return waiting;
+	}
+
+	private List<WaitingStop> waitingStopsOf(UUID schoolId, LocalDate today, List<Run> runs) {
+		if (dayTypeOf(schoolId, today) == DayType.HOLIDAY) {
+			return List.of();
+		}
+		Instant now = Instant.now(clock);
+		List<WaitingStop> waiting = new ArrayList<>();
+		for (RunProgress progress : progressOf(schoolId, today, runs, now)) {
+			List<StopResponse> toDo = progress.toDo();
+			// The only place a live estimate is made for every stop: one chain, from a LIVE fix only.
+			List<Instant> arrivals = progress.bus().status() == LocationStatus.LIVE
+					? LiveEta.arrivals(straightLine, progress.bus().position(), toDo, now) : null;
+			for (int i = 0; i < toDo.size(); i++) {
+				LocalTime planned = plannedTime(progress.run().getDirection(), toDo.get(i));
+				if (planned != null) {
+					waiting.add(new WaitingStop(schoolId, progress.run().getId(), toDo.get(i).studentId(),
+							today.atTime(planned).atZone(clock.getZone()).toInstant(),
+							arrivals == null ? null : arrivals.get(i)));
+				}
+			}
+		}
+		return waiting;
+	}
+
+	/** A run in progress with where its bus is and the stops still to do. */
+	private record RunProgress(Run run, BusLocationResponse bus, List<StopResponse> toDo) {
+	}
+
+	/**
+	 * What {@link #locationsToday} and {@link #waitingStopsOf} both need for runs of one school in progress: the bus's
+	 * position and the stops still to do. One read per route; a run of a deleted route is left out (its read is empty).
+	 */
+	private List<RunProgress> progressOf(UUID schoolId, LocalDate today, List<Run> found, Instant now) {
 		Map<UUID, List<StopResponse>> stopsOf = new HashMap<>();
 		found.stream().map(Run::getRouteId).distinct().forEach(routeId ->
 				routeService.findStops(schoolId, routeId).ifPresent(stops -> stopsOf.put(routeId, stops)));
@@ -354,19 +427,9 @@ public class RunService {
 		Map<UUID, List<Confirmation>> confirmed = confirmationsOf(schoolId, inProgress);
 		Set<UUID> absent = absenceService.absentStudentIds(schoolId, stopsOf.values().stream().flatMap(List::stream)
 				.map(StopResponse::studentId).collect(Collectors.toSet()), today);
-		Instant now = Instant.now(clock);
-		return inProgress.stream().map(run -> {
-			BusLocationResponse bus = locate(byRun.get(run.getId()), now);
-			List<StopResponse> toDo = toDo(run.getDirection(), stopsOf.get(run.getRouteId()),
-					confirmed.getOrDefault(run.getId(), List.of()), absent);
-			NextStopResponse next = null;
-			if (!toDo.isEmpty()) {
-				StopResponse stop = toDo.getFirst();
-				next = new NextStopResponse(stop.studentId(), stop.firstName(), stop.lastName(),
-						plannedTime(run.getDirection(), stop), estimateIfLive(bus, List.of(stop), now));
-			}
-			return new RunLocationResponse(run.getId(), bus.status(), bus.position(), toDo.size(), next);
-		}).toList();
+		return inProgress.stream().map(run -> new RunProgress(run, locate(byRun.get(run.getId()), now),
+				toDo(run.getDirection(), stopsOf.get(run.getRouteId()), confirmed.getOrDefault(run.getId(), List.of()),
+						absent))).toList();
 	}
 
 	/**

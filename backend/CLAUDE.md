@@ -453,7 +453,7 @@ that's the structure this codebase moved away from.
   `arrivalTime` only and is never used to compute the estimate. The head's list now also drops a run whose route has been
   deleted (the contract already said such runs are not listed), and the parent read answers `UNAVAILABLE` if the route goes
   between its reads: `findStops` is empty rather than throwing, because `runs` must not import `routes`' exceptions. Known limits: the estimate runs early (straight lines, no time at stops), a passed but
-  unconfirmed stop still adds a leg, and per-stop lists and a delay value are left out (SCRUM-268 owns lateness).
+  unconfirmed stop still adds a leg, and per-stop lists and a delay value are left out (lateness is the inbox's, SCRUM-268).
 - `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
   of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
   are in `docs/contracts/runs.md` (owned jointly with the `runs` module, SCRUM-232/239); build
@@ -540,7 +540,26 @@ that's the structure this codebase moved away from.
   a second entry. Reading is scoped by school and parent in every statement; marking read is a conditional
   `UPDATE ... WHERE read_at IS NULL`, so a repeat keeps the first time, and another parent's entry is the same 404 as an
   unknown one. The list is the newest 50 (there is no paging or clean-up yet); the unread count is not limited to them.
-  Selecting which entries a parent receives and late alerts are SCRUM-268.
+  Notification preferences and late alerts (SCRUM-268), rules in `docs/contracts/inbox.md`: `GET`/`PUT
+  /api/parent/notification-preferences` (`NotificationPreferencesController`). One row per parent in
+  `notification_preferences` (migration V15, provisional: renumber to the next free number at merge), made by the first save
+  with one `INSERT ... ON CONFLICT DO UPDATE`; a parent with no row has the defaults, supplied by
+  `NotificationPreferencesResponse.DEFAULTS` (everything on, 10 minutes), so reading never writes. `PUT` replaces all five
+  choices (`lateAfterMinutes` 5 to 60, also a table check). `InboxService.recordConfirmation` asks
+  `NotificationPreferenceService.receives` before it inserts, so a type that is off makes no entry (nothing already there is
+  touched, and the driver's tap is unaffected). Late alerts: `config/LateAlertJob` (`@Scheduled` every minute after the last
+  run, not in the `test` profile, like `LocationPurge`) calls `LateAlertService.raise`, which asks
+  `RunService.waitingStopsToday` for every child still waiting on a morning run in progress with a planned time (one
+  `WaitingStop` each: the planned moment in the school's zone, and the live estimate for that stop, null unless the position
+  is `LIVE`). `runs` only reads here and knows nothing of lateness; the rule is `LateRule`: the expected time (the estimate,
+  else now) after the planned time plus the parent's minutes. So a stale or missing position never makes a delay, only the
+  clock does. `raise` skips a stop that is not late by the shortest allowed minutes (5) before looking up any parent, then
+  reads the child's parent and choices, and `InboxService.recordLate` inserts a `LATE` entry with the same
+  `insertIfMissing` as every entry (unique on run, child and type), so any number of calls, retries or instances make one.
+  One stop that fails is logged at ERROR and left for the next call; `RunService.waitingStopsToday` does the same for a
+  school. `LiveEta.arrivals` is the one chain that gives the arrival at every stop (`estimate` is its entry for one stop).
+  Known limits: morning runs only (no afternoon schedule), a run never started or not yet created is not watched, an alert is
+  never withdrawn, and the head of transportation's "run not started" alert (SCRUM-77) is not built.
 - `reports` — the head of transportation's transport totals and their CSV export over a date range (SCRUM-271):
   `GET /api/head-of-transport/transport-totals?from=&to=` and `.../export`. Shapes and rules are in
   `docs/contracts/transport-totals.md`. Stores nothing and nothing depends on it; `ReportService` reads three

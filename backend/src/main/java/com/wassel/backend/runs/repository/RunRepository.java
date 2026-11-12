@@ -1,6 +1,7 @@
 package com.wassel.backend.runs.repository;
 
 import com.wassel.backend.runs.entity.Run;
+import com.wassel.backend.runs.entity.RunDirection;
 import com.wassel.backend.runs.entity.RunState;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -25,6 +26,12 @@ public interface RunRepository extends JpaRepository<Run, UUID> {
 	List<Run> findBySchoolIdAndRunDateAndRouteIdIn(UUID schoolId, LocalDate runDate, Collection<UUID> routeIds);
 
 	List<Run> findBySchoolIdAndRunDateAndState(UUID schoolId, LocalDate runDate, RunState state);
+
+	/**
+	 * The runs of every school in this state, direction and date. The one read not scoped by school: for the late-alert job
+	 * (SCRUM-268), which works through the schools one at a time, like {@code RunLocationRepository.clearReceivedBefore}.
+	 */
+	List<Run> findByRunDateAndStateAndDirection(LocalDate runDate, RunState state, RunDirection direction);
 
 	/**
 	 * For the transport totals (SCRUM-271): per date in the range that has runs, how many runs there are and how
