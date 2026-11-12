@@ -6,10 +6,12 @@ import com.wassel.backend.parent.dto.ChildRouteResponse;
 import com.wassel.backend.parent.dto.ChildVehicleResponse;
 import com.wassel.backend.routes.dto.ChildRouteInfo;
 import com.wassel.backend.routes.service.RouteService;
+import com.wassel.backend.runs.dto.BusLocationResponse;
 import com.wassel.backend.runs.dto.ChildOnRoute;
 import com.wassel.backend.runs.dto.ChildRunResponse;
 import com.wassel.backend.runs.service.RunService;
 import com.wassel.backend.students.dto.StudentResponse;
+import com.wassel.backend.students.exception.StudentNotFoundException;
 import com.wassel.backend.students.service.StudentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -45,6 +47,19 @@ public class ParentService {
 		Map<UUID, ChildRunResponse> runs = runService.todayRunStatus(schoolId, routes.entrySet().stream()
 				.map(entry -> new ChildOnRoute(entry.getKey(), entry.getValue().routeId())).toList());
 		return children.stream().map(child -> toChild(child, routes.get(child.id()), runs.get(child.id()))).toList();
+	}
+
+	/**
+	 * Where the bus is for one of this parent's children (SCRUM-261). Another parent's child, another school's and an
+	 * unknown id are the same 404 the absences endpoints give; a child with no route has nothing to show.
+	 */
+	@Transactional(readOnly = true)
+	public BusLocationResponse busLocation(UUID schoolId, UUID parentUserId, UUID studentId) {
+		studentService.findChildOf(schoolId, parentUserId, studentId)
+				.orElseThrow(() -> new StudentNotFoundException("Child not found."));
+		UUID routeId = studentService.getRouteId(schoolId, studentId);
+		return routeId == null ? BusLocationResponse.UNAVAILABLE
+				: runService.childBusLocation(schoolId, studentId, routeId);
 	}
 
 	private ChildResponse toChild(StudentResponse student, ChildRouteInfo route, ChildRunResponse todayRun) {
