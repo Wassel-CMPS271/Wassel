@@ -17,6 +17,7 @@ import com.wassel.backend.inbox.exception.InboxEventNotFoundException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
+import com.wassel.backend.reports.exception.InvalidTotalsRangeException;
 import com.wassel.backend.routes.exception.ActiveRunConflictException;
 import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
@@ -293,6 +294,15 @@ public class GlobalExceptionHandler {
 	// Same "errors" shape again, keyed by the field that was wrong (address, latitude, longitude, status).
 	@ExceptionHandler(InvalidAddressRequestException.class)
 	public ProblemDetail handleInvalidAddressRequest(InvalidAddressRequestException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
+		return problem;
+	}
+
+	// Same "errors" shape again, keyed by the field of the date range that was wrong (to).
+	@ExceptionHandler(InvalidTotalsRangeException.class)
+	public ProblemDetail handleInvalidTotalsRange(InvalidTotalsRangeException ex) {
 		logRejected(ex);
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
 		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
