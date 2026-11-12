@@ -1,7 +1,7 @@
 // Runs API types — SCRUM-232, written from docs/contracts/runs.md (the source of
-// truth for every type and path here). The calls are added with the screens that
-// use them, through request() in client.ts: the head of transportation's two reads
-// are below (SCRUM-255); the driver's calls come with SCRUM-243/244.
+// truth for every type and path here). The calls sit beside the types and go through
+// request() in client.ts: the driver's (SCRUM-243/244), the head of transportation's
+// reads (SCRUM-255) and the reassignment (SCRUM-264).
 //
 //   GET  /api/driver/runs/today                                  -> DriverDay (creates today's runs)
 //   POST /api/driver/runs/{runId}/start                          -> Run
@@ -9,6 +9,8 @@
 //   PUT  /api/driver/runs/{runId}/students/{studentId}/confirmation  { status } -> Run
 //   GET  /api/head-of-transport/runs?date=                       -> RunsDay (today when date is omitted)
 //   GET  /api/head-of-transport/absences?date=                   -> AbsentStudent[] (today when date is omitted)
+//   POST /api/head-of-transport/runs/{runId}/reassignments  ReassignInput -> RunSummary (SCRUM-264; 201 changed, 200 already that driver)
+//   GET  /api/head-of-transport/runs/{runId}/reassignments       -> Reassignment[] (newest first)
 //
 // Dates are "YYYY-MM-DD" and times of day "HH:mm", both school-local (Asia/Beirut).
 // Moments (startedAt, endedAt, confirmation.at) are ISO-8601 UTC with a "Z".
@@ -109,6 +111,28 @@ export interface AbsentStudent {
   position: number | null;
 }
 
+// The body of the reassignment POST. fromDriverId is the driver the head saw on the run (run.driver.id): the
+// server answers 409 when the route's driver is someone else by then. reason is at most 200 characters.
+export interface ReassignInput {
+  driverId: string;
+  fromDriverId: string;
+  reason?: string | null;
+}
+
+// One change of a route's driver, made through a run. The list for a run holds every change of that run's route
+// on that run's date, so the afternoon run lists a change made through the morning run.
+export interface Reassignment {
+  id: string;
+  runId: string;
+  direction: RunDirection;
+  runState: "NOT_STARTED" | "IN_PROGRESS";
+  fromDriver: RouteDriver;
+  toDriver: RouteDriver;
+  changedBy: { id: string; email: string | null };
+  changedAt: string; // moment
+  reason: string | null;
+}
+
 export function getDriverToday(): Promise<DriverDay> {
   return request<DriverDay>("/api/driver/runs/today");
 }
@@ -141,6 +165,20 @@ export function getRunsDay(date?: string): Promise<RunsDay> {
 
 export function getAbsentStudents(date?: string): Promise<AbsentStudent[]> {
   return request<AbsentStudent[]>(`/api/head-of-transport/absences${dateQuery(date)}`);
+}
+
+// Gives the run's route to another driver from now on (both of today's runs and every later day). A 409 with an
+// `errors.driverId` is a refused replacement (ApiValidationError); a 409 with only a `detail` (stale driver, finished
+// run, not today's) is an ApiError to show as a banner with a reload.
+export function reassignRun(runId: string, input: ReassignInput): Promise<RunSummary> {
+  return request<RunSummary>(`/api/head-of-transport/runs/${runId}/reassignments`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function getRunReassignments(runId: string): Promise<Reassignment[]> {
+  return request<Reassignment[]>(`/api/head-of-transport/runs/${runId}/reassignments`);
 }
 
 function dateQuery(date?: string): string {
