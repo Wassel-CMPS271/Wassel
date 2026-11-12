@@ -162,7 +162,7 @@ that's the structure this codebase moved away from.
   Doing it twice is fine. `AccountResponse.status` is `"revoked"` while disabled. A driver's revoke also sets
   `DriverStatus.DEACTIVATED` and releases the vehicle (so another driver can take it); restore goes back to
   `ACTIVE`, or `INVITED` if no password was ever set, and does not give the vehicle back. Known limit: the
-  driver's route still names them; the head of transportation reassigns it. There is no admin screen for
+  driver's route still names them; the head of transportation reassigns it through a run (`POST /api/head-of-transport/runs/{runId}/reassignments`, SCRUM-264, in `runs`). There is no admin screen for
   revoking a head of transportation yet (API only).
 - `geocoding` — turns a free-text address into coordinates via the public Nominatim instance
   (SCRUM-211). `service/Geocoder` is the interface other modules use (`students` is the only
@@ -423,6 +423,27 @@ that's the structure this codebase moved away from.
   repeated end that arrives after midnight is a 404, not the usual 200. A start racing an end on the same run can get a 409
   `FINISHED`. Confirmations follow the same rule: `confirm` finds the route with `routeOf`, then locks the run and checks it is
   that route's run for today.
+  Reassignment (SCRUM-264): `POST /api/head-of-transport/runs/{runId}/reassignments {driverId, fromDriverId, reason?}` and
+  `GET .../reassignments` (`HeadOfTransportRunController`, `RunService.reassign`/`reassignments`, table `run_reassignments`,
+  migration V14 provisional, no foreign keys; rules in `docs/contracts/runs.md`). It changes **the route's** driver from
+  now on (both of today's runs, every later day); the run and its confirmations are not touched, and the audit rows are the
+  record of who drove when (a run's list is every row of its route on its date, so the afternoon run lists a change made
+  through the morning one). Only today's `NOT_STARTED`/`IN_PROGRESS` runs (409 otherwise); the replacement must be `active`
+  and on no other route; a `driverId` the route already has is a 200 that records nothing; `fromDriverId` is required and a
+  mismatch is a 409 naming the current driver (`RouteDriverChangedException`). **Lock order: a route's run rows (id order,
+  `RunRepository.findLockedBySchoolIdAndRouteIdAndRunDateOrderByIdAsc`), then the route row.** `reassign` is the only path
+  that takes both, in one `TransactionTemplate` (it is not `@Transactional`, and the answer is built after the commit
+  from `runsDay`); `editRoute` and the capacity paths take vehicle then route and never a run. `RouteService.reassignDriver`
+  writes the driver and skips `ActiveRunGuard` (changing the driver mid-run is its point); the unique constraint on the
+  route's driver is the backstop (`lostRace`; the write is the one-statement `RouteRepository.updateDriverId`, because a failed
+  entity update is repeated by Hibernate and logs a spurious "transaction is aborted" error). **Ownership is re-checked under the run's lock** in `start`, `end` and
+  `confirm` (`RunService.lockOwnedRun`, `RouteService.findDriverIdOfRoute`, a scalar read so no stale cached `Route`): the
+  driver was found on the route before the lock, so a reassignment that committed while their request waited gives them a
+  404 instead of a write. **Every driver write to a run takes `lockOwnedRun` first**: a new one (SCRUM-261's location
+  sharing, SCRUM-263's replay of queued confirmations) must go through it too, or an in-flight request from the old driver
+  can still write after a reassignment commits; `runs/service/DriverWritesRecheckOwnershipTests` (a source-level check on `RunService`) fails when a driver write locks the run any other way, when a replay looks up its key before `lockOwnedRun`, or when `reassign` does not call `stopSharing` once location sharing exists, so the PR that merges second cannot go green until it does. Known limits: `PUT /routes/{id}` still changes a driver without an audit row; no swap of two
+  routes' drivers in one call; location sharing is not withdrawn yet (add `stopSharing` to `reassign` when SCRUM-261's
+  GPS merges); no notifications (SCRUM-268). Tests: `RunReassignmentTests`, `RunReassignmentDayTurnoverTests`, `RunOwnershipRecheckTests`.
 - `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
   of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
   are in `docs/contracts/runs.md` (owned jointly with the `runs` module, SCRUM-232/239); build
