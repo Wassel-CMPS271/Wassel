@@ -1,5 +1,40 @@
 # SCRUM-282 â€” Independent operations UI tests
 
+## Dependency refresh and independent regression — 12 November 2026
+
+Accepted develop: `4cbfcc7172520e683366d6eaab482ff95015dba0`, including merged GPS #143. Executed read-only candidate Git source: driver #144 **`e3ec66670324a77edfe014dec7a00f18ee39ac3c`**, roster #142 **`d81b06859a36f7807272c4f81d2f03f0a7a9a7b9`**. Both remain drafts. No feature implementation was changed or merged. All original 29 acceptance cases remain.
+
+| Executed check | Actual result |
+| --- | --- |
+| Original unadapted test harness on newest heads | 22 passed / 7 failed; logs retained |
+| Current contract-compatible harness, newest heads | **28 passed / 1 failed / 0 skipped** |
+| Same current tests on old Nov 10 heads (negative control) | **25 passed / original 4 defects fail / 0 skipped** |
+| Full regression with newest candidate refs | **780 passed / 1 genuine failure / 1 pre-existing expected failure / 6 pre-existing skips** (788; 58 files) |
+| ESLint / production build | Passed |
+| Standalone TypeScript | Exactly 13 accepted-develop diagnostics, zero introduced |
+
+### Why the harness changed without weakening criteria
+
+Four initial failures were outdated useGpsSharing test doubles: Connectivity now requires `onRetry` and sharing returns a Run with `locationSharing` plus callbacks. Doubles now implement that agreed contract. The cross-tab criterion still interleaves both accepted enqueues, then opens a NEW queue from durable shared storage and requires both IDs; it no longer assumes a particular JSON storage layout. The stale-decision criterion still requires another row's typed reason both during and after a delayed conflict refetch; it no longer requires a loading skeleton, which was the cause of the old defect. The negative-control run proves these tests still expose all four original defects. No skip/expected-failure was introduced.
+
+### Resolved on the newest candidates
+
+1. #144: request deadline remains active through stalled body consumption.
+2. #144: both successful concurrent tabs' taps survive a fresh queue reload using durable per-item pending storage.
+3. #142: another row's reject draft survives the delayed 409 background refresh.
+
+### Genuine remaining failure and missing scope
+
+- **#142 `frontend/src/lib/api/addressRequests.ts` still exports `addressRequestsApi = null`.** The real authenticated address integration delivery gate intentionally fails. Majd must wire canonical #145 after acceptance and verify list/approve/reject, ownership, stored address/pin changes, errors and persistence. The PR body is stale about the already-fixed 409 draft behavior.
+- **#144 replay remains null.** #155 / SCRUM-263 now proposes idempotent PUT confirmation using optional UUID clientRequestId, not a batch endpoint. It is unmerged at `99f57fd10a1696ad37a930099f5ef522b484baa0`. Majd must reconcile the real client, distinguish 401 pause, transient retry, 404/409 drop/refetch and 422 payload-key conflict using the accepted contract. Synthetic queue tests do not prove actual server replay/deduplication or phone reconnect.
+- **SCRUM-274 is still To Do and absent.** Remaining required matrix: school-authorized active/late runs; GPS/ETA stale/unavailable distinct from established lateness; atomic reassignment with preserved confirmation history; loading/empty/error/retry, wrong-role/ownership and mobile/accessibility. Dependencies SCRUM-262,264,268 must be available. No speculative screen/API or fake passing test is added.
+- Need real-stack ownership, reload/offline replay, address decisions and actual 360px operations UI evidence after those features exist. The Driver/Parent GPS probe is separately documented by SCRUM-250; it does not satisfy missing replay/control/address scope.
+
+Normal HEAD CI remains a deliberate integration gate and cannot be called complete while feature modules are absent. Keep #151 a draft and SCRUM-282 In Progress. Majd owns the remaining feature work; do not fix his implementation in this test branch.
+
+Evidence: ignored `tmp/SCRUM-282-20261112/{original-29-latest.log,current-29.log,negative-control-old-heads.log,full-current.log,lint.log,build.log,typecheck.log}`. November 9/10 evidence preserved.
+
+
 ## Follow-up verification — 10 November 2026
 
 Accepted base: develop `8d62167fe2439843187218cabc40419304bd8d40`, including merged SCRUM-249 / PR #147. Reused this branch and all 29 existing independent cases. No feature branch was merged, no production file changed, and all four normal failing regression assertions remain unchanged.

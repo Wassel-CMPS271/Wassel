@@ -43,7 +43,7 @@ describe("SCRUM-273 independent queue/replay criteria", () => {
     const aStore = { ...store, getItem(k: string) { const before = store.getItem(k); if (inject && k === "shared") { inject = false; bSaved = queues.b!.enqueue(tap("b")).ok; } return before; } };
     const a = new OfflineQueue({ store: aStore, storageKey: "shared", api: null, lock, today: () => date }); const b = new OfflineQueue({ store: store.tab(), storageKey: "shared", api: null, lock, today: () => date });
     queues.b = b;
-    try { inject = true; expect(a.enqueue(tap("a")).ok).toBe(true); expect(bSaved).toBe(true); const saved = JSON.parse(store.getItem("shared")!); expect(saved.items.map((i: Item) => i.studentId).sort()).toEqual(["a", "b"]); } finally { a.dispose(); b.dispose(); }
+    try { inject = true; expect(a.enqueue(tap("a")).ok).toBe(true); expect(bSaved).toBe(true); const reloaded = new OfflineQueue({ store: store.tab(), storageKey: "shared", api: null, lock, today: () => date }); try { expect(reloaded.getSnapshot().items.map(i => i.studentId).sort()).toEqual(["a", "b"]); } finally { reloaded.dispose(); } } finally { a.dispose(); b.dispose(); }
   });
   it("enforces the deadline through a stalled response body", async () => {
     vi.useFakeTimers();

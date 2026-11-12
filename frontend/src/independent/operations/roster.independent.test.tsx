@@ -20,6 +20,6 @@ it("keeps a failed decision visible and retryable", async () => { const source =
 it("preserves another row's typed rejection reason while resolving a stale decision", async () => {
   const source = api([first, second]); let finish!: (rows: Row[]) => void; source.list.mockResolvedValueOnce([first, second]).mockReturnValueOnce(new Promise(resolve => { finish = resolve; })); const { ApiError } = candidate<{ ApiError: new (status: number) => Error }>("lib/api/errors.ts", ref); source.approve.mockRejectedValue(new ApiError(409)); show(source); await screen.findByText("Lina");
   fireEvent.click(within(row("Omar")).getByRole("button", { name: "Reject address change for Omar" })); fireEvent.change(screen.getByLabelText("Reason (optional)"), { target: { value: "Keep this draft" } });
-  fireEvent.click(within(row("Lina")).getByRole("button", { name: "Approve address change for Lina" })); await waitFor(() => expect(source.list).toHaveBeenCalledTimes(2)); await screen.findByText(/^Loading address requests/); await act(async () => finish([second]));
+  fireEvent.click(within(row("Lina")).getByRole("button", { name: "Approve address change for Lina" })); await waitFor(() => expect(source.list).toHaveBeenCalledTimes(2)); expect(screen.getByLabelText("Reason (optional)")).toHaveValue("Keep this draft"); await act(async () => finish([second]));
   expect(screen.getByLabelText("Reason (optional)")).toHaveValue("Keep this draft");
 });
