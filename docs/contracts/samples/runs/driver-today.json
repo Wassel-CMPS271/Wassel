@@ -31,6 +31,7 @@
         "droppedOff": 0,
         "notPresent": 1
       },
+      "locationSharing": true,
       "stops": [
         {
           "studentId": "40000000-0000-4000-8000-000000000001",
@@ -129,6 +130,7 @@
         "droppedOff": 0,
         "notPresent": 0
       },
+      "locationSharing": false,
       "stops": [
         {
           "studentId": "40000000-0000-4000-8000-000000000004",
