@@ -1,5 +1,6 @@
 package com.wassel.backend.runs.controller;
 
+import com.wassel.backend.runs.dto.RunLocationResponse;
 import com.wassel.backend.runs.dto.RunsDayResponse;
 import com.wassel.backend.runs.service.RunService;
 import com.wassel.backend.users.entity.User;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * Every run of the head of transportation's school on a date. The school always comes from the
@@ -26,6 +28,14 @@ import java.time.LocalDate;
 public class HeadOfTransportRunController {
 
 	private final RunService runService;
+
+	@GetMapping("/locations")
+	public List<RunLocationResponse> locations(@AuthenticationPrincipal User headOfTransport) {
+		if (headOfTransport == null) {
+			throw new AccessDeniedException("No authenticated head of transportation");
+		}
+		return runService.locationsToday(headOfTransport.getSchoolId());
+	}
 
 	@GetMapping
 	public RunsDayResponse runs(@AuthenticationPrincipal User headOfTransport,
