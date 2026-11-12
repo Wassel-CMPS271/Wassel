@@ -323,6 +323,19 @@ public class StudentService {
 				.collect(Collectors.toMap(Student::getId, Student::getRouteId));
 	}
 
+	/**
+	 * These students of this school by id, in one read, for the {@code attendance} module to name the students of a page.
+	 * An id that is not in the school is missing from the map.
+	 */
+	@Transactional(readOnly = true)
+	public Map<UUID, StudentResponse> findStudents(UUID schoolId, Collection<UUID> studentIds) {
+		if (studentIds.isEmpty()) {
+			return Map.of();
+		}
+		return studentRepository.findBySchoolIdAndIdIn(schoolId, studentIds).stream()
+				.collect(Collectors.toMap(Student::getId, this::toResponse));
+	}
+
 	private StudentStatus parseStatus(String status) {
 		String normalized = normalize(status);
 		if (normalized == null) {

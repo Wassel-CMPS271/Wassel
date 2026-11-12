@@ -9,6 +9,8 @@ import com.wassel.backend.routes.dto.RouteSummaryResponse;
 import com.wassel.backend.routes.dto.RouteVehicleSummary;
 import com.wassel.backend.routes.service.RouteService;
 import com.wassel.backend.runs.dto.ChildOnRoute;
+import com.wassel.backend.runs.dto.AttendanceRecord;
+import com.wassel.backend.runs.dto.AuditRecord;
 import com.wassel.backend.runs.dto.BusLocationResponse;
 import com.wassel.backend.runs.dto.BusPositionResponse;
 import com.wassel.backend.runs.dto.ChildRunResponse;
@@ -17,6 +19,7 @@ import com.wassel.backend.runs.dto.LocationStatus;
 import com.wassel.backend.runs.dto.RunLocationResponse;
 import com.wassel.backend.runs.dto.ConfirmationResponse;
 import com.wassel.backend.runs.dto.DayType;
+import com.wassel.backend.runs.dto.RecordPage;
 import com.wassel.backend.runs.dto.RunCountsResponse;
 import com.wassel.backend.runs.dto.RunResponse;
 import com.wassel.backend.runs.dto.RunRouteResponse;
@@ -43,6 +46,7 @@ import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.users.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -288,6 +292,57 @@ public class RunService {
 				.get(today.direction());
 		return run == null ? BusLocationResponse.UNAVAILABLE : locate(
 				runLocationRepository.findBySchoolIdAndRunId(schoolId, run.getId()).orElse(null), Instant.now(clock));
+	}
+
+	/**
+	 * For the {@code attendance} module (SCRUM-265): the students' recorded statuses on the school's runs dated
+	 * {@code from} to {@code to}, one record per student and run, newest date first, with the {@code total} over all
+	 * pages. A null {@code studentId} or {@code routeId} means no filter. Reads only; the caller has checked the
+	 * filters belong to the school. One snapshot ({@code REPEATABLE_READ}) serves the page and its count, so a tap
+	 * recorded in between cannot make {@code total} differ from what the pages add up to.
+	 */
+	@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+	public RecordPage<AttendanceRecord> attendance(UUID schoolId, LocalDate from, LocalDate to, UUID studentId,
+			UUID routeId, long offset, int limit) {
+		return new RecordPage<>(attendanceRecords(schoolId, from, to, studentId, routeId, offset, limit),
+				confirmationRepository.countAttendanceRows(schoolId, from, to, studentId, routeId));
+	}
+
+	/**
+	 * Every record of one student in the range, newest first, with no count: for a parent, whose range is at most 62
+	 * days. The caller has checked the student is theirs.
+	 */
+	@Transactional(readOnly = true)
+	public List<AttendanceRecord> attendanceOf(UUID schoolId, LocalDate from, LocalDate to, UUID studentId) {
+		return attendanceRecords(schoolId, from, to, studentId, null, 0, Integer.MAX_VALUE);
+	}
+
+	/** The audit twin of {@link #attendance}: one record per stored confirmation, newest first. */
+	@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+	public RecordPage<AuditRecord> audit(UUID schoolId, LocalDate from, LocalDate to, UUID studentId, UUID routeId,
+			long offset, int limit) {
+		List<AuditRecord> items = confirmationRepository.auditRows(schoolId, from, to, studentId, routeId, limit, offset)
+				.stream().map(RunService::toAuditRecord).toList();
+		return new RecordPage<>(items, confirmationRepository.countAuditRows(schoolId, from, to, studentId, routeId));
+	}
+
+	private List<AttendanceRecord> attendanceRecords(UUID schoolId, LocalDate from, LocalDate to, UUID studentId,
+			UUID routeId, long offset, int limit) {
+		return confirmationRepository.attendanceRows(schoolId, from, to, studentId, routeId, limit, offset).stream()
+				.map(RunService::toAttendanceRecord).toList();
+	}
+
+	/** One row of {@code ConfirmationRepository.attendanceRows}, columns in the order its SELECT lists them. */
+	private static AttendanceRecord toAttendanceRecord(Object[] row) {
+		return new AttendanceRecord((UUID) row[0], (UUID) row[1], (LocalDate) row[2],
+				RunDirection.valueOf((String) row[3]), (UUID) row[4], (Instant) row[5], (Instant) row[6],
+				(Instant) row[7]);
+	}
+
+	/** One row of {@code ConfirmationRepository.auditRows}, columns in the order its SELECT lists them. */
+	private static AuditRecord toAuditRecord(Object[] row) {
+		return new AuditRecord((UUID) row[0], (Instant) row[1], ConfirmationStatus.valueOf((String) row[2]),
+				(UUID) row[3], (UUID) row[4], (LocalDate) row[5], RunDirection.valueOf((String) row[6]), (UUID) row[7]);
 	}
 
 	/** Every run of the school in progress today with where its bus is. Empty on a holiday. */

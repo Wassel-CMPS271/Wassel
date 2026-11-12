@@ -438,6 +438,25 @@ that's the structure this codebase moved away from.
   skip or absence), and never a reason for `UNAVAILABLE`. Known limits: no throttle on how often a position may be sent, no history,
   the driver's consent does not survive a driver change but SCRUM-264 (reassignment) must also call `stopSharing`, and a browser pauses
   GPS when the phone is locked, so `STALE` is common on real phones.
+- `attendance` — the attendance history and the pickup/drop-off audit (SCRUM-265): `GET /api/parent/children/{studentId}/attendance`
+  and, for the head of transportation only, `GET /api/head-of-transport/attendance` (one row per student and run) and
+  `.../attendance/audit` (one entry per stored confirmation). Shapes, rules and samples are in `docs/contracts/attendance.md`.
+  Read-only, no migration: the audit is `run_confirmations` itself, which is append-only and keeps every status
+  (`ConfirmationRepository.attendanceRows`/`auditRows` and their counts, native SQL over `runs` and `run_confirmations`,
+  reached through `RunService.attendance`/`audit`). `from` and `to` are required (a missing one is a 400 from the global
+  `MissingServletRequestParameterException` handler in `common`, `errors: { from: "from is required" }`), inclusive, filter on
+  the run's date (never the moment recorded), at most 62 days, meant to match the range words of the transport totals report
+  (SCRUM-271, PR #152 while it is open), so a follow-up should unify the two range exceptions (`InvalidAttendanceQueryException`
+  here, also used for `page`, `size` and a repeated parameter) and add a test that the totals equal the rows. The status of a row is the
+  highest one recorded (`AttendanceRecord.status()`), not the newest time, as in `ConfirmationStatus`. Head endpoints page
+  with `page`/`size` (own `AttendancePageResponse`, never Spring's `Page`; a page and its count run in one `REPEATABLE_READ` transaction in `RunService`) and optional `studentId`/`routeId` (a foreign or
+  unknown id is a 404, not an empty list). The parent endpoint checks the range, then `StudentService.findChildOf` (404
+  "Child not found." for anyone else's child, by the link as it is now), and returns only date, direction, status and the three
+  times: no run, route, driver or other child. Runs of a deleted route stay, with `route.name` null (`RouteService.findRouteNames`
+  has no entry for them); a confirmation whose student is gone is a 500 that names the run and student in the log, never a skipped row. Times are when the server
+  recorded the tap (the sync time for an offline replay); no driver and no client time are shown, and there is no rows CSV yet.
+  Own `AttendanceStatus`/`AttendanceDirection` enums are mapped by name from `runs`' (a test keeps the names equal), so no `runs`
+  entity is imported. Depends on `runs`, `students` and `routes` through their services; nothing depends on it.
 - `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
   of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
   are in `docs/contracts/runs.md` (owned jointly with the `runs` module, SCRUM-232/239); build
