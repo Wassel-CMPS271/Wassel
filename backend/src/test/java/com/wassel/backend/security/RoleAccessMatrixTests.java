@@ -171,6 +171,17 @@ class RoleAccessMatrixTests {
 		TABLE.put("GET /api/parent/children", Access.PARENT_ONLY);
 		TABLE.put("GET /api/parent/children/{studentId}/bus-location", Access.PARENT_ONLY);
 
+		// address requests (SCRUM-269)
+		TABLE.put("POST /api/parent/children/{studentId}/address-requests", Access.PARENT_ONLY);
+		TABLE.put("GET /api/parent/children/{studentId}/address-requests", Access.PARENT_ONLY);
+		TABLE.put("GET /api/head-of-transport/address-requests", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("POST /api/head-of-transport/address-requests/{id}/approve", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("POST /api/head-of-transport/address-requests/{id}/reject", Access.HEAD_OF_TRANSPORT_ONLY);
+		// parent inbox (SCRUM-267)
+		TABLE.put("GET /api/parent/inbox", Access.PARENT_ONLY);
+		TABLE.put("GET /api/parent/inbox/unread-count", Access.PARENT_ONLY);
+		TABLE.put("POST /api/parent/inbox/{id}/read", Access.PARENT_ONLY);
+		TABLE.put("POST /api/parent/inbox/read-all", Access.PARENT_ONLY);
 		// transport totals (SCRUM-271)
 		TABLE.put("GET /api/head-of-transport/transport-totals", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("GET /api/head-of-transport/transport-totals/export", Access.HEAD_OF_TRANSPORT_ONLY);
@@ -214,6 +225,7 @@ class RoleAccessMatrixTests {
 		VALID_BODIES.put("POST /api/head-of-transport/routes/{id}/students", "{\"studentId\":\"" + SOME_ID + "\"}");
 		VALID_BODIES.put("PUT /api/head-of-transport/routes/{id}/stops", "{\"studentIds\":[]}");
 		VALID_BODIES.put("POST /api/parent/children/{studentId}/absences", "{\"fromDate\":\"2030-01-04\"}");
+		VALID_BODIES.put("POST /api/parent/children/{studentId}/address-requests", "{\"address\":\"Hamra Street, Beirut\"}");
 	}
 
 	@Autowired

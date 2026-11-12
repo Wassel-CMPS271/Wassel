@@ -29,6 +29,7 @@ import com.wassel.backend.runs.entity.Run;
 import com.wassel.backend.runs.entity.RunDirection;
 import com.wassel.backend.runs.entity.RunLocation;
 import com.wassel.backend.runs.entity.RunState;
+import com.wassel.backend.runs.event.ConfirmationRecordedEvent;
 import com.wassel.backend.runs.exception.ConfirmationConflictException;
 import com.wassel.backend.runs.exception.RunNotFoundException;
 import com.wassel.backend.runs.exception.RunStateConflictException;
@@ -43,6 +44,7 @@ import com.wassel.backend.students.dto.StudentResponse;
 import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.users.entity.User;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -103,6 +105,8 @@ public class RunService {
 	private final Clock clock;
 
 	private final TransactionTemplate transactionTemplate;
+
+	private final ApplicationEventPublisher events;
 
 	/**
 	 * Today's two runs of the signed-in driver's route, with stops. Empty when they have no route, or on a holiday.
@@ -218,7 +222,12 @@ public class RunService {
 						: "is " + current) + ", so they cannot be marked " + status);
 			}
 			// The time is read after the lock, so rows are saved in the order the rule saw them.
-			confirmationRepository.insertIfMissing(schoolId, runId, studentId, status.name(), Instant.now(clock));
+			Instant now = Instant.now(clock);
+			// Only a status saved for the first time is an event; listeners run in this transaction (SCRUM-267).
+			if (confirmationRepository.insertIfMissing(schoolId, runId, studentId, status.name(), now) == 1) {
+				events.publishEvent(new ConfirmationRecordedEvent(schoolId, runId, studentId,
+						locked.getDirection().name(), status.name(), now));
+			}
 			return locked;
 		});
 		return driverAnswer(run, route, dayType);
