@@ -8,11 +8,37 @@
       "accuracyMeters": 12.5,
       "receivedAt": "2026-10-21T04:15:50Z",
       "ageSeconds": 10
+    },
+    "remainingStops": 3,
+    "nextStop": {
+      "studentId": "40000000-0000-4000-8000-000000000002",
+      "firstName": "Salma",
+      "lastName": "Khoury",
+      "plannedTime": "07:12",
+      "estimate": {
+        "arrivesAt": "2026-10-21T04:18:50Z",
+        "secondsAway": 170
+      }
     }
   },
   {
     "runId": "50000000-0000-4000-8000-000000000012",
     "status": "UNAVAILABLE",
-    "position": null
+    "position": null,
+    "remainingStops": 0,
+    "nextStop": null
+  },
+  {
+    "runId": "50000000-0000-4000-8000-000000000021",
+    "status": "UNAVAILABLE",
+    "position": null,
+    "remainingStops": 3,
+    "nextStop": {
+      "studentId": "40000000-0000-4000-8000-000000000001",
+      "firstName": "Rami",
+      "lastName": "Nasr",
+      "plannedTime": "07:08",
+      "estimate": null
+    }
   }
 ]

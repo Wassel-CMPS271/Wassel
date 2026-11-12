@@ -7,7 +7,9 @@ import com.wassel.backend.routes.dto.DriverRouteStop;
 import com.wassel.backend.routes.dto.RouteDriverSummary;
 import com.wassel.backend.routes.dto.RouteSummaryResponse;
 import com.wassel.backend.routes.dto.RouteVehicleSummary;
+import com.wassel.backend.routes.dto.StopResponse;
 import com.wassel.backend.routes.service.RouteService;
+import com.wassel.backend.routing.service.StraightLineTravelTimes;
 import com.wassel.backend.runs.dto.ChildOnRoute;
 import com.wassel.backend.runs.dto.BusLocationResponse;
 import com.wassel.backend.runs.dto.BusPositionResponse;
@@ -17,6 +19,8 @@ import com.wassel.backend.runs.dto.LocationStatus;
 import com.wassel.backend.runs.dto.RunLocationResponse;
 import com.wassel.backend.runs.dto.ConfirmationResponse;
 import com.wassel.backend.runs.dto.DayType;
+import com.wassel.backend.runs.dto.EstimateResponse;
+import com.wassel.backend.runs.dto.NextStopResponse;
 import com.wassel.backend.runs.dto.RunCountsResponse;
 import com.wassel.backend.runs.dto.RunResponse;
 import com.wassel.backend.runs.dto.RunRouteResponse;
@@ -55,6 +59,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -97,6 +102,9 @@ public class RunService {
 	private final HalfDayService halfDayService;
 
 	private final SchoolSettingsService schoolSettingsService;
+
+	/** The live estimate's legs (SCRUM-262): straight lines, never the road provider and its daily quota. */
+	private final StraightLineTravelTimes straightLine;
 
 	private final Clock clock;
 
@@ -283,28 +291,93 @@ public class RunService {
 		if (today == null || today.stopsLeft() == null) {
 			return BusLocationResponse.UNAVAILABLE;
 		}
+		LocalDate day = LocalDate.now(clock);
 		// Absent only if midnight passed since todayRunStatus read the date: nothing to show for the new day.
-		Run run = runsOf(schoolId, LocalDate.now(clock), List.of(routeId)).getOrDefault(routeId, Map.of())
-				.get(today.direction());
-		return run == null ? BusLocationResponse.UNAVAILABLE : locate(
-				runLocationRepository.findBySchoolIdAndRunId(schoolId, run.getId()).orElse(null), Instant.now(clock));
+		Run run = runsOf(schoolId, day, List.of(routeId)).getOrDefault(routeId, Map.of()).get(today.direction());
+		if (run == null) {
+			return BusLocationResponse.UNAVAILABLE;
+		}
+		Instant now = Instant.now(clock);
+		BusLocationResponse bus = locate(runLocationRepository.findBySchoolIdAndRunId(schoolId, run.getId()).orElse(null),
+				now);
+		// The planned time and the stops with their pins come from one read of the route (SCRUM-262). A route deleted
+		// since todayRunStatus read it has nothing to show, like a child with no route.
+		List<StopResponse> stops = routeService.findStops(schoolId, routeId).orElse(null);
+		if (stops == null) {
+			return BusLocationResponse.UNAVAILABLE;
+		}
+		Set<UUID> absent = absenceService.absentStudentIds(schoolId, stops.stream().map(StopResponse::studentId).toList(),
+				day);
+		List<StopResponse> toDo = toDo(run.getDirection(), stops, confirmationsOf(schoolId, List.of(run))
+				.getOrDefault(run.getId(), List.of()), absent);
+		int own = toDo.stream().map(StopResponse::studentId).toList().indexOf(studentId);
+		// own < 0 only if the child was confirmed or moved between the two reads: no estimate, the next poll catches up.
+		EstimateResponse estimate = own < 0 ? null : estimateIfLive(bus, toDo.subList(0, own + 1), now);
+		LocalTime planned = stops.stream().filter(stop -> stop.studentId().equals(studentId)).findFirst()
+				.map(stop -> plannedTime(run.getDirection(), stop)).orElse(null);
+		return bus.withProgress(today.stopsLeft(), planned, estimate);
 	}
 
-	/** Every run of the school in progress today with where its bus is. Empty on a holiday. */
+	/**
+	 * Every run of the school in progress today with where its bus is and how far it has got: the stops still to do and
+	 * the first of them with its planned time and live estimate (SCRUM-262). Empty on a holiday. A run of a route that
+	 * has been deleted is not listed, as in every other view of the runs.
+	 */
 	public List<RunLocationResponse> locationsToday(UUID schoolId) {
 		LocalDate today = LocalDate.now(clock);
 		if (dayTypeOf(schoolId, today) == DayType.HOLIDAY) {
 			return List.of();
 		}
-		List<Run> inProgress = runRepository.findBySchoolIdAndRunDateAndState(schoolId, today, RunState.IN_PROGRESS);
+		List<Run> found = runRepository.findBySchoolIdAndRunDateAndState(schoolId, today, RunState.IN_PROGRESS);
+		// One read per route with a run in progress; a deleted route's run is left out (its read is empty).
+		Map<UUID, List<StopResponse>> stopsOf = new HashMap<>();
+		found.stream().map(Run::getRouteId).distinct().forEach(routeId ->
+				routeService.findStops(schoolId, routeId).ifPresent(stops -> stopsOf.put(routeId, stops)));
+		List<Run> inProgress = found.stream().filter(run -> stopsOf.containsKey(run.getRouteId())).toList();
+		if (inProgress.isEmpty()) {
+			return List.of();
+		}
 		Map<UUID, RunLocation> byRun = runLocationRepository
 				.findBySchoolIdAndRunIdIn(schoolId, inProgress.stream().map(Run::getId).toList()).stream()
 				.collect(Collectors.toMap(RunLocation::getRunId, Function.identity()));
+		Map<UUID, List<Confirmation>> confirmed = confirmationsOf(schoolId, inProgress);
+		Set<UUID> absent = absenceService.absentStudentIds(schoolId, stopsOf.values().stream().flatMap(List::stream)
+				.map(StopResponse::studentId).collect(Collectors.toSet()), today);
 		Instant now = Instant.now(clock);
 		return inProgress.stream().map(run -> {
 			BusLocationResponse bus = locate(byRun.get(run.getId()), now);
-			return new RunLocationResponse(run.getId(), bus.status(), bus.position());
+			List<StopResponse> toDo = toDo(run.getDirection(), stopsOf.get(run.getRouteId()),
+					confirmed.getOrDefault(run.getId(), List.of()), absent);
+			NextStopResponse next = null;
+			if (!toDo.isEmpty()) {
+				StopResponse stop = toDo.getFirst();
+				next = new NextStopResponse(stop.studentId(), stop.firstName(), stop.lastName(),
+						plannedTime(run.getDirection(), stop), estimateIfLive(bus, List.of(stop), now));
+			}
+			return new RunLocationResponse(run.getId(), bus.status(), bus.position(), toDo.size(), next);
 		}).toList();
+	}
+
+	/**
+	 * The route's stops that are still to do (neither done nor skippable, {@link #pending}) in the run's order: the
+	 * route's for the morning, reversed for the afternoon. A student confirmed on the run who has left the route is not
+	 * one of the route's stops, so they are never counted, as in {@link #todayRunStatus}.
+	 */
+	private static List<StopResponse> toDo(RunDirection direction, List<StopResponse> morning,
+			Collection<Confirmation> confirmed, Set<UUID> absent) {
+		Map<UUID, Confirmation> latest = latestOf(confirmed);
+		return (direction == RunDirection.MORNING ? morning : morning.reversed()).stream()
+				.filter(stop -> pending(direction, stop.studentId(), latest, absent)).toList();
+	}
+
+	/** The one place the "only from a LIVE fix" rule is applied: no estimate is ever made from a stale position. */
+	private EstimateResponse estimateIfLive(BusLocationResponse bus, List<StopResponse> toTarget, Instant now) {
+		return bus.status() == LocationStatus.LIVE ? LiveEta.estimate(straightLine, bus.position(), toTarget, now) : null;
+	}
+
+	/** The schedule's time: the routing arrival time on a morning run; an afternoon run has none. */
+	private static LocalTime plannedTime(RunDirection direction, StopResponse stop) {
+		return direction == RunDirection.MORNING ? stop.arrivalTime() : null;
 	}
 
 	/** LIVE, STALE or UNAVAILABLE from the age of the stored position (null for no row), measured by the server. */
@@ -319,7 +392,7 @@ public class RunService {
 		LocationStatus status = age.compareTo(RunLocation.LIVE_FOR) > 0 ? LocationStatus.STALE : LocationStatus.LIVE;
 		return new BusLocationResponse(status, new BusPositionResponse(location.getLatitude(),
 				location.getLongitude(), location.getAccuracyMeters(), location.getReceivedAt(),
-				Math.max(0, age.toSeconds())));
+				Math.max(0, age.toSeconds())), null, null, null);
 	}
 
 	/** The ids of these runs whose driver is sharing now. */

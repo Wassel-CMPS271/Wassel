@@ -1,0 +1,16 @@
+{
+  "status": "LIVE",
+  "position": {
+    "latitude": 33.8995,
+    "longitude": 35.4871,
+    "accuracyMeters": 9.0,
+    "receivedAt": "2026-10-21T11:30:50Z",
+    "ageSeconds": 10
+  },
+  "stopsLeft": 3,
+  "plannedTime": null,
+  "estimate": {
+    "arrivesAt": "2026-10-21T11:38:50Z",
+    "secondsAway": 470
+  }
+}

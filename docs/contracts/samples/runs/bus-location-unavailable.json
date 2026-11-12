@@ -1,4 +1,7 @@
 {
   "status": "UNAVAILABLE",
-  "position": null
+  "position": null,
+  "stopsLeft": 1,
+  "plannedTime": "07:18",
+  "estimate": null
 }

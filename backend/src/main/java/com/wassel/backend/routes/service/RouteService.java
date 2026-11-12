@@ -151,6 +151,16 @@ public class RouteService {
 		});
 	}
 
+	/**
+	 * For the runs module's live estimate (SCRUM-262): a route's stops in order, with pins and arrival times, or empty
+	 * when the route is gone. No vehicle or driver read. Not {@code @Transactional}, like {@link #findRouteOfDriver}:
+	 * the arrival times come from the same cached schedule and may wait on the road provider when a pin is new.
+	 */
+	public Optional<List<StopResponse>> findStops(UUID schoolId, UUID routeId) {
+		return routeRepository.findBySchoolIdAndId(schoolId, routeId).map(route -> stopsOf(schoolId, route.getId(),
+				schoolSettingsService.getTimes(schoolId).arrivalTime()));
+	}
+
 	/** For the runs module: just the id of the route a driver is on, without the stops or any road time. */
 	@Transactional(readOnly = true)
 	public Optional<UUID> findRouteIdOfDriver(UUID schoolId, UUID driverId) {

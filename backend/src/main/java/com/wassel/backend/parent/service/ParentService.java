@@ -53,7 +53,8 @@ public class ParentService {
 	 * Where the bus is for one of this parent's children (SCRUM-261). Another parent's child, another school's and an
 	 * unknown id are the same 404 the absences endpoints give; a child with no route has nothing to show.
 	 */
-	@Transactional(readOnly = true)
+	// Not @Transactional: it is polled, and the route's planned times may wait on the road provider when a pin is new;
+	// a transaction would hold a database connection meanwhile (as RouteService.findRouteOfDriver explains).
 	public BusLocationResponse busLocation(UUID schoolId, UUID parentUserId, UUID studentId) {
 		studentService.findChildOf(schoolId, parentUserId, studentId)
 				.orElseThrow(() -> new StudentNotFoundException("Child not found."));

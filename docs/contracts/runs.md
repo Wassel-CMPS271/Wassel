@@ -15,10 +15,11 @@ The JSON examples live in [`samples/runs/`](samples/runs). They are the source o
 | [`absences.json`](samples/runs/absences.json) | `Absence[]` | One child's upcoming absences: a range and a single day | parent absence screens |
 | [`location-sharing.json`](samples/runs/location-sharing.json) | `{ enabled }` | The body of the driver's opt-in and withdraw (SCRUM-261) | driver GPS screen |
 | [`location-update.json`](samples/runs/location-update.json) | `{ latitude, longitude, accuracyMeters }` | The body of the driver's position update | driver GPS screen |
-| [`bus-location-live.json`](samples/runs/bus-location-live.json) | `BusLocation` | A fix 10 seconds old | parent map |
-| [`bus-location-stale.json`](samples/runs/bus-location-stale.json) | `BusLocation` | A fix 140 seconds old, not current any more | parent map |
-| [`bus-location-unavailable.json`](samples/runs/bus-location-unavailable.json) | `BusLocation` | No position to show, whatever the reason | parent map |
-| [`run-locations.json`](samples/runs/run-locations.json) | `RunLocation[]` | Two runs in progress: one live, one with nothing to show | head of transportation live screen |
+| [`bus-location-live.json`](samples/runs/bus-location-live.json) | `BusLocation` | A fix 10 seconds old, two stops before the child. The **planned** time (`plannedTime` 07:18) and the **live** estimate (`estimate`, about 07:21:50) are different fields and different numbers | parent map and countdown |
+| [`bus-location-stale.json`](samples/runs/bus-location-stale.json) | `BusLocation` | A fix 140 seconds old, not current any more: progress and the planned time stay, `estimate` is null | parent map and countdown |
+| [`bus-location-unavailable.json`](samples/runs/bus-location-unavailable.json) | `BusLocation` | No position to show, whatever the reason, while the child is still waiting: progress and the planned time stay, `estimate` is null | parent map and countdown |
+| [`bus-location-afternoon.json`](samples/runs/bus-location-afternoon.json) | `BusLocation` | An afternoon run: a live estimate and **no** planned time (`plannedTime` null) | parent map and countdown |
+| [`run-locations.json`](samples/runs/run-locations.json) | `RunLocation[]` | Three runs in progress: one live with a next stop and its estimate (the same bus as `bus-location-live.json`: its child is the third of the three stops still to do), one with every stop done (`remainingStops` 0, `nextStop` null), one with nothing live but a next stop and its planned time | head of transportation live screen |
 
 ## Conventions
 
@@ -106,13 +107,20 @@ Every child linked to the signed-in parent, and no one else's, ordered by first 
 
 ### BusLocation and RunLocation
 
-`BusLocation` is `{ status, position }`; a `RunLocation` is the same with the run's `runId` first.
+`BusLocation` is `{ status, position, stopsLeft, plannedTime, estimate }`. A `RunLocation` is `{ runId, status, position, remainingStops, nextStop }`. The two never share a field name for the planned schedule and the live estimate: **`plannedTime` is the schedule, `estimate` is live**, see [Live ETA and stop progress](#live-eta-and-stop-progress).
 
 | Field | Type | Notes |
 |---|---|---|
 | `runId` | uuid | only in `RunLocation` |
 | `status` | `LIVE`, `STALE` or `UNAVAILABLE` | decide what to draw from this, never from `position` alone |
 | `position` | `{ latitude, longitude, accuracyMeters, receivedAt, ageSeconds }` or null | present exactly when `status` is `LIVE` or `STALE`. `receivedAt` is the server's moment; `ageSeconds` is the whole seconds between it and the server's clock when the answer was made, so a client never needs its own clock |
+| `stopsLeft` | integer or null | only in `BusLocation`. The child's `todayRun.stopsLeft` (SCRUM-237) at the moment of this answer: stops the bus still has before the child's. `0` means the child is next. Null when the child is no longer waiting |
+| `plannedTime` | `"HH:mm"` or null | only in `BusLocation`. The child's planned pickup time, the routing `arrivalTime`: school-local, **morning runs only**. Null on an afternoon run, when the child has no planned time, and when the child is not waiting. It is the schedule, never a live estimate |
+| `estimate` | `Estimate` or null | the live estimate for the child's stop (`BusLocation`) or for the run's next stop (inside `nextStop`). Null unless `status` is `LIVE`, and null when that stop has no pin |
+| `remainingStops` | integer | only in `RunLocation`. Stops of the run still to do (neither done nor skippable, the driver-screen definitions). `0` while the run is still `IN_PROGRESS` means every stop is done or skipped and the driver has not ended the run |
+| `nextStop` | `NextStop` or null | only in `RunLocation`. The first stop still to do in the run's order; null exactly when `remainingStops` is `0` |
+
+`Estimate` is `{ arrivesAt, secondsAway }`: `arrivesAt` is a moment (UTC, with a `Z`), `secondsAway` the whole seconds between it and the server's clock when the answer was made, never negative, so a countdown never needs the client's clock. `NextStop` is `{ studentId, firstName, lastName, plannedTime, estimate }`, with `plannedTime` and `estimate` as above.
 
 ### Absence
 
@@ -142,8 +150,8 @@ An absence seen from the school's side, for the date asked: `absenceId`, `studen
 | GET | `/api/head-of-transport/absences?date=` | HEAD_OF_TRANSPORT | | 200 `AbsentStudent[]` for `date` (today when omitted) | Moustafa, SCRUM-238 / SCRUM-239 |
 | PUT | `/api/driver/runs/{runId}/location-sharing` | DRIVER | `{ enabled }` | 200 `Run` | Hashem, SCRUM-261 |
 | PUT | `/api/driver/runs/{runId}/location` | DRIVER | `{ latitude, longitude, accuracyMeters }` | 204 | Hashem, SCRUM-261 |
-| GET | `/api/parent/children/{studentId}/bus-location` | PARENT | | 200 `BusLocation` | Hashem, SCRUM-261 |
-| GET | `/api/head-of-transport/runs/locations` | HEAD_OF_TRANSPORT | | 200 `RunLocation[]`, today's runs in progress | Hashem, SCRUM-261 |
+| GET | `/api/parent/children/{studentId}/bus-location` | PARENT | | 200 `BusLocation` | Hashem, SCRUM-261 (`stopsLeft`, `plannedTime`, `estimate`: SCRUM-262) |
+| GET | `/api/head-of-transport/runs/locations` | HEAD_OF_TRANSPORT | | 200 `RunLocation[]`, today's runs in progress | Hashem, SCRUM-261 (`remainingStops`, `nextStop`: SCRUM-262) |
 
 The head of transportation's absence list is one endpoint for SCRUM-238 and SCRUM-239. Start, end and confirm return the whole `Run`, so the driver screen redraws from one response. There is no endpoint that lists past runs of a driver, or one run by id, until a screen needs it.
 
@@ -206,11 +214,28 @@ The bus's position, from the driver's phone (SCRUM-261). One school; the school 
 - **Sending.** `PUT .../location` is accepted only for the driver's own run of today, while it is `IN_PROGRESS` and the driver is sharing. The server keeps **the latest position only**, no history. Send about every **10 seconds**; resending is harmless (the last one wins). A position the server does not accept is never stored or echoed back; a 400's log line may name the rejected value, never an accepted position.
 - **Time.** The server's receive time is the only time: the phone's clock is never sent and never used.
 - **Validation.** `latitude` -90 to 90, `longitude` -180 to 180, `accuracyMeters` 0 to 10000, all required, all finite numbers. Anything else is 400. Any accuracy in that range, however poor, is stored and shown.
-- **Freshness**, from the age of the stored position when it is read: up to **60 seconds** is `LIVE`; over 60 and up to **300 seconds** (5 minutes) is `STALE`, the last known position and how old it is; after that the position is no longer shown (`UNAVAILABLE`) and is removed within a minute. `STALE` is not lateness: a locked phone or a background tab makes the browser pause its GPS, so a screen must call it "last seen", not "late", and ETAs must fall back to the confirmations (SCRUM-262 never invents a live time).
+- **Freshness**, from the age of the stored position when it is read: up to **60 seconds** is `LIVE`; over 60 and up to **300 seconds** (5 minutes) is `STALE`, the last known position and how old it is; after that the position is no longer shown (`UNAVAILABLE`) and is removed within a minute. `STALE` is not lateness: a locked phone or a background tab makes the browser pause its GPS, so a screen must call it "last seen", not "late". When the fix is not `LIVE` there is no estimate, only the progress that the confirmations give (see [Live ETA and stop progress](#live-eta-and-stop-progress)): SCRUM-262 never invents a live time.
 - **What a parent sees.** `UNAVAILABLE`, with no reason, in all of these cases: no route, a holiday, no run in progress, sharing off, no position yet, a position older than 5 minutes, and **the child is no longer waiting**: the position is shown only while `todayRun.stopsLeft` of that child is not null. So a child who is picked up, dropped off, skipped or absent loses the map for the rest of the run, and a parent never watches the bus go to other families.
 - **What the head of transportation sees.** The positions of every run of the school that is `IN_PROGRESS` today (`[]` on a holiday), in no particular order, matched by `runId`. `UNAVAILABLE` with `Run.locationSharing` false means the driver is not sharing; with it true it means no fresh position.
 - **Reassignment (SCRUM-264).** Changing a run's driver must withdraw sharing, so the new driver opts in themselves.
 - **Not covered.** Positions of a run left `IN_PROGRESS` overnight are not shown (readers only look at today's runs) and are removed by the same minute-by-minute clean-up.
+
+### Live ETA and stop progress
+
+The live estimate of when the bus reaches a stop, and how far the run has got (SCRUM-262). It rides on the two endpoints of [Live location](#live-location), so who may read it, the 401, 403 and 404 answers, and "the parent never learns why" are **exactly those rules**; there is no endpoint of its own and no new error. Only the new fields are defined here.
+
+- **Planned and live are different things.** `plannedTime` is the schedule (the routing contract's `arrivalTime`, worked backwards from the school's arrival time). `estimate` is worked out from the bus's position now. A screen shows them under different labels, and a client must **not subtract one from the other to say a bus is late**: they come from different methods (below), and an afternoon run has no `plannedTime` at all. Lateness is not defined by this contract (SCRUM-268 defines its thresholds).
+- **When there is an estimate.** Only while `status` is `LIVE`: a fix up to 60 seconds old, the same threshold as the position (never a second one). `STALE` and `UNAVAILABLE` have `estimate: null`; `status` and `position.ageSeconds` already say how fresh the last fix is, so a screen says "last seen N seconds ago" or "no live estimate", never a made-up time. Progress (`stopsLeft`, `remainingStops`, `nextStop`) and `plannedTime` do not depend on GPS: they follow the confirmations and stay while the estimate is null.
+- **What is estimated.** The bus's arrival at the child's stop (`BusLocation`) or at the run's next stop (`RunLocation`). The path is the bus's last fix, then every stop still to do before that stop in the run's order (the afternoon is the morning order reversed), then that stop. A stop that is done or skippable adds nothing. A stop with no pin cannot be placed: it adds no leg, and if the target stop itself has no pin, `estimate` is null.
+- **How.** Each leg is the routing contract's straight-line rule (30 km/h, great-circle distance, each leg rounded **up** to whole minutes). No road provider is called for it. `arrivesAt` is the fix's `receivedAt` plus the legs, but never earlier than the moment of the answer, so `secondsAway` is never negative and an estimate that is already due reads `0`. A screen must not take `0` as "the bus has arrived": only a confirmation says that.
+- **Zero remaining.** `stopsLeft: 0` is the child being next (one leg, from the bus to the child). `remainingStops: 0` with the run still `IN_PROGRESS` is every stop done or skipped: `nextStop` is null and there is nothing to estimate. A run with no stops at all reads the same.
+- **A child who is not waiting.** `stopsLeft`, `plannedTime` and `estimate` are all null, as is the position: picked up (morning), dropped off (afternoon), skipped, absent, no route, a run not in progress, a holiday. The same gate as the position, and again no reason.
+- **Known limits.**
+  - The estimate **runs early**: straight lines are shorter than roads, and there is no time for the stops themselves. Road times are not used because a moving bus is a new point every few seconds and the road provider's free quota is small (see the routing entry in `backend/CLAUDE.md`). The numbers are not comparable with `plannedTime`, which uses road times when the provider is set.
+  - A stop the bus has passed without the driver confirming it is still a stop to do, so it still adds a leg.
+  - Each leg rounds up to whole minutes, so a bus a few metres from the next stop reads about a minute; only a fix exactly on the stop's pin reads `0`.
+  - A child's `plannedTime` and the run's schedule follow the route's current order, read on every request.
+  - There is no estimate for the bus reaching the school (a morning child's drop-off).
 
 ### What the driver screen works out for itself
 
@@ -292,7 +317,7 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 - **A live roster.** A student the head moves off a route before their run starts, or after it is over, leaves that day's run (before it starts: at once; after it ends: from the next run). A student on a bus cannot be moved, and one who still gets moved by a race stays on the run as `removedFromRoute`. A route deleted mid-day takes its runs with it (they are no longer listed), and applying generated routes mid-day rewrites rosters without these checks. A driver or vehicle swapped when no run is in progress shows on the day's runs, past runs included. A signed-in driver not linked to a driver record is a driver with no route.
 - **No undo.** A wrong confirmation can only be moved on the way the table allows; it cannot be taken back.
 - **Whole days only.** An absence cannot be for the morning run alone, or start part-way through a day.
-- **The planned time only.** `expectedPickupTime` does not follow the bus. A late bus is visible through the run's state and the stops-left count.
+- **The planned time only.** `expectedPickupTime` does not follow the bus. The live estimate is a separate field of the bus-location answer (see [Live ETA and stop progress](#live-eta-and-stop-progress)), only while the bus is sharing a fresh position, and it runs early.
 - **A run nobody has opened reads as not started.** The parent's `todayRun` shows a direction with no run yet as `NOT_STARTED`. If a driver never opens the afternoon runs, the parent keeps seeing the afternoon run as not started.
 - **A run started and never ended** stays `IN_PROGRESS` for its date.
 - **No history, no throttle.** Only the latest position is kept, and the server does not limit how often a driver may send one. A trail, or a limit, would be a new rule.
@@ -303,6 +328,7 @@ Reach other modules through their **services** only (`backend/CLAUDE.md`). What 
 
 - `routes` declares `ActiveRunGuard` (is a student on a bus, is a route's run in progress) and calls it before moving a student or changing a driver or vehicle; `runs` implements it. Routes never imports runs, and the implementation is its own class, not `RunService`, so the two do not need each other's beans.
 - `runs` (Hashem): the run and confirmation tables, `RunService`. Reads `RouteService.findRouteOfDriver` and `listRoutes` (the driver's route with its stops and arrival times; every route), `DriverService.findDriverIdForUser` (the driver of a signed-in user), `StudentService` (a confirmed student who has left the route), `SchoolSettingsService.getTimes` (`schoolTime`), `HolidayService.isHoliday` / `HalfDayService.isHalfDay` (the day's type) and, from SCRUM-239, `AbsenceService`.
+- `runs` also reads `RouteService.findStops` (SCRUM-262: the route's stops in order, with each pin and planned arrival time, from one read; empty for a deleted route) and `routing.service.StraightLineTravelTimes` for the live estimate. It adds no table.
 - `absences` (Moustafa): the absence table, `AbsenceService`. Reads `StudentService` (which children a parent has, as a lookup it does not have yet) and, for the head of transportation's list, `RouteService` (a student's route and position, as a lookup it does not have yet). Never reads `runs`.
 - The new 404 and 409 exceptions need entries in the shared `GlobalExceptionHandler` (otherwise they answer 500). Hashem and Moustafa both edit it, so the second to merge rebases onto the first.
 - The parent view is **its own module** (called `parent`), because it reads `runs` (SCRUM-237, `RunService.todayRunStatus`: one call for all of a parent's children, with no road-provider call) and `runs` already reads `routes`; it would be a cycle inside `routes` or `students`. Nothing depends on it.
