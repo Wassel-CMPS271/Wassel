@@ -12,6 +12,9 @@ The JSON examples live in [`samples/runs/`](samples/runs). They are the source o
 | [`hot-runs.json`](samples/runs/hot-runs.json) | `RunsDay` | A half-day: six runs in all three states | head of transportation Today screen |
 | [`hot-absences.json`](samples/runs/hot-absences.json) | `AbsentStudent[]` | Two students absent on that day, one with no route | head of transportation Today screen |
 | [`parent-children.json`](samples/runs/parent-children.json) | `Child[]` | A child with a route and one with none. The child with a route is absent on a morning run that is in progress, so `todayRun.stopsLeft` is null (SCRUM-237) | parent home |
+| [`hot-reassign-request.json`](samples/runs/hot-reassign-request.json) | request body | The head replaces Karim on the Hamra morning run (in progress) with a spare driver, Nadim. `30000000-0000-4000-8000-000000000007` is a spare driver of this sample, on no route in `samples/routing/` | head of transportation live control screen |
+| [`hot-reassign-run.json`](samples/runs/hot-reassign-run.json) | `RunSummary` | The answer to that request: the same run, same id, state, `startedAt` and `counts`, now with Nadim as `driver` | head of transportation live control screen |
+| [`hot-reassignments.json`](samples/runs/hot-reassignments.json) | `Reassignment[]` | The audit list of that run after the change | head of transportation live control screen |
 | [`absences.json`](samples/runs/absences.json) | `Absence[]` | One child's upcoming absences: a range and a single day | parent absence screens |
 
 ## Conventions
@@ -69,6 +72,23 @@ One student on one run. **A stop is a student**, as in the routing contract: two
 
 Progress, as the screens show it: on a morning run `pickedUp` of `students` (absent included, agreeing with the Counts table's "picked up out of total" definition); on an afternoon run `droppedOff` of `students - absent`, because everyone is `PICKED_UP` at the gate and `pickedUp` says nothing about progress.
 
+### Reassignment
+
+One change of a route's driver, made through a run by the head of transportation (SCRUM-264).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | uuid | |
+| `runId` | uuid | the run the head acted on (the morning or the afternoon run) |
+| `direction` | `MORNING` or `AFTERNOON` | that run's direction |
+| `runState` | `NOT_STARTED` or `IN_PROGRESS` | its state at the moment of the change (mid-run is the notable case) |
+| `fromDriver`, `toDriver` | `{ id, firstName, lastName }` | the `RouteSummary` driver shape, with their current names |
+| `changedBy` | `{ id, email }` | the head of transportation who made the change (a user has no name yet). `email` is `null` when that account no longer exists |
+| `changedAt` | moment | UTC, server time |
+| `reason` | string or null | |
+
+The list for a run is **every reassignment of that run's route on that run's date**, because one change applies to both of the day's runs: the afternoon run lists a change made through the morning run. Newest first (`changedAt`, then `id`); `[]` when there are none.
+
 ### DriverDay and RunsDay
 
 Both are `{ date, dayType, runs }`.
@@ -122,6 +142,8 @@ An absence seen from the school's side, for the date asked: `absenceId`, `studen
 | POST | `/api/parent/children/{studentId}/absences` | PARENT | `{ fromDate, toDate? }` | 201 `Absence`; 200 with the existing one on an exact repeat | Moustafa, SCRUM-238 |
 | DELETE | `/api/parent/children/{studentId}/absences/{absenceId}` | PARENT | | 204 | Moustafa, SCRUM-238 |
 | GET | `/api/head-of-transport/runs?date=` | HEAD_OF_TRANSPORT | | 200 `RunsDay` for `date` (today when omitted) | Hashem, SCRUM-233 (counts: SCRUM-235) |
+| POST | `/api/head-of-transport/runs/{runId}/reassignments` | HEAD_OF_TRANSPORT | `{ driverId, fromDriverId, reason? }` | 201 `RunSummary` when the driver changed; 200 `RunSummary` when the route already had `driverId` (nothing recorded) | Hashem, SCRUM-264 |
+| GET | `/api/head-of-transport/runs/{runId}/reassignments` | HEAD_OF_TRANSPORT | | 200 `Reassignment[]`, newest first | Hashem, SCRUM-264 |
 | GET | `/api/head-of-transport/absences?date=` | HEAD_OF_TRANSPORT | | 200 `AbsentStudent[]` for `date` (today when omitted) | Moustafa, SCRUM-238 / SCRUM-239 |
 
 The head of transportation's absence list is one endpoint for SCRUM-238 and SCRUM-239. Start, end and confirm return the whole `Run`, so the driver screen redraws from one response. There is no endpoint that lists past runs of a driver, or one run by id, until a screen needs it.
@@ -154,8 +176,26 @@ Only **today's** runs count here: a run left `IN_PROGRESS` on an earlier date ne
 
 - **A student who is on a bus stays on their route until the run ends.** When the head of transportation moves a student to another route or removes them from their route, and that student has a confirmation on one of today's `IN_PROGRESS` runs, the server answers **409** and changes nothing, for example *"Sara is on the Hamra bus (picked up 07:12). Move them after the run ends."* The text names the child by first name, the route, and the latest status in words (*picked up*, *dropped off*, *marked not present*) with the time of day in the school's zone. Once the run ends the move is allowed, and applies from the next run. Re-adding a student to the route they are already on is not a move.
 - **Backup for a race.** If the head clicks "move" in the same instant the driver ticks "picked up", both checks can pass. So a student with a confirmation on the run always stays on it, last, with `removedFromRoute: true`, and still counts in `students` and `pickedUp`.
-- **A route's driver or vehicle cannot change while one of its runs is `IN_PROGRESS` today.** The edit answers **409**, for example *"Route "Hamra morning run" has its morning run in progress. Change the driver or vehicle after it ends."* A rename, which changes neither, is allowed.
+- **A route's driver or vehicle cannot change through the route edit while one of its runs is `IN_PROGRESS` today.** The edit answers **409**, for example *"Route "Hamra morning run" has its morning run in progress. Change the driver or vehicle after it ends."* A rename, which changes neither, is allowed. **Reassigning the run's driver ([below](#reassigning-a-runs-driver)) is the way to change the driver mid-run.**
 - Not covered: deleting a route, and applying generated routes (`/routes/generation`), still change rosters mid-run (see [Known limits](#known-limits)).
+
+### Reassigning a run's driver
+
+`POST /api/head-of-transport/runs/{runId}/reassignments` (SCRUM-264). The head of transportation picks a run and a replacement driver.
+
+- **Effect: the route's driver changes from now on.** Both of today's runs and every later day. The run itself, its id, state, `startedAt`, stops and confirmations do not change. `Run.driver` is still the route's current driver, so today's finished run and past runs show the new driver; the reassignment list is the record of who drove when. Screens should say so ("from now on, both runs").
+- Only **today's** runs, `NOT_STARTED` or `IN_PROGRESS`. A mid-run handover just continues: there is no take-over step, and the new driver sees the run, with its confirmations, on their next fetch.
+- The replacement must be a driver of the school with status `active`, on no other route. The vehicle stays on the route and the driver's own `assignedVehicleId` is not touched. The driver being replaced may be in any state (often deactivated).
+- **Atomic:** the route's driver and the audit record change together or not at all. Two heads at once: one wins and the other gets **409** (the precondition, or "already on another route"), except that when both ask for the same `driverId` the second gets **200** and nothing more is recorded (the rule below).
+- `fromDriverId` is the driver the head saw on the run (`run.driver.id`). It guards against two heads acting on the same screen: if the route's driver is no longer that driver, the answer is 409 and nothing changes.
+- The old driver loses the run **at once**: their next start, end or confirm is a 404, even if the request was already in flight when the change committed, and their today list is empty. The new driver gains it at once. A parent's `Child.driver` follows.
+- **The same 404 for every driver write, in one order.** Starting, ending and confirming a run, and (once they merge) turning location sharing on or off (SCRUM-261) and replaying a queued confirmation with a `clientRequestId` (SCRUM-263), all answer **404** for the old driver after the change commits, whether the request arrived before or after it. The server takes the run's lock first and checks the driver's ownership after it, before anything else: before the student, the state, the table and, for a replay, **before the `clientRequestId` lookup**, so a key the old driver used before the reassignment is a 404 and never the "already applied" 200. `DriverWritesRecheckOwnershipTests` fails if a driver write does not go through `RunService.lockOwnedRun`, or a replay looks up its key before it.
+- (After SCRUM-261 merges) location sharing is withdrawn by the reassignment (`reassign` calls `stopSharing`; the same test fails if it does not), and the new driver opts in themselves.
+- A reassignment whose `driverId` is already the route's driver answers **200** and records nothing, so a retry after a lost answer is harmless.
+- Checks run in this order: signed in (401); body (400), for any signed-in caller, as everywhere else in the API; role (403); run unknown, another school's, or whose route was deleted (404); not today's, or today is a holiday (409); run `FINISHED` (409); the route already has `driverId` (200, nothing recorded); `fromDriverId` is not the route's driver (409); replacement unknown or another school's (404); replacement not `active` (409); replacement on another route (409).
+- `reason` is optional, at most 200 characters, trimmed; blank is stored as null.
+- **The answer comes after the change is saved.** If building it fails (a very rare read error), the change is still saved and audited; reload the list, or repeat the request, which answers **200** and records nothing.
+- To swap two routes' drivers, move one of them to a spare driver first: two steps.
 
 ### Confirmations
 
@@ -237,6 +277,14 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 | Start a `FINISHED` run, or end a run that has not started | 409 | `detail`, including the run's state |
 | Move a student off their route (add to another route, or remove) while they are on a bus | 409 | `detail`, naming the child, the route and the pickup time. On `POST` and `DELETE` `/head-of-transport/routes/{id}/students` |
 | Change a route's driver or vehicle while one of its runs is in progress | 409 | `detail`, naming the route and the run. On `PUT /head-of-transport/routes/{id}` |
+| Reassign: run unknown, another school's, or its route was deleted | 404 | `detail: "Run not found"` |
+| Reassign: run not today's, or today is a holiday | 409 | `detail: "Only today's runs can be reassigned."` |
+| Reassign: run `FINISHED` | 409 | `detail` naming the state (`"Run is FINISHED, so it cannot be reassigned"`) |
+| Reassign: the route's driver is no longer `fromDriverId` | 409 | `detail` naming the current driver (`"The driver of this run is now Walid Saad. Reload and try again."`) |
+| Reassign: replacement unknown or another school's | 404 | `detail` (`"Driver not found."`) |
+| Reassign: replacement deactivated or invited | 409 | `errors: { driverId: "Cannot put a deactivated driver on a route." / "Driver has not set up their account yet." }` |
+| Reassign: replacement already on another route | 409 | `errors: { driverId: "Driver is already on route \"X\"." }` (a lost race gives `"Driver is already on another route."`) |
+| Reassign: missing `driverId` or `fromDriverId`, `reason` over 200 characters | 400 | `errors: { field: message }` |
 | Confirm while the run is not `IN_PROGRESS` | 409 | `detail`, including the run's state |
 | A confirmation move the table above refuses | 409 | `detail`, including the current status |
 | Report an absence that overlaps another (not an exact repeat) | 409 | `errors: { fromDate: message }`, naming the absence it overlaps |
@@ -257,6 +305,7 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 - **The planned time only.** `expectedPickupTime` does not follow the bus. A late bus is visible through the run's state and the stops-left count.
 - **A run nobody has opened reads as not started.** The parent's `todayRun` shows a direction with no run yet as `NOT_STARTED`. If a driver never opens the afternoon runs, the parent keeps seeing the afternoon run as not started.
 - **A run started and never ended** stays `IN_PROGRESS` for its date.
+- **Reassignment changes the route, not the run.** Past runs show the current driver (the reassignment list has the history). A driver change through `PUT /head-of-transport/routes/{id}` is not recorded in that list. There is no swap in one call, and no notification to the parents or the new driver.
 
 ## Interfaces (backend)
 
@@ -264,6 +313,7 @@ Reach other modules through their **services** only (`backend/CLAUDE.md`). What 
 
 - `routes` declares `ActiveRunGuard` (is a student on a bus, is a route's run in progress) and calls it before moving a student or changing a driver or vehicle; `runs` implements it. Routes never imports runs, and the implementation is its own class, not `RunService`, so the two do not need each other's beans.
 - `runs` (Hashem): the run and confirmation tables, `RunService`. Reads `RouteService.findRouteOfDriver` and `listRoutes` (the driver's route with its stops and arrival times; every route), `DriverService.findDriverIdForUser` (the driver of a signed-in user), `StudentService` (a confirmed student who has left the route), `SchoolSettingsService.getTimes` (`schoolTime`), `HolidayService.isHoliday` / `HalfDayService.isHalfDay` (the day's type) and, from SCRUM-239, `AbsenceService`.
+- Reassignment (SCRUM-264): `runs` orchestrates and reads `routes` through two `RouteService` methods: `reassignDriver(schoolId, routeId, fromDriverId, toDriverId)`, the only writer of a route's driver besides route edit, create and generation, which skips `ActiveRunGuard`; and `findDriverIdOfRoute(schoolId, routeId)`, a plain read that start, end and confirm use to re-check ownership under the run's lock. Lock order: the route's run rows (by id), then the route row. Neither method waits on the road provider.
 - `absences` (Moustafa): the absence table, `AbsenceService`. Reads `StudentService` (which children a parent has, as a lookup it does not have yet) and, for the head of transportation's list, `RouteService` (a student's route and position, as a lookup it does not have yet). Never reads `runs`.
 - The new 404 and 409 exceptions need entries in the shared `GlobalExceptionHandler` (otherwise they answer 500). Hashem and Moustafa both edit it, so the second to merge rebases onto the first.
 - The parent view is **its own module** (called `parent`), because it reads `runs` (SCRUM-237, `RunService.todayRunStatus`: one call for all of a parent's children, with no road-provider call) and `runs` already reads `routes`; it would be a cycle inside `routes` or `students`. Nothing depends on it.
