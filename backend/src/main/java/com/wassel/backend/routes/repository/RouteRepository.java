@@ -5,6 +5,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -18,6 +19,8 @@ public interface RouteRepository extends JpaRepository<Route, UUID> {
 	List<Route> findBySchoolIdOrderByCreatedAtAsc(UUID schoolId);
 
 	Optional<Route> findBySchoolIdAndId(UUID schoolId, UUID id);
+
+	List<Route> findBySchoolIdAndIdIn(UUID schoolId, Collection<UUID> ids);
 
 	/**
 	 * The route with its row locked until the transaction ends (SCRUM-259). Every change that can

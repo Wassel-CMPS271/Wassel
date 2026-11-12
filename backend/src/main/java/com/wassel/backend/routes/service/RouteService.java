@@ -158,6 +158,19 @@ public class RouteService {
 	}
 
 	/**
+	 * These routes' names by id, in one read, for the {@code attendance} module. A route that is gone (deleted) or not
+	 * in this school is missing from the map; no stops or road times are worked out.
+	 */
+	@Transactional(readOnly = true)
+	public Map<UUID, String> findRouteNames(UUID schoolId, Collection<UUID> routeIds) {
+		if (routeIds.isEmpty()) {
+			return Map.of();
+		}
+		return routeRepository.findBySchoolIdAndIdIn(schoolId, routeIds).stream()
+				.collect(Collectors.toMap(Route::getId, Route::getName));
+	}
+
+	/**
 	 * Works out every route's arrival times once, which fills the road-time cache (a route whose pairs are all
 	 * cached never calls the provider again). Called at startup, after a restart empties the cache. One route
 	 * that fails is logged and skipped. Not transactional, for the reason {@link #findRouteOfDriver} gives.
