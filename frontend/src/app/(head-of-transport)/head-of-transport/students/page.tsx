@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, MotionConfig } from "framer-motion";
+import { addressRequestsApi } from "@/lib/api/addressRequests";
+import { getParents, type Parent } from "@/lib/api/parents";
 import { getRouteAssignments, type RouteAssignment, type RouteAssignments } from "@/lib/api/routes";
 import { addStudentWithAddress, getStudents, importStudents, matchesFilters, setStudentLocation, updateStudentAddress, type ImportRowResult, type NewStudent, type NewStudentWithAddress, type Student } from "@/lib/api/students";
 import { AddStudentForm } from "./AddStudentForm";
+import { AddressRequestsSection } from "./AddressRequestsSection";
 import { ImportStudentsForm } from "./ImportStudentsForm";
 import { StudentFilters, type RouteFilterValue, type RoutesStatus, type StatusFilterValue } from "./StudentFilters";
 import { StudentListItem } from "./StudentListItem";
@@ -44,6 +47,10 @@ export default function StudentsPage() {
 
   const [routeData, setRouteData] = useState<RouteAssignments>({ routes: [], byStudent: new Map() });
   const [routesStatus, setRoutesStatus] = useState<RoutesStatus>("loading");
+
+  // null until the parents load; stays null if they fail, so the rows keep
+  // saying "Linked"/"Not assigned" instead of an email.
+  const [parentsById, setParentsById] = useState<Map<string, Parent> | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedQuery(searchInput), SEARCH_DEBOUNCE_MS);
@@ -100,10 +107,36 @@ export default function StudentsPage() {
     }
   }, []);
 
+  // After an address-request approval: an approval may change the student's
+  // saved address or pin (SCRUM-269's decision, not this screen's), so
+  // refresh the roster. Runs without the loading skeleton so the roster
+  // (and anything open on its rows) stays visible, and a failure here never
+  // replaces the roster with the error state, just a toast.
+  const reloadStudentsInBackground = useCallback(async () => {
+    try {
+      const data = await getStudents();
+      setStudents(data);
+    } catch {
+      pushToast("Couldn't refresh the roster after the approval. Please reload the page.");
+    }
+  }, [pushToast]);
+
+  // Loaded in parallel with the roster, like the routes: a failure never
+  // blocks the roster, the rows just fall back to "Linked"/"Not assigned".
+  const loadParents = useCallback(async () => {
+    try {
+      const parents = await getParents();
+      setParentsById(new Map(parents.map((parent) => [parent.id, parent])));
+    } catch {
+      setParentsById(null);
+    }
+  }, []);
+
   useEffect(() => {
     loadStudents();
     loadRouteData("loading");
-  }, [loadStudents, loadRouteData]);
+    loadParents();
+  }, [loadStudents, loadRouteData, loadParents]);
 
   async function handleAdd(data: NewStudentWithAddress) {
     const { student, addressSaved } = await addStudentWithAddress(data);
@@ -161,6 +194,13 @@ export default function StudentsPage() {
           </div>
         </header>
 
+        <AddressRequestsSection
+          api={addressRequestsApi}
+          onApproved={() => {
+            void reloadStudentsInBackground();
+          }}
+        />
+
         <section aria-labelledby="student-list-heading">
           <div className="flex items-center" style={{ gap: spacing.sm, marginBottom: spacing.sm }}>
             <span
@@ -200,9 +240,14 @@ export default function StudentsPage() {
           )}
 
           {loadError && (
-            <p role="alert" style={{ color: colors.error[500] }}>
-              {loadError}
-            </p>
+            <div className="flex flex-col items-start" style={{ gap: spacing.sm }}>
+              <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>
+                {loadError}
+              </p>
+              <Button variant="secondary" onClick={loadStudents}>
+                Try again
+              </Button>
+            </div>
           )}
 
           {!isLoading && !loadError && students.length > 0 && (
@@ -304,6 +349,7 @@ export default function StudentsPage() {
                     key={student.id}
                     student={student}
                     routeAssignment={routesStatus === "ready" ? routeData.byStudent.get(student.id) ?? null : undefined}
+                    parent={parentsById && student.parentUserId ? parentsById.get(student.parentUserId) : undefined}
                     onLinked={(updated) => {
                       setStudents(prev => prev.map(item => item.id === updated.id ? updated : item));
                       pushToast(`Parent updated for ${updated.firstName} ${updated.lastName}.`);
