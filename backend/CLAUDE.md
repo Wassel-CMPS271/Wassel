@@ -436,6 +436,21 @@ that's the structure this codebase moved away from.
   repeated end that arrives after midnight is a 404, not the usual 200. A start racing an end on the same run can get a 409
   `FINISHED`. Confirmations follow the same rule: `confirm` finds the route with `routeOf`, then locks the run and checks it is
   that route's run for today.
+  Live location (SCRUM-261): `PUT /api/driver/runs/{runId}/location-sharing` (the driver's opt-in or withdrawal, per run),
+  `PUT .../location` (the latest position, 204), `GET /api/parent/children/{studentId}/bus-location` and
+  `GET /api/head-of-transport/runs/locations`; rules and samples in `docs/contracts/runs.md` "Live location". One row per run in
+  `run_locations` (migration V10), kept as the latest position only, and created only by the opt-in (`RunLocationRepository.startSharing`; a repeat by the driver already sharing changes nothing),
+  so a late position after a withdrawal or the end matches no row and can never bring it back: `savePosition` is one conditional
+  `UPDATE ... WHERE sharing AND driver_id = <this driver>` (0 rows is the 409 "Location sharing is off"). The opt-in takes the run row
+  lock like `confirm`, so it and the run ending wait for each other; `move`'s end calls `stopSharing` in the same transaction as the end. A position
+  is `LIVE` up to 60 s old, `STALE` up to 5 minutes, and then not shown (`RunLocation.LIVE_FOR`/`SHOWN_FOR`, constants, not settings);
+  age comes from the server's receive time only, the phone's clock is never read. `LocationPurge` (`@EnableScheduling`, not in the `test`
+  profile) empties positions past 5 minutes every minute, which also covers a run nobody ends. `recordLocation` finds the route with
+  `RouteService.findRouteIdOfDriver`, not `findRouteOfDriver`, because it runs every few seconds and must not build stops or road
+  times. A parent gets the position only while `todayRunStatus` gives their child a non-null `stopsLeft` (so not after pickup, drop-off,
+  skip or absence), and never a reason for `UNAVAILABLE`. Known limits: no throttle on how often a position may be sent, no history,
+  the driver's consent does not survive a driver change but SCRUM-264 (reassignment) must also call `stopSharing`, and a browser pauses
+  GPS when the phone is locked, so `STALE` is common on real phones.
 - `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
   of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
   are in `docs/contracts/runs.md` (owned jointly with the `runs` module, SCRUM-232/239); build
