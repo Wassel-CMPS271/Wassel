@@ -1,0 +1,10 @@
+{
+  "status": "STALE",
+  "position": {
+    "latitude": 33.8948,
+    "longitude": 35.4811,
+    "accuracyMeters": 30.0,
+    "receivedAt": "2026-10-21T04:13:40Z",
+    "ageSeconds": 140
+  }
+}
