@@ -151,6 +151,12 @@ public class RouteService {
 		});
 	}
 
+	/** For the runs module: just the id of the route a driver is on, without the stops or any road time. */
+	@Transactional(readOnly = true)
+	public Optional<UUID> findRouteIdOfDriver(UUID schoolId, UUID driverId) {
+		return routeRepository.findBySchoolIdAndDriverId(schoolId, driverId).map(Route::getId);
+	}
+
 	/**
 	 * Works out every route's arrival times once, which fills the road-time cache (a route whose pairs are all
 	 * cached never calls the provider again). Called at startup, after a restart empties the cache. One route
