@@ -65,7 +65,8 @@ try {
   await page.goto(`${base}/parent`);
   await page.getByRole("region", { name: `${family[1].firstName} ${family[1].lastName}` }).waitFor();
   const nav = page.getByRole("navigation", { name: "Family views" });
-  assert.equal(await nav.getByRole("button", { name: "Bus tracking", exact: true }).count(), 0);
+  assert.equal(await nav.getByRole("button", { name: "Bus tracking", exact: true }).count(), 1);
+  assert(await nav.getByRole("button", { name: "Bus tracking", exact: true }).isEnabled());
   assert.equal(await nav.getByRole("button", { name: "Inbox", exact: true }).count(), 0);
   const homeWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   assert(homeWidth <= 360, "Long child name fits the 360px Home layout");

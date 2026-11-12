@@ -1,8 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-// Presentation only. This Date is a view prop, not a proposed backend field.
-// SCRUM-262 must define the real ETA schema/validity before an adapter can
-// supply it. TrackingPanel intentionally has no such adapter yet.
+// Legacy presentation retained with its original tests/evidence. The canonical
+// SCRUM-262 adapter uses LiveEtaCountdown and server secondsAway instead.
 export function ArrivalCountdown({ estimate, valid = false }: { estimate: Date | null; valid?: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

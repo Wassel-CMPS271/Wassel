@@ -7,17 +7,17 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import type { Child } from "@/lib/api/myChildren";
 import { ApiError } from "@/lib/api/errors";
-import type { BusLocation } from "@/lib/api/parentTracking";
+import { hasBusProgress, type BusLocation } from "@/lib/api/parentTracking";
 import { colors, darkTheme, sizing, spacing } from "@/styles/tokens";
+
+import { LiveEtaCountdown } from "./LiveEtaCountdown";
 
 import styles from "./TrackingPanel.module.css";
 
 export type TrackingApi = (studentId: string) => Promise<BusLocation>;
 type State = { scope: string; api: TrackingApi; value: BusLocation | null; received: number; error: number | null };
-// Only the canonical GPS contract is implemented. The caller must explicitly
-// supply the live client after #143 merges and the real integration is verified.
-// This component is deliberately not mounted in a production route yet.
-export function TrackingPanel({ child, api = null }: { child: Child; api?: TrackingApi | null }) {
+// GPS is accepted. ETA stays opt-in for isolated contract testing until #153 merges.
+export function TrackingPanel({ child, api = null, etaEnabled = false }: { child: Child; api?: TrackingApi | null; etaEnabled?: boolean }) {
   const [state, setState] = useState<State | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -52,11 +52,17 @@ export function TrackingPanel({ child, api = null }: { child: Child; api?: Track
   const age = value?.position ? value.position.ageSeconds + elapsed : 0;
   const position = waiting && value?.status !== "UNAVAILABLE" && value?.position && age <= 300 ? value.position : null;
   const live = position && value?.status === "LIVE" && age <= 60;
+  const progress = etaEnabled && value && hasBusProgress(value) ? value : null;
+  const estimate = waiting && live && progress?.estimate ? progress.estimate : null;
   const retry = <Button variant="secondary" style={{ minHeight: sizing.tapTarget }} onClick={() => setAttempt(n => n + 1)}>Retry tracking</Button>;
   return <Card className="flex min-w-0 flex-col" style={{ gap: spacing.md, overflowWrap: "anywhere" }}>
     <h2 className="text-xl font-semibold">Bus tracking for {child.firstName} {child.lastName}</h2>
-    <p className="text-sm" style={{ color: darkTheme.text.secondary }}>Planned morning pickup: {child.expectedPickupTime ?? "Not available"}. This is not a live estimate.</p>
-    <p className="text-sm">Live arrival estimate is not available yet.</p>
+    {!progress && <p className="text-sm" style={{ color: darkTheme.text.secondary }}>Planned morning pickup: {child.expectedPickupTime ?? "Not available"}. This is not a live estimate.</p>}
+    {progress && waiting && <>
+      <p>Stops remaining: {progress.stopsLeft ?? "Not available"}</p>
+      <p>Planned {child.todayRun?.direction === "AFTERNOON" ? "drop-off" : "pickup"}: {progress.plannedTime ?? "Not available"}. This is not a live estimate.</p>
+    </>}
+    {estimate ? <LiveEtaCountdown estimate={estimate} elapsedSeconds={elapsed} /> : <p className="text-sm">Live arrival estimate is not available yet.</p>}
     {!api ? <p role="status">Live tracking is not available yet.</p>
       : !waiting ? <p role="status">{!child.todayRun ? "No run today." : child.todayRun.state === "NOT_STARTED" ? "Run not started." : child.todayRun.state === "FINISHED" ? "Run finished." : "Bus tracking is not available for this child."}</p>
       : !current ? <p role="status">Loading bus location…</p>

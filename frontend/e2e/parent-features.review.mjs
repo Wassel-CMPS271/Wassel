@@ -34,13 +34,13 @@ const inbox = {
 };
 function Root() {
  const [identity, setIdentity] = useState("first"), [version, setVersion] = useState(0);
- const gps = React.useMemo(() => async () => gpsStatus === "UNAVAILABLE" ? { status: "UNAVAILABLE", position: null } : { status: gpsStatus, position: { latitude: 33.9, longitude: 35.5, accuracyMeters: 10, ageSeconds: gpsStatus === "LIVE" ? 5 : 140, receivedAt: "2026-11-10T07:00:00Z" } }, [version]);
+ const gps = React.useMemo(() => async () => gpsStatus === "UNAVAILABLE" ? { status: "UNAVAILABLE", position: null, stopsLeft: 2, plannedTime: "07:18", estimate: null } : { status: gpsStatus, position: { latitude: 33.9, longitude: 35.5, accuracyMeters: 10, ageSeconds: gpsStatus === "LIVE" ? 5 : 140, receivedAt: "2026-11-10T07:00:00Z" }, stopsLeft: 2, plannedTime: "07:18", estimate: gpsStatus === "LIVE" ? { arrivesAt: "2026-11-10T07:05:00Z", secondsAway: 350 } : null }, [version]);
  return <><aside aria-label="Fixture controls"><p>UI fixture preview; no backend integration.</p>
  <Button onClick={() => { gpsStatus = "STALE"; setVersion(value => value + 1); }}>Fixture stale GPS</Button>
  <Button onClick={() => { gpsStatus = "UNAVAILABLE"; setVersion(value => value + 1); }}>Fixture missing GPS</Button>
  <Button onClick={() => { failed = true; }}>Fixture fail next read</Button>
  <Button onClick={() => { account = "second"; setIdentity("second"); }}>Fixture switch account</Button>
- </aside><div id="product"><${feature} api={${kind === "tracking" ? "gps" : "inbox"}} accountKey={identity} /></div></>;
+ </aside><div id="product"><${feature} api={${kind === "tracking" ? "gps" : "inbox"}} accountKey={identity} ${kind === "tracking" ? "etaEnabled" : ""} /></div></>;
 }
 createRoot(document.getElementById("root")).render(<Root />);
 `;
@@ -67,6 +67,8 @@ try {
  await product.getByRole("button", { name: kind === "tracking" ? "Bus tracking" : "Inbox", exact: true }).click();
  if (kind === "tracking") {
    await product.getByText("Live bus location", { exact: true }).waitFor();
+   await product.getByRole("timer").waitFor();
+   assert.match(await product.getByRole("timer").textContent(), /Estimated arrival in 5m/);
    await product.locator(".leaflet-marker-icon").waitFor();
    for (const selector of [".leaflet-control-zoom-in", ".leaflet-control-zoom-out"]) {
      const box = await product.locator(selector).boundingBox();
@@ -79,6 +81,7 @@ try {
    assert.equal(await product.locator(".leaflet-marker-icon").count(), 1);
    await page.getByRole("button", { name: "Fixture stale GPS" }).click();
    await product.getByText(/Last seen 140 seconds/).waitFor();
+   assert.equal(await product.getByRole("timer").count(), 0);
    assert.equal(await product.getByText("Live bus location", { exact: true }).count(), 0);
    await page.getByRole("button", { name: "Fixture missing GPS" }).click();
    await product.getByText("Bus location is unavailable.", { exact: true }).waitFor();

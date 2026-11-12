@@ -1,5 +1,48 @@
 # SCRUM-279 — Parent live bus map and countdown
 
+## Dependency refresh and implementation — 12 November 2026
+
+Accepted develop: `4cbfcc7172520e683366d6eaab482ff95015dba0` (merged #143 / SCRUM-261). Existing branch, commits, tests and dated evidence preserved. Only accepted develop was merged; no teammate feature was changed or merged.
+
+### New behavior
+
+- The production Parent page now supplies the real cookie-authenticated `getBusLocation` client to its existing Home/Absences/tracking composition. Bus tracking is a working, lazy navigation destination. Inbox remains unavailable. Missing GPS displays no marker or fabricated route.
+- Prepared the additive SCRUM-262 contract from #153 at `aef97a37f4c77cb0b56f153a65e5389dc6813804`: `stopsLeft`, nullable `plannedTime`, and nullable `estimate { arrivesAt, secondsAway }` on the SAME child bus-location endpoint. Legacy merged GPS responses still parse; partial/inconsistent future responses fail explicitly.
+- Added LiveEtaCountdown: server `secondsAway` minus monotonic elapsed time, independent of device wall-clock skew. Zero means due/waiting for confirmation, never confirmed arrival. School-local estimate and planned time are labeled separately. A stale/missing fix hides the countdown.
+- ETA is explicitly **disabled in the production entry** until #153 is merged and verified. Only isolated test compositions enable it. No future backend implementation or fixture is imported into production.
+- Preserved account/client/child/route/driver scope resets, old-response guards, authorization handling and passive GPS expiry. Added production-client navigation, ETA validation, zero/null, clock-skew, stale boundary, sibling switching and HTTP error recovery tests.
+- Added a separate PostgreSQL Parent GPS browser CI job and test-only launcher, leaving all shared required CI checks intact. The real browser test uses actual authentication, APIs and Leaflet; its driver feed uses real API calls, not a claim of a physical phone GPS test.
+
+### Actual integration defect found and fixed
+
+A strengthened real browser run exposed a genuine parser bug: the server compares precise Duration against 60 seconds, then truncates `ageSeconds`. Valid `STALE` responses can therefore contain age **60**, not only 61+. Rejecting that response cleared the marker and showed an error until the next poll. The new regression failed before the fix and passes after it. The client now accepts authoritative STALE at 60, still rejects below 60, and never labels a STALE response live. The real browser check requires server STALE and the valid truncated age, not a guessed device-clock threshold.
+
+The prepared ETA view now uses only canonical run plannedTime when that progress contract is enabled, so an afternoon/null plan is not replaced by the morning pickup snapshot. Production ETA remains disabled. A regression run that overlapped these final plan-display edits is preserved; final verification was rerun on stable source: all 836 tests executed with no unexpected failures.
+
+### Current validation
+
+| Check | Executed result |
+| --- | --- |
+| Focused tracking/client/navigation suites | 65 passed / 0 failed |
+| Full frontend regression | 829 passed / 0 unexpected failures / 1 pre-existing expected failure / 6 pre-existing skips (836; 62 files) |
+| ESLint / production build | Passed |
+| Standalone TypeScript | Exactly 13 accepted-develop diagnostics; zero new errors (file/line/message comparison) |
+| Prepared ETA/Leaflet Chromium at 360px | Passed, fixture-only; live timer, child switching, stale/missing GPS, 44px map controls and account reset |
+| Production Home/Absences Chromium at 360px | Passed, fixture-only; long names, keyboard, child switching and 44px controls |
+| Real merged GPS Chromium / PostgreSQL / Flyway | **1 passed**, launcher exit 0; all 10 migrations through V10, real password/2FA and APIs |
+| Hosted CI | Separate Parent GPS job added; inspect live checks on this PR (not inferred from local results) |
+
+The real GPS scenario verified actual production navigation/Leaflet marker, selected-child requests, local live-to-stale display AND server STALE after 60 seconds, sharing withdrawal removing the marker, 401/403/404 restrictions (including an existing foreign child), 44px map controls and no 360px overflow/crashes. Driver data was fed through real authenticated APIs; it is not a claim that the unmerged driver UI or physical GPS is accepted. ETA was visibly unavailable throughout. Route cleanup succeeded and the runner exited 0.
+
+The initial fixture production-navigation attempt reached the correct UI with no page/console errors but timed out on page load. Its log/screenshot remain preserved; rerun passed unchanged assertions. All historical evidence remains intact.
+
+Evidence: ignored `tmp/SCRUM-279-20261112/`, timestamped `tmp/parent-features-mobile/tracking/` and `tmp/parent-navigation-mobile/`, and ignored Playwright artifacts. Prior November 9/10 evidence remains historical.
+
+### Remaining completion gates
+
+#153 is open, targets develop, and defines the reviewed schema. Jira SCRUM-262 says Done, but the PR is unmerged: GitHub is the integration source of truth. Verify its eventual merge, actual live ETA/progress after confirmations, afternoon/null plans and stale/missing fallbacks before enabling ETA. #144 / SCRUM-273 remains a draft at `e3ec66670324a77edfe014dec7a00f18ee39ac3c`; accepted driver UI integration/physical-device GPS remains a separate gate. Keep #149 a draft and SCRUM-279 In Progress; independent Majd review, real complete slice and green required checks are still necessary.
+
+
 ## Follow-up implementation and verification — 10 November 2026
 
 **Frontend work advanced; final integration remains blocked.** Jira stays In Progress and existing PR #149 stays a draft. Reused this branch, preserved snapshot `b35d787e997cfe5e06d31fda2b77a025d09260fb` and all original tests/reports, and merged accepted develop `8d62167fe2439843187218cabc40419304bd8d40` (SCRUM-249 / #147). No teammate branch or SCRUM-250/282 test evidence was modified.
