@@ -3,7 +3,8 @@
 -- Plain ids with no foreign keys, as in runs and absences.
 --
 -- The partial unique index is the guarantee that a child never has two pending requests, however many requests
--- race to insert one (AddressRequestRepository.insertIfNoPending relies on it).
+-- race to insert one. It is the backstop: the service first takes a per-student lock (AddressRequestRepository.lockStudent)
+-- and checks existsByStudentIdAndStatus, so a second request normally sees the first one pending.
 
 CREATE TABLE address_requests (
     id uuid NOT NULL,
