@@ -2,6 +2,7 @@ package com.wassel.backend.runs.controller;
 
 import com.wassel.backend.runs.dto.ReassignRunRequest;
 import com.wassel.backend.runs.dto.ReassignmentResponse;
+import com.wassel.backend.runs.dto.RunLocationResponse;
 import com.wassel.backend.runs.dto.RunResponse;
 import com.wassel.backend.runs.dto.RunsDayResponse;
 import com.wassel.backend.runs.service.RunService;
@@ -36,6 +37,14 @@ import java.util.UUID;
 public class HeadOfTransportRunController {
 
 	private final RunService runService;
+
+	@GetMapping("/locations")
+	public List<RunLocationResponse> locations(@AuthenticationPrincipal User headOfTransport) {
+		if (headOfTransport == null) {
+			throw new AccessDeniedException("No authenticated head of transportation");
+		}
+		return runService.locationsToday(headOfTransport.getSchoolId());
+	}
 
 	@GetMapping
 	public RunsDayResponse runs(@AuthenticationPrincipal User headOfTransport,

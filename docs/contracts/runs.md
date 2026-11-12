@@ -16,6 +16,12 @@ The JSON examples live in [`samples/runs/`](samples/runs). They are the source o
 | [`hot-reassign-run.json`](samples/runs/hot-reassign-run.json) | `RunSummary` | The answer to that request: the same run, same id, state, `startedAt` and `counts`, now with Nadim as `driver` | head of transportation live control screen |
 | [`hot-reassignments.json`](samples/runs/hot-reassignments.json) | `Reassignment[]` | The audit list of that run after the change | head of transportation live control screen |
 | [`absences.json`](samples/runs/absences.json) | `Absence[]` | One child's upcoming absences: a range and a single day | parent absence screens |
+| [`location-sharing.json`](samples/runs/location-sharing.json) | `{ enabled }` | The body of the driver's opt-in and withdraw (SCRUM-261) | driver GPS screen |
+| [`location-update.json`](samples/runs/location-update.json) | `{ latitude, longitude, accuracyMeters }` | The body of the driver's position update | driver GPS screen |
+| [`bus-location-live.json`](samples/runs/bus-location-live.json) | `BusLocation` | A fix 10 seconds old | parent map |
+| [`bus-location-stale.json`](samples/runs/bus-location-stale.json) | `BusLocation` | A fix 140 seconds old, not current any more | parent map |
+| [`bus-location-unavailable.json`](samples/runs/bus-location-unavailable.json) | `BusLocation` | No position to show, whatever the reason | parent map |
+| [`run-locations.json`](samples/runs/run-locations.json) | `RunLocation[]` | Two runs in progress: one live, one with nothing to show | head of transportation live screen |
 
 ## Conventions
 
@@ -43,6 +49,7 @@ One route, one direction, one date.
 | `route` | `{ id, name }` | the route's name, the same for both directions (often "… morning run"), so screens label a run by `direction` |
 | `vehicle`, `driver` | as in `RouteSummary` | the route's, read each time, never stored: a past run shows the route's current vehicle and driver |
 | `counts` | `Counts` | |
+| `locationSharing` | boolean | `true` while the driver is sharing this run's position (see [Live location](#live-location)). Only the driver and the head of transportation get it: a parent never learns why a position is missing |
 | `stops` | `RunStop[]` | in `position` order. Only in the driver's responses; a `RunSummary` is a `Run` without `stops` |
 
 ### RunStop
@@ -117,6 +124,16 @@ The driver's **current run** is the first in `runs` that is not `FINISHED`; when
 
 Every child linked to the signed-in parent, and no one else's, ordered by first name. A parent with no children gets `[]`.
 
+### BusLocation and RunLocation
+
+`BusLocation` is `{ status, position }`; a `RunLocation` is the same with the run's `runId` first.
+
+| Field | Type | Notes |
+|---|---|---|
+| `runId` | uuid | only in `RunLocation` |
+| `status` | `LIVE`, `STALE` or `UNAVAILABLE` | decide what to draw from this, never from `position` alone |
+| `position` | `{ latitude, longitude, accuracyMeters, receivedAt, ageSeconds }` or null | present exactly when `status` is `LIVE` or `STALE`. `receivedAt` is the server's moment; `ageSeconds` is the whole seconds between it and the server's clock when the answer was made, so a client never needs its own clock |
+
 ### Absence
 
 | Field | Type | Notes |
@@ -145,6 +162,10 @@ An absence seen from the school's side, for the date asked: `absenceId`, `studen
 | POST | `/api/head-of-transport/runs/{runId}/reassignments` | HEAD_OF_TRANSPORT | `{ driverId, fromDriverId, reason? }` | 201 `RunSummary` when the driver changed; 200 `RunSummary` when the route already had `driverId` (nothing recorded) | Hashem, SCRUM-264 |
 | GET | `/api/head-of-transport/runs/{runId}/reassignments` | HEAD_OF_TRANSPORT | | 200 `Reassignment[]`, newest first | Hashem, SCRUM-264 |
 | GET | `/api/head-of-transport/absences?date=` | HEAD_OF_TRANSPORT | | 200 `AbsentStudent[]` for `date` (today when omitted) | Moustafa, SCRUM-238 / SCRUM-239 |
+| PUT | `/api/driver/runs/{runId}/location-sharing` | DRIVER | `{ enabled }` | 200 `Run` | Hashem, SCRUM-261 |
+| PUT | `/api/driver/runs/{runId}/location` | DRIVER | `{ latitude, longitude, accuracyMeters }` | 204 | Hashem, SCRUM-261 |
+| GET | `/api/parent/children/{studentId}/bus-location` | PARENT | | 200 `BusLocation` | Hashem, SCRUM-261 |
+| GET | `/api/head-of-transport/runs/locations` | HEAD_OF_TRANSPORT | | 200 `RunLocation[]`, today's runs in progress | Hashem, SCRUM-261 |
 
 The head of transportation's absence list is one endpoint for SCRUM-238 and SCRUM-239. Start, end and confirm return the whole `Run`, so the driver screen redraws from one response. There is no endpoint that lists past runs of a driver, or one run by id, until a screen needs it.
 
@@ -190,7 +211,7 @@ Only **today's** runs count here: a run left `IN_PROGRESS` on an earlier date ne
 - `fromDriverId` is the driver the head saw on the run (`run.driver.id`). It guards against two heads acting on the same screen: if the route's driver is no longer that driver, the answer is 409 and nothing changes.
 - The old driver loses the run **at once**: their next start, end or confirm is a 404, even if the request was already in flight when the change committed, and their today list is empty. The new driver gains it at once. A parent's `Child.driver` follows.
 - **The same 404 for every driver write, in one order.** Starting, ending and confirming a run, and (once they merge) turning location sharing on or off (SCRUM-261) and replaying a queued confirmation with a `clientRequestId` (SCRUM-263), all answer **404** for the old driver after the change commits, whether the request arrived before or after it. The server takes the run's lock first and checks the driver's ownership after it, before anything else: before the student, the state, the table and, for a replay, **before the `clientRequestId` lookup**, so a key the old driver used before the reassignment is a 404 and never the "already applied" 200. `DriverWritesRecheckOwnershipTests` fails if a driver write does not go through `RunService.lockOwnedRun`, or a replay looks up its key before it.
-- (After SCRUM-261 merges) location sharing is withdrawn by the reassignment (`reassign` calls `stopSharing`; the same test fails if it does not), and the new driver opts in themselves.
+- Location sharing is withdrawn by the reassignment (`reassign` calls `stopSharing`; the same test fails if it does not), and the new driver opts in themselves.
 - A reassignment whose `driverId` is already the route's driver answers **200** and records nothing, so a retry after a lost answer is harmless.
 - Checks run in this order: signed in (401); body (400), for any signed-in caller, as everywhere else in the API; role (403); run unknown, another school's, or whose route was deleted (404); not today's, or today is a holiday (409); run `FINISHED` (409); the route already has `driverId` (200, nothing recorded); `fromDriverId` is not the route's driver (409); replacement unknown or another school's (404); replacement not `active` (409); replacement on another route (409).
 - `reason` is optional, at most 200 characters, trimmed; blank is stored as null.
@@ -216,6 +237,20 @@ Only **today's** runs count here: a run left `IN_PROGRESS` on an earlier date ne
 - A student's **latest** confirmation is the highest status they have (`NOT_PRESENT` < `PICKED_UP` < `DROPPED_OFF`), not the newest record.
 - Checks run in this order: the run is one of the driver's today (404), the student is a stop of the run or already confirmed on it (404), the run is `IN_PROGRESS` (409), then the table (409).
 - A confirmation and a move or end of the same run never interleave: the server serialises them per run.
+
+### Live location
+
+The bus's position, from the driver's phone (SCRUM-261). One school; the school and the driver always come from the session.
+
+- **Consent.** The driver opts in per run with `PUT .../location-sharing { enabled: true }`, only while the run is `IN_PROGRESS` (otherwise 409). Opting in again while sharing, or withdrawing twice, changes nothing and answers 200 (the position stays). A fresh opt-in, after a withdrawal, starts with no position. `enabled: false` is allowed in any state of the driver's own run and removes the position at once. **Ending a run withdraws consent and removes the position**, in the same step as the end. Consent belongs to the driver who gave it: a driver the route has changed to has not consented.
+- **Sending.** `PUT .../location` is accepted only for the driver's own run of today, while it is `IN_PROGRESS` and the driver is sharing. The server keeps **the latest position only**, no history. Send about every **10 seconds**; resending is harmless (the last one wins). A position the server does not accept is never stored or echoed back; a 400's log line may name the rejected value, never an accepted position.
+- **Time.** The server's receive time is the only time: the phone's clock is never sent and never used.
+- **Validation.** `latitude` -90 to 90, `longitude` -180 to 180, `accuracyMeters` 0 to 10000, all required, all finite numbers. Anything else is 400. Any accuracy in that range, however poor, is stored and shown.
+- **Freshness**, from the age of the stored position when it is read: up to **60 seconds** is `LIVE`; over 60 and up to **300 seconds** (5 minutes) is `STALE`, the last known position and how old it is; after that the position is no longer shown (`UNAVAILABLE`) and is removed within a minute. `STALE` is not lateness: a locked phone or a background tab makes the browser pause its GPS, so a screen must call it "last seen", not "late", and ETAs must fall back to the confirmations (SCRUM-262 never invents a live time).
+- **What a parent sees.** `UNAVAILABLE`, with no reason, in all of these cases: no route, a holiday, no run in progress, sharing off, no position yet, a position older than 5 minutes, and **the child is no longer waiting**: the position is shown only while `todayRun.stopsLeft` of that child is not null. So a child who is picked up, dropped off, skipped or absent loses the map for the rest of the run, and a parent never watches the bus go to other families.
+- **What the head of transportation sees.** The positions of every run of the school that is `IN_PROGRESS` today (`[]` on a holiday), in no particular order, matched by `runId`. `UNAVAILABLE` with `Run.locationSharing` false means the driver is not sharing; with it true it means no fresh position.
+- **Reassignment (SCRUM-264).** Changing a run's driver must withdraw sharing, so the new driver opts in themselves.
+- **Not covered.** Positions of a run left `IN_PROGRESS` overnight are not shown (readers only look at today's runs) and are removed by the same minute-by-minute clean-up.
 
 ### What the driver screen works out for itself
 
@@ -286,6 +321,9 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 | Reassign: replacement already on another route | 409 | `errors: { driverId: "Driver is already on route \"X\"." }` (a lost race gives `"Driver is already on another route."`) |
 | Reassign: missing `driverId` or `fromDriverId`, `reason` over 200 characters | 400 | `errors: { field: message }` |
 | Confirm while the run is not `IN_PROGRESS` | 409 | `detail`, including the run's state |
+| Turn sharing on, or send a position, while the run is not `IN_PROGRESS` | 409 | `detail`, including the run's state |
+| Send a position while sharing is off, or was given by another driver | 409 | `detail: "Location sharing is off for this run"` |
+| A latitude, longitude or accuracy missing or out of range | 400 | `errors: { latitude: message }` (or `longitude`, `accuracyMeters`) |
 | A confirmation move the table above refuses | 409 | `detail`, including the current status |
 | Report an absence that overlaps another (not an exact repeat) | 409 | `errors: { fromDate: message }`, naming the absence it overlaps |
 | Cancel an absence that ended before today | 409 | `detail` |
@@ -306,6 +344,7 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 - **A run nobody has opened reads as not started.** The parent's `todayRun` shows a direction with no run yet as `NOT_STARTED`. If a driver never opens the afternoon runs, the parent keeps seeing the afternoon run as not started.
 - **A run started and never ended** stays `IN_PROGRESS` for its date.
 - **Reassignment changes the route, not the run.** Past runs show the current driver (the reassignment list has the history). A driver change through `PUT /head-of-transport/routes/{id}` is not recorded in that list. There is no swap in one call, and no notification to the parents or the new driver.
+- **No history, no throttle.** Only the latest position is kept, and the server does not limit how often a driver may send one. A trail, or a limit, would be a new rule.
 
 ## Interfaces (backend)
 

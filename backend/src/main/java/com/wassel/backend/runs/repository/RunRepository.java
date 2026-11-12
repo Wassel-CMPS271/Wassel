@@ -1,6 +1,7 @@
 package com.wassel.backend.runs.repository;
 
 import com.wassel.backend.runs.entity.Run;
+import com.wassel.backend.runs.entity.RunState;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -24,6 +25,8 @@ public interface RunRepository extends JpaRepository<Run, UUID> {
 	Optional<Run> findBySchoolIdAndId(UUID schoolId, UUID id);
 
 	List<Run> findBySchoolIdAndRunDateAndRouteIdIn(UUID schoolId, LocalDate runDate, Collection<UUID> routeIds);
+
+	List<Run> findBySchoolIdAndRunDateAndState(UUID schoolId, LocalDate runDate, RunState state);
 
 	/**
 	 * The run with its row locked until the transaction ends. A confirmation takes it so that its checks (the run is

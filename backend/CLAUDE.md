@@ -441,9 +441,23 @@ that's the structure this codebase moved away from.
   driver was found on the route before the lock, so a reassignment that committed while their request waited gives them a
   404 instead of a write. **Every driver write to a run takes `lockOwnedRun` first**: a new one (SCRUM-261's location
   sharing, SCRUM-263's replay of queued confirmations) must go through it too, or an in-flight request from the old driver
-  can still write after a reassignment commits; `runs/service/DriverWritesRecheckOwnershipTests` (a source-level check on `RunService`) fails when a driver write locks the run any other way, when a replay looks up its key before `lockOwnedRun`, or when `reassign` does not call `stopSharing` once location sharing exists, so the PR that merges second cannot go green until it does. Known limits: `PUT /routes/{id}` still changes a driver without an audit row; no swap of two
-  routes' drivers in one call; location sharing is not withdrawn yet (add `stopSharing` to `reassign` when SCRUM-261's
-  GPS merges); no notifications (SCRUM-268). Tests: `RunReassignmentTests`, `RunReassignmentDayTurnoverTests`, `RunOwnershipRecheckTests`.
+  can still write after a reassignment commits; `runs/service/DriverWritesRecheckOwnershipTests` (a source-level check on `RunService`) fails when a driver write locks the run any other way, when a replay looks up its key before `lockOwnedRun`, or when `reassign` does not call `stopSharing`. Known limits: `PUT /routes/{id}` still changes a driver without an audit row; no swap of two
+  routes' drivers in one call; location sharing is withdrawn by `reassign` (`stopSharing` on every run of the route today); no notifications (SCRUM-268). Tests: `RunReassignmentTests`, `RunReassignmentDayTurnoverTests`, `RunOwnershipRecheckTests`.
+  Live location (SCRUM-261): `PUT /api/driver/runs/{runId}/location-sharing` (the driver's opt-in or withdrawal, per run),
+  `PUT .../location` (the latest position, 204), `GET /api/parent/children/{studentId}/bus-location` and
+  `GET /api/head-of-transport/runs/locations`; rules and samples in `docs/contracts/runs.md` "Live location". One row per run in
+  `run_locations` (migration V10), kept as the latest position only, and created only by the opt-in (`RunLocationRepository.startSharing`; a repeat by the driver already sharing changes nothing),
+  so a late position after a withdrawal or the end matches no row and can never bring it back: `savePosition` is one conditional
+  `UPDATE ... WHERE sharing AND driver_id = <this driver>` (0 rows is the 409 "Location sharing is off"). The opt-in takes the run row
+  lock like `confirm`, so it and the run ending wait for each other; `move`'s end calls `stopSharing` in the same transaction as the end. A position
+  is `LIVE` up to 60 s old, `STALE` up to 5 minutes, and then not shown (`RunLocation.LIVE_FOR`/`SHOWN_FOR`, constants, not settings);
+  age comes from the server's receive time only, the phone's clock is never read. `LocationPurge` (`@EnableScheduling`, not in the `test`
+  profile) empties positions past 5 minutes every minute, which also covers a run nobody ends. `recordLocation` finds the route with
+  `RouteService.findRouteIdOfDriver`, not `findRouteOfDriver`, because it runs every few seconds and must not build stops or road
+  times. A parent gets the position only while `todayRunStatus` gives their child a non-null `stopsLeft` (so not after pickup, drop-off,
+  skip or absence), and never a reason for `UNAVAILABLE`. Known limits: no throttle on how often a position may be sent, no history,
+  the driver's consent does not survive a driver change (`reassign` calls `stopSharing`, SCRUM-264), and a browser pauses
+  GPS when the phone is locked, so `STALE` is common on real phones.
 - `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
   of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
   are in `docs/contracts/runs.md` (owned jointly with the `runs` module, SCRUM-232/239); build

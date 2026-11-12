@@ -9,5 +9,6 @@
   "route": { "id": "10000000-0000-4000-8000-000000000001", "name": "Hamra morning run" },
   "vehicle": { "id": "20000000-0000-4000-8000-000000000001", "plateNumber": "A 123456", "capacity": 14 },
   "driver": { "id": "30000000-0000-4000-8000-000000000007", "firstName": "Nadim", "lastName": "Khoury" },
-  "counts": { "students": 4, "absent": 1, "pickedUp": 1, "droppedOff": 0, "notPresent": 1 }
+  "counts": { "students": 4, "absent": 1, "pickedUp": 1, "droppedOff": 0, "notPresent": 1 },
+  "locationSharing": false
 }
