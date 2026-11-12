@@ -223,6 +223,19 @@ class ParentInboxTests extends RunCriteriaSupport {
 	}
 
 	@Test
+	void onlyTrueFiltersToUnreadAndAnyOtherValueListsAll() throws Exception {
+		Morning m = aStartedRunWithRami();
+		confirmOk(m, "PICKED_UP");
+		confirmOk(m, "DROPPED_OFF");
+		markRead(m.parent(), JsonPath.read(inbox(m.parent(), ""), "$[0].id"));
+
+		assertEquals(1, ((List<?>) JsonPath.read(inbox(m.parent(), "?unread=true"), "$")).size());
+		for (String other : List.of("?unread=false", "?unread=foo", "?unread=yes", "?unread=1", "?unread=")) {
+			assertEquals(2, ((List<?>) JsonPath.read(inbox(m.parent(), other), "$")).size(), other + " lists all");
+		}
+	}
+
+	@Test
 	void unknownAndMalformedIdsAreRefused() throws Exception {
 		UUID parent = aParent();
 

@@ -34,9 +34,10 @@ public class ParentInboxController {
 
 	@GetMapping
 	public List<InboxEventResponse> list(@AuthenticationPrincipal User parent,
-			@RequestParam(defaultValue = "false") boolean unread) {
+			@RequestParam(required = false) String unread) {
 		signedIn(parent);
-		return inboxService.list(parent.getSchoolId(), parent.getId(), unread);
+		// Only "true" filters; any other value lists all (docs/contracts/inbox.md), so it is not a 400.
+		return inboxService.list(parent.getSchoolId(), parent.getId(), "true".equals(unread));
 	}
 
 	@GetMapping("/unread-count")
