@@ -66,3 +66,32 @@ it("uses native 44px read/retry controls and distinguishes historic authorized e
   for (const button of screen.getAllByRole("button")) expect(Number.parseFloat(getComputedStyle(button).minHeight)).toBeGreaterThanOrEqual(44);
   expect(screen.getByText(/up to 50 updates/)).toHaveTextContent("all your children and older updates");
 });
+
+it("serializes rapid read taps and never sends read-all while a receipt is pending", async () => {
+  let finish!: (value: InboxEvent) => void; const api = source(); api.markRead.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  render(<InboxPanel api={api} />); await screen.findByText("Lina: Picked up");
+  const button = screen.getByRole("button", { name: "Mark update for Lina as read" });
+  fireEvent.click(button); fireEvent.click(button); fireEvent.click(screen.getByText("Mark all as read"));
+  expect(api.markRead).toHaveBeenCalledTimes(1); expect(api.markAllRead).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Unread only")).toBeDisabled();
+  api.list.mockResolvedValue([{ ...entry, readAt: "2026-11-12T08:00:00Z" }]); api.unreadCount.mockResolvedValue(72);
+  await act(async () => finish({ ...entry, readAt: "2026-11-12T08:00:00Z" }));
+  expect(await screen.findByText("72 unread updates")).toBeVisible(); expect(api.list).toHaveBeenCalledTimes(2);
+});
+it("retains unread totals on failed read-all, then applies only the successful server refresh", async () => {
+  const api = source(); api.markAllRead.mockRejectedValueOnce(new Error("offline"));
+  render(<InboxPanel api={api} />); await screen.findByText("73 unread updates"); fireEvent.click(screen.getByText("Mark all as read"));
+  await screen.findByRole("alert"); expect(screen.getByText("73 unread updates")).toBeVisible(); expect(screen.getByText("Unread")).toBeVisible();
+  api.list.mockResolvedValue([{ ...entry, readAt: "2026-11-12T08:00:00Z" }]); api.unreadCount.mockResolvedValue(0);
+  fireEvent.click(screen.getByText("Mark all as read")); expect(await screen.findByText("0 unread updates")).toBeVisible(); expect(api.markAllRead).toHaveBeenCalledTimes(2);
+});
+it.each([401, 403])("removes all private entries and controls when read-all loses authorization (%s)", async status => {
+  const api = source(); api.markAllRead.mockRejectedValue(new ApiError(status)); render(<InboxPanel api={api} />);
+  await screen.findByText("Lina: Picked up"); fireEvent.click(screen.getByText("Mark all as read")); await screen.findByRole("alert");
+  expect(screen.queryByText("Lina: Picked up")).not.toBeInTheDocument(); expect(screen.queryByText("73 unread updates")).not.toBeInTheDocument(); expect(screen.queryByText("Mark all as read")).not.toBeInTheDocument();
+});
+it("does not invent preference controls or endpoints while SCRUM-268 has no contract", async () => {
+  const api = source([]); render(<InboxPanel api={api} />); await screen.findByText("No transport updates yet.");
+  expect(screen.getByText("Preferences and late alerts are not available yet.")).toBeVisible(); expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  expect(api.markAllRead).not.toHaveBeenCalled(); expect(api.markRead).not.toHaveBeenCalled();
+});

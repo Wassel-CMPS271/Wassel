@@ -1,5 +1,32 @@
 # SCRUM-280 — Parent inbox and notification preferences
 
+## Dependency refresh and verification — 12 November 2026
+
+Merged only accepted develop `4cbfcc7172520e683366d6eaab482ff95015dba0` into the existing branch, preserving all implementation, tests, commits and previous evidence. No teammate feature branch was changed.
+
+Re-read canonical inbox #146 at `bdab2d0b1f6ac5314b03b7cdae32f5c7461bb361`; it is still unmerged and the API shape is unchanged. Current prepared client matches GET inbox (optional unread), GET unread-count, POST encoded entry/read, POST read-all/204 through the cookie-authenticated client. Historical entries stay authorized to the original parent even after child re-linking. NOT_PRESENT is an actual confirmation event; it is not an invented absence-report notification.
+
+Added tests for rapid duplicate taps/read-all serialization, failed read-all preserving unread totals then retrying server-authoritative state, 401/403 privacy removal during mutation, mutation status propagation, encoded receipt identity and read-all's lack of caller-supplied parent/student identity or preference payload. Retained sibling isolation, stale account responses, reset/filter/navigation, counts beyond the newest 50 and mobile tests.
+
+SCRUM-268 remains To Do with **no preferences endpoint, DTO, late-event schema or threshold contract**. No guessed API or fake enabled toggle was introduced. The production page keeps Inbox unavailable and does not call unmerged APIs; only the explicit review composition supplies the prepared client. Real inbox/preferences integration is not complete.
+
+| Executed check | Actual result |
+| --- | --- |
+| Focused inbox/client/navigation/session/authorization | **63 passed / 0 failed** |
+| Full frontend regression | **815 passed / 0 unexpected failures / 1 pre-existing expected failure / 6 pre-existing skips** (822; 60 files) |
+| Actual prepared Inbox Chromium at 360px | Passed, fixture-only: sibling receipt, authoritative totals/read-all, retry, 44px controls, account reset |
+| ESLint / production build | Passed |
+| Standalone TypeScript | Exactly 13 accepted-develop diagnostics, zero introduced |
+| Production Home/Absences Chromium at 360px | Passed, fixture-only; navigation, child switching, long names, keyboard, 44px targets, no overflow/crashes |
+| Real inbox/preferences integration | Blocked; not claimed |
+
+Remaining: #146 accepted merge (and migration ordering with #145), SCRUM-268's agreed preferences and notification/late semantics, real event generation/read ownership/preferences persistence/reload/authorization and deployed/mobile delivery checks, independent Majd review and required green CI. Preserve GPS navigation when reconciling this Home extraction with #149; do not replace the accepted tracking entry. Keep #150 a draft and Jira In Progress.
+
+A first mobile-harness attempt overlapped this worktree's production build and failed on a missing generated `.next/types` file. Preserved that log, serialized the final checks, selected explicit distinct review ports, and reran successfully. No product assertion was relaxed.
+
+Evidence: ignored `tmp/SCRUM-280-20261112/` and timestamped `tmp/parent-features-mobile/inbox/` / `tmp/parent-navigation-mobile/`. Prior reports remain historical. No new backend integration or hosted CI pass is inferred from fixture checks.
+
+
 ## Follow-up implementation and verification — 10 November 2026
 
 **Frontend work advanced; final integration remains blocked.** Jira stays In Progress and existing PR #150 stays a draft. Reused this branch, preserved snapshot `d401c1ac07749a748b924e35a6af7d822a2c3647` and all original tests/reports, and merged accepted develop `8d62167fe2439843187218cabc40419304bd8d40` (SCRUM-249 / #147). No teammate branch or SCRUM-250/282 test evidence was modified.

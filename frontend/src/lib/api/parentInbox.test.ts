@@ -11,3 +11,13 @@ it("does not accept another entry's receipt", async () => { response({ ...event,
 it("supports read-all's empty 204", async () => { const f = response(null, 204); await api.markAllRead(); expect(f).toHaveBeenCalledWith(expect.stringContaining("/inbox/read-all"), expect.objectContaining({ method: "POST" })); });
 it.each([401, 403, 404, 500])("retains HTTP %s", async status => { response(null, status); await expect(api.list()).rejects.toMatchObject({ status }); });
 it.each([[{ ...event, type: "LATE" }], [event, event], [{ ...event, createdAt: "bad" }], null])("rejects unsupported or malformed events %j", async rows => { response(rows); await expect(api.list()).rejects.toThrow(); });
+
+it.each([401, 403, 404, 409, 500])("retains mutation HTTP %s and never fabricates a receipt", async status => {
+  const fetcher = response(null, status); await expect(api.markRead("child/event")).rejects.toMatchObject({ status });
+  expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/inbox/child%2Fevent/read"), expect.objectContaining({ credentials: "include", method: "POST" }));
+});
+it("read-all sends no parent or student identity and no preference payload", async () => {
+  const fetcher = response(null, 204); await api.markAllRead();
+  expect(fetcher.mock.calls[0][1]).toMatchObject({ method: "POST", credentials: "include" });
+  expect(fetcher.mock.calls[0][1].body).toBeUndefined(); expect(fetcher.mock.calls[0][0]).toMatch(/\/api\/parent\/inbox\/read-all$/);
+});
