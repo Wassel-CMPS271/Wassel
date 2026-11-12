@@ -1,5 +1,34 @@
 # SCRUM-250 — Independent driver frontend tests
 
+## Dependency refresh and independent review — 12 November 2026
+
+Accepted develop `4cbfcc7172520e683366d6eaab482ff95015dba0` includes #143 GPS. Reused the existing branch and all **65 independent acceptance tests**. No assertion or case was skipped, removed or weakened. The only fixture change adds `locationSharing: false` compatibly to the run factory for the candidate's additive Run field.
+
+Latest driver candidate: draft #144 at `e3ec66670324a77edfe014dec7a00f18ee39ac3c`. Exact detached review checkout, all tracked production files unchanged. Candidate tests execute via the guarded test-only overlay; accepted backend `4cbfcc7` can now be selected separately. The launcher verifies it is a clean ancestor of origin/develop. Content-addressed review tests/launchers preserve previous overlay versions.
+
+| Executed check | Actual result |
+| --- | --- |
+| All original acceptance cases on exact latest #144 | **65 passed / 0 failed / 0 skipped** (5 files) |
+| Accepted-source full regression | **816 passed / 1 genuine real-endpoint failure / 1 pre-existing expected failure / 6 pre-existing skips** (824; 59 files) |
+| ESLint / production build | Passed |
+| Standalone TypeScript | Exactly 13 accepted-develop diagnostics; zero introduced |
+| Actual PostgreSQL/browser run+GPS | **1 passed**, launcher exit 0; canonical real GPS and run clients verified |
+
+Extended the real browser probe with explicit geolocation opt-in, actual PUT sharing Run flag, PUT location's canonical latitude/longitude/accuracy-only body, authenticated Parent LIVE read and immediate withdrawal to UNAVAILABLE, while retaining password+2FA, GET today, start/confirm/end, persistence, wrong-role checks, 360px and cleanup. Browser geolocation is an explicit browser fixture; server responses are real. It does not prove a physical phone, offline replay or an accepted frontend merge.
+
+Preserved failed setup evidence: initial helper response-type error; occupied disposable PostgreSQL port; Chromium cannot read an empty 204 body via response.text(). Fixed test harness issues without changing production code or weakening status/payload assertions. Isolated native databases, generated credentials, mail logs and traces remain ignored.
+
+Operations review independently verifies the body deadline and durable cross-tab queue fix on this #144 head. Its updated behavior-based regression tests still fail on the original defective heads. See SCRUM-282's current report.
+
+**Still blocked on accepted integration:** develop's Driver Today still imports sample runs. Majd must finish #144's remaining production work, integrate accepted replay #155 once ready (the replay client is still null), verify authorization-expiry/phone/offline flows, obtain review and merge through repository rules. Only then rerun the same 65 tests on integrated HEAD and required CI, and complete #148. Candidate passes do not make this PR ready. Jira stays In Progress; #148 stays a draft.
+
+The final browser source ran as an immutable content-addressed overlay in `SCRUM-250-PR144-review-20261112-v2`; candidate and accepted-backend tracked status remained clean before/after. Both real browser tests (driver candidate, separate Parent production test) applied all 10 Flyway migrations through V10. Generated credentials were cleaned up.
+
+One full-regression attempt hit two Vitest worker-start timeouts under parallel local workload; the log is retained. With other full-suite runs finished, the complete rerun executed all 59 files/824 tests and retained only the genuine sample-client failure. No test timeout or assertion was weakened.
+
+Evidence: ignored `tmp/SCRUM-250-20261112/` and the exact detached candidate's dated/archived Playwright artifacts; prior evidence preserved.
+
+
 ## Follow-up verification — 10 November 2026
 
 Accepted base: develop `8d62167fe2439843187218cabc40419304bd8d40`, including merged SCRUM-249 / PR #147. Preserved this worktree/branch, all 65 independent acceptance cases, original commits and historical evidence. No Majd production change was modified or merged. PR #144 remains a draft at `d890429ab09e24869cf3d389c7bad3776927332a`.

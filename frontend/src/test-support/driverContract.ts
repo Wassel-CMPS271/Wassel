@@ -20,6 +20,7 @@ export function student(position = 1, changes: Partial<RunStop> = {}): RunStop {
 export function run(changes: Partial<Run> = {}): Run {
   const stops = changes.stops ?? [student()];
   return {
+    ...{ locationSharing: false },
     id: "50000000-0000-4000-8000-000000000001", date: "2026-10-30",
     direction: "MORNING", state: "IN_PROGRESS", schoolTime: "08:00",
     startedAt: changes.state === "NOT_STARTED" ? null : instant,
