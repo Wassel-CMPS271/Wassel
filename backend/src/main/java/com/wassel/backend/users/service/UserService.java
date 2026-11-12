@@ -78,6 +78,12 @@ public class UserService {
 		return userRepository.findById(userId);
 	}
 
+	/** The user, only if they belong to this school: for reads made on behalf of a school's own screens. */
+	@Transactional(readOnly = true)
+	public Optional<User> findInSchool(UUID schoolId, UUID userId) {
+		return userRepository.findBySchoolIdAndId(schoolId, userId);
+	}
+
 	/** Accounts are only created here and in createInvitedUser: emails are stored lowercase, which login relies on. */
 	@Transactional
 	public User createUser(String email, String rawPassword, Role role, UUID schoolId) {
