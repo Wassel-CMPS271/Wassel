@@ -13,6 +13,7 @@ import com.wassel.backend.auth.exception.InvalidCredentialsException;
 import com.wassel.backend.auth.exception.InvalidPasswordTokenException;
 import com.wassel.backend.auth.exception.LoginExpiredException;
 import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
+import com.wassel.backend.inbox.exception.InboxEventNotFoundException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
@@ -307,6 +308,12 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(AddressRequestNotFoundException.class)
 	public ProblemDetail handleAddressRequestNotFound(AddressRequestNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	@ExceptionHandler(InboxEventNotFoundException.class)
+	public ProblemDetail handleInboxEventNotFound(InboxEventNotFoundException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}

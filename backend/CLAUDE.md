@@ -512,6 +512,19 @@ that's the structure this codebase moved away from.
   sent lower case, like a student's; the `status` filter is parsed in the controller, an unknown one a 400 on `status`.
   Known limits are in the contract: a manual pin stays when the request has none, a request stays with the parent who
   sent it after a re-link, no withdrawing and no notification.
+- `inbox` — a parent's inbox of what happened to their child on a run (SCRUM-267): `GET /api/parent/inbox?unread=`,
+  `GET .../unread-count`, `POST .../{id}/read`, `POST .../read-all`. Shapes and rules are in `docs/contracts/inbox.md`.
+  Its own module (table `inbox_events`, migration V12, no foreign keys); nothing depends on it and `runs` does not import
+  it. `RunService.confirm` publishes `runs.event.ConfirmationRecordedEvent` (status and direction as text, so a listener
+  imports no runs entity) **only when the confirmation row was newly inserted** (`ConfirmationRepository.insertIfMissing`
+  now returns the row count), and `InboxService.recordConfirmation` listens in that same transaction: the confirmation
+  and its entry exist together or not at all, which also means a failing listener would fail the driver's tap. The entry
+  copies the parent linked to the child at that moment, the child's name and the run's direction; a child with no parent
+  makes none. A unique key on run + student + type, with `INSERT ... ON CONFLICT DO NOTHING`, keeps a replay from making
+  a second entry. Reading is scoped by school and parent in every statement; marking read is a conditional
+  `UPDATE ... WHERE read_at IS NULL`, so a repeat keeps the first time, and another parent's entry is the same 404 as an
+  unknown one. The list is the newest 50 (there is no paging or clean-up yet); the unread count is not limited to them.
+  Selecting which entries a parent receives and late alerts are SCRUM-268.
 
 ## Where things go
 
