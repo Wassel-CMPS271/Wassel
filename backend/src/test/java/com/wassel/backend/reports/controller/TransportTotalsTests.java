@@ -241,6 +241,21 @@ class TransportTotalsTests extends RunCriteriaSupport {
 	}
 
 	@Test
+	void anEmptyFromOrToIsNotGivenAndIsNotAMalformedDate() throws Exception {
+		// The contract: an empty value is the same as leaving the parameter out (SCRUM-266 asked, so it is pinned).
+		String today = totalsOk("");
+		assertEquals(today, totalsOk("?from="));
+		assertEquals(today, totalsOk("?to="));
+		assertEquals(today, totalsOk("?from=&to="));
+		assertEquals(totalsOk("?from=2026-11-06"), totalsOk("?from=2026-11-06&to="));
+		assertEquals(200, export("?from=").getStatus());
+		assertEquals(200, export("?from=2026-11-06&to=").getStatus());
+		// Anything else that is not a date is still refused, also next to an empty one.
+		assertEquals(400, totals("?from=&to=yesterday").getStatus());
+		assertEquals(400, totals("?from=%20").getStatus(), "a blank that is not empty is not a date");
+	}
+
+	@Test
 	void aMalformedDateIsRefused() throws Exception {
 		assertEquals(400, totals("?from=yesterday").getStatus());
 		assertEquals(400, totals("?from=2026-11-04&to=11/05/2026").getStatus());
