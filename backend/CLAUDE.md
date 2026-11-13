@@ -657,6 +657,15 @@ spy each make a distinct Spring context on the shared test database; if "too man
 executable). Report and bugs:
 `docs/testing/SCRUM-236/`.
 
+**Independent tests of Hashem's Sprint 4 work (SCRUM-272, by Moustafa)**, written from the tickets and `docs/contracts/runs.md`, not
+from the authors' own suites: `LiveLocationCriteriaTests` (261), `LiveEtaCriteriaTests` (262), `OfflineReplayCriteriaTests` (263) and
+`DriverReassignmentCriteriaTests` (264), all in `runs/controller`, on `common/LiveRunCriteriaSupport` (a started three-stop trip, the
+location calls, what a parent and the head read, `together` to release requests at the same instant) over `RunCriteriaSupport`. The
+suites for the three PRs that were still open compile on `develop` and switch themselves on through `common/PendingFeature` when a
+class their PR adds is on the classpath (`LiveEta`, `ConfirmationKey`, `RunReassignment`), or with `-Dpending.SCRUM-26x=true`; delete that
+gate from a suite when its feature has merged. One finding is kept behind `-Dknown-bug.SCRUM-261-coercion=true` (a text for a number,
+or `"true"` and `1` for consent, are converted). Report and bugs: `docs/testing/SCRUM-272/`.
+
 Tests mirror the main package structure: a test for
 `main/java/com/wassel/backend/schools/controller/SchoolSettingsController.java`
 lives at `test/java/com/wassel/backend/schools/controller/SchoolSettingsControllerTests.java`.
