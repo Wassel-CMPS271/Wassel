@@ -160,6 +160,8 @@ class RoleAccessMatrixTests {
 		TABLE.put("PUT /api/driver/runs/{runId}/location", Access.DRIVER_ONLY);
 		TABLE.put("GET /api/head-of-transport/runs/locations", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("GET /api/head-of-transport/runs", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("POST /api/head-of-transport/runs/{runId}/reassignments", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("GET /api/head-of-transport/runs/{runId}/reassignments", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("GET /api/head-of-transport/absences", Access.HEAD_OF_TRANSPORT_ONLY);
 
 		// parent (SCRUM-238)
@@ -209,6 +211,8 @@ class RoleAccessMatrixTests {
 				+ "\"phone\":\"+961 3 123 456\",\"email\":\"driver@wassel.test\"}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/drivers/{id}/vehicle", "{\"vehicleId\":\"" + SOME_ID + "\"}");
 		VALID_BODIES.put("PUT /api/driver/runs/{runId}/students/{studentId}/confirmation", "{\"status\":\"PICKED_UP\"}");
+		VALID_BODIES.put("POST /api/head-of-transport/runs/{runId}/reassignments",
+				"{\"driverId\":\"" + SOME_ID + "\",\"fromDriverId\":\"" + SOME_ID + "\"}");
 		VALID_BODIES.put("PUT /api/driver/runs/{runId}/location-sharing", "{\"enabled\":true}");
 		VALID_BODIES.put("PUT /api/driver/runs/{runId}/location",
 				"{\"latitude\":33.9,\"longitude\":35.5,\"accuracyMeters\":10}");

@@ -4,6 +4,7 @@ import com.wassel.backend.drivers.dto.DriverResponse;
 import com.wassel.backend.drivers.service.DriverService;
 import com.wassel.backend.routes.dto.AssignStudentRequest;
 import com.wassel.backend.routes.dto.ChildRouteInfo;
+import com.wassel.backend.routes.dto.DriverReassignment;
 import com.wassel.backend.routes.dto.DriverRouteResponse;
 import com.wassel.backend.routes.dto.DriverRouteStop;
 import com.wassel.backend.routes.dto.ProposalOrderResponse;
@@ -24,6 +25,7 @@ import com.wassel.backend.routes.exception.ActiveRunConflictException;
 import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteCapacityExceededException;
+import com.wassel.backend.routes.exception.RouteDriverChangedException;
 import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.routes.exception.RouteOptimizationConflictException;
 import com.wassel.backend.routes.repository.RouteProposalRepository;
@@ -466,6 +468,54 @@ public class RouteService {
 		return result;
 	}
 
+	/**
+	 * Gives the route to another driver, for a run's reassignment (SCRUM-264). Joins the caller's transaction, which
+	 * has locked the route's run rows first (run rows, then this route row). The route's current driver must be
+	 * {@code fromDriverId}, unless it already is {@code toDriverId}: then nothing changes, so a retry is harmless.
+	 * Unlike {@link #editRoute} it never asks {@code ActiveRunGuard}: changing the driver mid-run is the point. The
+	 * replacement must be active and on no other route; the vehicle stays.
+	 */
+	@Transactional
+	public DriverReassignment reassignDriver(UUID schoolId, UUID routeId, UUID fromDriverId, UUID toDriverId) {
+		Route route = findLockedOwned(schoolId, routeId);
+		DriverResponse current = driverService.getOwnedDriver(schoolId, route.getDriverId());
+		if (toDriverId.equals(current.id())) {
+			return new DriverReassignment(RouteDriverSummary.of(current), RouteDriverSummary.of(current));
+		}
+		if (!fromDriverId.equals(current.id())) {
+			throw new RouteDriverChangedException("The driver of this run is now %s %s. Reload and try again."
+					.formatted(current.firstName(), current.lastName()));
+		}
+		DriverResponse replacement = driverService.getOwnedDriver(schoolId, toDriverId);
+		if ("deactivated".equals(replacement.status())) {
+			throw new RouteAssignmentConflictException("driverId", DRIVER_DEACTIVATED_MESSAGE);
+		}
+		if (!"active".equals(replacement.status())) {
+			throw new RouteAssignmentConflictException("driverId", "Driver has not set up their account yet.");
+		}
+		findByDriver(schoolId, toDriverId, routeId).ifPresent(taken -> {
+			throw new RouteAssignmentConflictException("driverId",
+					"Driver is already on route \"%s\".".formatted(taken.getName()));
+		});
+		try {
+			routeRepository.updateDriverId(schoolId, routeId, toDriverId);
+		} catch (DataIntegrityViolationException e) {
+			// Only the driver is written, so only the driver's unique key can be the race. Anything else is a bug:
+			// it stays a 500, and is not reported as a vehicle problem.
+			if (!violatesDriverKey(e)) {
+				throw e;
+			}
+			throw lostRace(e);
+		}
+		return new DriverReassignment(RouteDriverSummary.of(current), RouteDriverSummary.of(replacement));
+	}
+
+	/** Who drives the route as stored now, for a run to re-check under its lock (SCRUM-264). No road-provider wait. */
+	@Transactional(readOnly = true)
+	public Optional<UUID> findDriverIdOfRoute(UUID schoolId, UUID routeId) {
+		return routeRepository.findDriverIdBySchoolIdAndId(schoolId, routeId);
+	}
+
 	private VehicleResponse requireActiveVehicle(UUID schoolId, UUID vehicleId) {
 		VehicleResponse vehicle = vehicleService.getOwnedVehicle(schoolId, vehicleId);
 		if (!vehicle.isActive()) {
@@ -489,10 +539,14 @@ public class RouteService {
 	 * The other route's name is not known here, unlike the message {@code checkNoConflict} gives.
 	 */
 	private RouteAssignmentConflictException lostRace(DataIntegrityViolationException e) {
-		String cause = String.valueOf(NestedExceptionUtils.getMostSpecificCause(e).getMessage()).toLowerCase();
-		return cause.contains("uq_routes_school_driver")
+		return violatesDriverKey(e)
 				? new RouteAssignmentConflictException("driverId", "Driver is already on another route.")
 				: new RouteAssignmentConflictException("vehicleId", "Vehicle is already on another route.");
+	}
+
+	private static boolean violatesDriverKey(DataIntegrityViolationException e) {
+		return String.valueOf(NestedExceptionUtils.getMostSpecificCause(e).getMessage()).toLowerCase()
+				.contains("uq_routes_school_driver");
 	}
 
 	/** {@code excludedRouteId} is null for create (no route to exclude yet) or the route being edited. */

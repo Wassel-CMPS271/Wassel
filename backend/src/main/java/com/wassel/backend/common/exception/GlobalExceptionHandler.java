@@ -22,6 +22,7 @@ import com.wassel.backend.routes.exception.ActiveRunConflictException;
 import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteCapacityExceededException;
+import com.wassel.backend.routes.exception.RouteDriverChangedException;
 import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.routes.exception.RouteOptimizationConflictException;
 import com.wassel.backend.runs.exception.ConfirmationConflictException;
@@ -248,6 +249,13 @@ public class GlobalExceptionHandler {
 	// A plain detail, as the runs contract has it: it names the run (or the child on a bus) and what to wait for.
 	@ExceptionHandler(ActiveRunConflictException.class)
 	public ProblemDetail handleActiveRunConflict(ActiveRunConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	// A plain detail naming the route's current driver, as the runs contract has it for a reassignment.
+	@ExceptionHandler(RouteDriverChangedException.class)
+	public ProblemDetail handleRouteDriverChanged(RouteDriverChangedException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
 	}

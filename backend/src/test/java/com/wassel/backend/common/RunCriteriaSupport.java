@@ -149,6 +149,11 @@ public abstract class RunCriteriaSupport {
 	protected record Bus(UUID driverUserId, UUID driverId, UUID vehicleId, String routeId) {
 	}
 
+	/** The same route and vehicle, now driven by another driver. */
+	protected static Bus drivenBy(Bus bus, UUID userId, UUID driverId) {
+		return new Bus(userId, driverId, bus.vehicleId(), bus.routeId());
+	}
+
 	protected UUID aDriverAccount() {
 		return userRepository.save(User.builder().email("driver-" + UUID.randomUUID() + "@wassel.test")
 				.passwordHash("x").role(Role.DRIVER).schoolId(school).build()).getId();
