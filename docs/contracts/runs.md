@@ -9,6 +9,8 @@ The JSON examples live in [`samples/runs/`](samples/runs). They are the source o
 | [`driver-today.json`](samples/runs/driver-today.json) | `DriverDay` | Karim's Wednesday: the Hamra morning run in progress (a pickup, a not present, an absent student to skip, the next stop) and the afternoon run not started | driver Today screen |
 | [`driver-today-holiday.json`](samples/runs/driver-today-holiday.json) | `DriverDay` | A holiday: no runs | driver Today screen |
 | [`run-finished.json`](samples/runs/run-finished.json) | `Run` | Walid's Verdun run, finished. This is also the answer to start, end and confirm. A stop with no pin | driver screen, maps button |
+| [`confirmation-request.json`](samples/runs/confirmation-request.json) | request body | A confirmation sent with a `clientRequestId`, as the offline queue replays it (SCRUM-263) | driver offline queue |
+| [`confirmation-key-reused.json`](samples/runs/confirmation-key-reused.json) | `ProblemDetail` | The 422 answer when a `clientRequestId` is reused for a different confirmation (SCRUM-263) | driver offline queue |
 | [`hot-runs.json`](samples/runs/hot-runs.json) | `RunsDay` | A half-day: six runs in all three states | head of transportation Today screen |
 | [`hot-absences.json`](samples/runs/hot-absences.json) | `AbsentStudent[]` | Two students absent on that day, one with no route | head of transportation Today screen |
 | [`parent-children.json`](samples/runs/parent-children.json) | `Child[]` | A child with a route and one with none. The child with a route is absent on a morning run that is in progress, so `todayRun.stopsLeft` is null (SCRUM-237) | parent home |
@@ -133,7 +135,7 @@ An absence seen from the school's side, for the date asked: `absenceId`, `studen
 | GET | `/api/driver/runs/today` | DRIVER | | 200 `DriverDay` | Hashem, SCRUM-233 (absent flags: Moustafa, SCRUM-239) |
 | POST | `/api/driver/runs/{runId}/start` | DRIVER | none | 200 `Run` | Hashem, SCRUM-234 |
 | POST | `/api/driver/runs/{runId}/end` | DRIVER | none | 200 `Run` | Hashem, SCRUM-234 |
-| PUT | `/api/driver/runs/{runId}/students/{studentId}/confirmation` | DRIVER | `{ status }` | 200 `Run` | Hashem, SCRUM-235 |
+| PUT | `/api/driver/runs/{runId}/students/{studentId}/confirmation` | DRIVER | `{ status, clientRequestId? }` | 200 `Run` | Hashem, SCRUM-235, SCRUM-263 |
 | GET | `/api/parent/children` | PARENT | | 200 `Child[]` | Moustafa, SCRUM-240 (`todayRun`: Hashem, SCRUM-237) |
 | GET | `/api/parent/children/{studentId}/absences` | PARENT | | 200 `Absence[]`, upcoming only | Moustafa, SCRUM-238 |
 | POST | `/api/parent/children/{studentId}/absences` | PARENT | `{ fromDate, toDate? }` | 201 `Absence`; 200 with the existing one on an exact repeat | Moustafa, SCRUM-238 |
@@ -197,6 +199,31 @@ Only **today's** runs count here: a run left `IN_PROGRESS` on an earlier date ne
 - A student's **latest** confirmation is the highest status they have (`NOT_PRESENT` < `PICKED_UP` < `DROPPED_OFF`), not the newest record.
 - Checks run in this order: the run is one of the driver's today (404), the student is a stop of the run or already confirmed on it (404), the run is `IN_PROGRESS` (409), then the table (409).
 - A confirmation and a move or end of the same run never interleave: the server serialises them per run.
+
+### Offline replay and `clientRequestId` (SCRUM-263)
+
+A driver's device that was offline queues each tap and sends it again later through **the same endpoint**, one request per tap, with a `clientRequestId` ([`confirmation-request.json`](samples/runs/confirmation-request.json)). There is no batch endpoint: the HTTP status of each request is the result of that item.
+
+1. `clientRequestId` is **optional**. It is a UUID string the device makes **once per tap** and sends unchanged on every retry of that tap. Without it a request behaves as it did before, so online screens need no change.
+2. **Scope: one driver.** Two drivers may send the same value without affecting each other. A key is kept indefinitely.
+3. **Order of checks with a key.** The run is one of the driver's today (404, unchanged). Then **a key this driver already used**: the same `runId`, `studentId` and `status` answers **200 with the run as it is now**, writes nothing and skips the remaining checks, so it is 200 even after End run or after a later status. A different `runId`, `studentId` or `status` is **422**. Otherwise the checks above run as usual (404 student, 409 state, 409 table). The key is stored only when the answer is 200.
+4. A refused request (404 or 409) stores no key, so a retry is judged afresh against the state at that moment.
+5. **One business effect.** Each status is one record per student and run, so any number of retries, or of keys for one tap (a double tap offline makes two), leave one record, with the first time, one step of progress and, once the parent inbox lands, one inbox entry.
+6. The time is still the server's: a confirmation replayed later is timed **when it arrives** (see [Known limits](#known-limits)).
+7. Confirmations need the run `IN_PROGRESS`, so a client **sends its queued confirmations before End run**. A tap first sent after End run is 409 like any confirmation, including a **new** key for a status already recorded (a double tap whose second key was never sent before End run): the confirmation is safe, but the client should not show it as a failure. A run from an earlier day is 404, so the client drops earlier-day items without sending them.
+
+What the client does with each answer:
+
+| Answer | Meaning | Client |
+|---|---|---|
+| 200 | recorded now, already recorded, or this key was already applied | done, drop the item |
+| 404 | not your run today (another driver's or school's, unknown, an earlier day, a holiday, reassigned), or the student is not on the run | drop it, refetch the day, show `detail` |
+| 409 | the run is not `IN_PROGRESS`, or the table refuses the move | drop it, refetch the day, show `detail` |
+| 422 | `clientRequestId` already used for a different confirmation (a client bug) | rejected, never retried automatically |
+| 400 | malformed body (an unknown `status`, a `clientRequestId` that is not a UUID) | rejected |
+| 401 | signed out | pause the queue and keep the items |
+| 403 | not a driver | rejected |
+| network error, timeout, 5xx, 429 | not processed, or the answer was lost | retry later with the **same** `clientRequestId` |
 
 ### Live location
 
@@ -280,8 +307,9 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 | Report an absence that overlaps another (not an exact repeat) | 409 | `errors: { fromDate: message }`, naming the absence it overlaps |
 | Cancel an absence that ended before today | 409 | `detail` |
 | Absence `fromDate` in the past, or `toDate` before `fromDate` | 400 | `errors: { fromDate: message }` or `{ toDate: message }` |
+| A `clientRequestId` already used for a different confirmation | 422 | `detail` ([`confirmation-key-reused.json`](samples/runs/confirmation-key-reused.json)) |
 | Missing `status` or `fromDate` | 400 | `errors: { status: message }` or `{ fromDate: message }` |
-| An unknown `status`, a date that is not `"YYYY-MM-DD"`, a body that is not JSON | 400 | `detail: "Malformed request body"` |
+| An unknown `status`, a `clientRequestId` that is not a UUID, a date that is not `"YYYY-MM-DD"`, a body that is not JSON | 400 | `detail: "Malformed request body"` |
 | An id in the path, or the `date` parameter, that does not parse | 400 | `detail: "Invalid request parameter"` |
 
 ## Known limits
@@ -295,6 +323,9 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 - **The planned time only.** `expectedPickupTime` does not follow the bus. A late bus is visible through the run's state and the stops-left count.
 - **A run nobody has opened reads as not started.** The parent's `todayRun` shows a direction with no run yet as `NOT_STARTED`. If a driver never opens the afternoon runs, the parent keeps seeing the afternoon run as not started.
 - **A run started and never ended** stays `IN_PROGRESS` for its date.
+- **Replayed confirmations carry the sync time** (SCRUM-263). The server never reads a client time, so a tap made offline shows, and (with SCRUM-267) notifies the parent, at the moment it reaches the server. A client time with a clamp is a separate ticket (SCRUM-265).
+- **A driver reassigned before syncing loses those taps** (404), and a tap first sent after End run is 409. There is no grace window. An unsynced offline tap does not stop the head from moving that child.
+- **Keys are never pruned.** One small row per tap.
 - **No history, no throttle.** Only the latest position is kept, and the server does not limit how often a driver may send one. A trail, or a limit, would be a new rule.
 
 ## Interfaces (backend)
@@ -302,7 +333,7 @@ The same `ProblemDetail` the other modules return, so `request()` in `frontend/s
 Reach other modules through their **services** only (`backend/CLAUDE.md`). What the new code needs and does not have yet, so each owner adds it to the owning module in their own PR:
 
 - `routes` declares `ActiveRunGuard` (is a student on a bus, is a route's run in progress) and calls it before moving a student or changing a driver or vehicle; `runs` implements it. Routes never imports runs, and the implementation is its own class, not `RunService`, so the two do not need each other's beans.
-- `runs` (Hashem): the run and confirmation tables, `RunService`. Reads `RouteService.findRouteOfDriver` and `listRoutes` (the driver's route with its stops and arrival times; every route), `DriverService.findDriverIdForUser` (the driver of a signed-in user), `StudentService` (a confirmed student who has left the route), `SchoolSettingsService.getTimes` (`schoolTime`), `HolidayService.isHoliday` / `HalfDayService.isHalfDay` (the day's type) and, from SCRUM-239, `AbsenceService`.
+- `runs` (Hashem): the run, confirmation and `confirmation_keys` tables (the replay keys, SCRUM-263), `RunService`. Reads `RouteService.findRouteOfDriver` and `listRoutes` (the driver's route with its stops and arrival times; every route), `DriverService.findDriverIdForUser` (the driver of a signed-in user), `StudentService` (a confirmed student who has left the route), `SchoolSettingsService.getTimes` (`schoolTime`), `HolidayService.isHoliday` / `HalfDayService.isHalfDay` (the day's type) and, from SCRUM-239, `AbsenceService`.
 - `absences` (Moustafa): the absence table, `AbsenceService`. Reads `StudentService` (which children a parent has, as a lookup it does not have yet) and, for the head of transportation's list, `RouteService` (a student's route and position, as a lookup it does not have yet). Never reads `runs`.
 - The new 404 and 409 exceptions need entries in the shared `GlobalExceptionHandler` (otherwise they answer 500). Hashem and Moustafa both edit it, so the second to merge rebases onto the first.
 - The parent view is **its own module** (called `parent`), because it reads `runs` (SCRUM-237, `RunService.todayRunStatus`: one call for all of a parent's children, with no road-provider call) and `runs` already reads `routes`; it would be a cycle inside `routes` or `students`. Nothing depends on it.

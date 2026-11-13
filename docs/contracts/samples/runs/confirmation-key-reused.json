@@ -1,0 +1,6 @@
+{
+  "title": "Unprocessable Content",
+  "status": 422,
+  "detail": "clientRequestId 6f1c2a4e-8b3d-4e5f-9a7b-1c2d3e4f5a6b was already used for a different confirmation",
+  "instance": "/api/driver/runs/50000000-0000-4000-8000-000000000001/students/40000000-0000-4000-8000-000000000002/confirmation"
+}
