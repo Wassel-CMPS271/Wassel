@@ -545,7 +545,9 @@ that's the structure this codebase moved away from.
   `notification_preferences` (migration V15, provisional: renumber to the next free number at merge), made by the first save
   with one `INSERT ... ON CONFLICT DO UPDATE`; a parent with no row has the defaults, supplied by
   `NotificationPreferencesResponse.DEFAULTS` (everything on, 10 minutes), so reading never writes. `PUT` replaces all five
-  choices (`lateAfterMinutes` 5 to 60, also a table check). `InboxService.recordConfirmation` asks
+  choices (`lateAfterMinutes` 5 to 60, also a table check). Its body is read strictly (`dto/StrictScalar`: a boolean or an
+  integer exactly as JSON writes it, so `"true"`, `1`, `"10"` and `10.5` are a 400): Jackson converts those by default, and
+  turning that off is left to this request, because doing it for the application would change every other endpoint. `InboxService.recordConfirmation` asks
   `NotificationPreferenceService.receives` before it inserts, so a type that is off makes no entry (nothing already there is
   touched, and the driver's tap is unaffected). Late alerts: `config/LateAlertJob` (`@Scheduled` every minute after the last
   run, not in the `test` profile, like `LocationPurge`) calls `LateAlertService.raise`, which asks

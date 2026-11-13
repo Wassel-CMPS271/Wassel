@@ -106,6 +106,35 @@ class NotificationPreferencesTests extends RunCriteriaSupport {
 	}
 
 	@Test
+	void aValueOfTheWrongTypeIsRefusedNotConvertedAndNothingIsSaved() throws Exception {
+		UUID parent = aParent();
+		assertEquals(200, save(parent, body(true, false, true, false, 20)).getStatus());
+
+		// Jackson would turn each of these into a valid value (10, 10, true, true, false) unless coercion is off.
+		List<String> accepted = new java.util.ArrayList<>();
+		for (String refused : List.of(
+				"{\"pickedUp\":true,\"droppedOff\":true,\"notPresent\":true,\"late\":true,\"lateAfterMinutes\":10.5}",
+				"{\"pickedUp\":true,\"droppedOff\":true,\"notPresent\":true,\"late\":true,\"lateAfterMinutes\":10.0}",
+				"{\"pickedUp\":true,\"droppedOff\":true,\"notPresent\":true,\"late\":true,\"lateAfterMinutes\":\"10\"}",
+				"{\"pickedUp\":\"true\",\"droppedOff\":true,\"notPresent\":true,\"late\":true,\"lateAfterMinutes\":10}",
+				"{\"pickedUp\":1,\"droppedOff\":true,\"notPresent\":true,\"late\":true,\"lateAfterMinutes\":10}",
+				"{\"pickedUp\":true,\"droppedOff\":0,\"notPresent\":true,\"late\":true,\"lateAfterMinutes\":10}",
+				"{\"pickedUp\":true,\"droppedOff\":true,\"notPresent\":\"false\",\"late\":true,\"lateAfterMinutes\":10}",
+				"{\"pickedUp\":true,\"droppedOff\":true,\"notPresent\":true,\"late\":\"yes\",\"lateAfterMinutes\":10}",
+				"{\"pickedUp\":true,\"droppedOff\":true,\"notPresent\":true,\"late\":true,\"lateAfterMinutes\":true}",
+				"{\"pickedUp\":true,\"droppedOff\":true,\"notPresent\":true,\"late\":true,\"lateAfterMinutes\":1e1}",
+				"{\"pickedUp\":true,\"droppedOff\":true,\"notPresent\":true,\"late\":true,\"lateAfterMinutes\":99999999999}",
+				"{\"pickedUp\":[true],\"droppedOff\":true,\"notPresent\":true,\"late\":true,\"lateAfterMinutes\":10}")) {
+			MockHttpServletResponse response = save(parent, refused);
+			if (response.getStatus() != 400) {
+				accepted.add(refused + " -> " + response.getStatus());
+			}
+		}
+		assertEquals(List.of(), accepted, "bodies of the wrong type that were not refused");
+		assertChoices(read(parent), true, false, true, false, 20);
+	}
+
+	@Test
 	void everyChoiceMustBeGivenAndNothingIsSavedByARefusedRequest() throws Exception {
 		UUID parent = aParent();
 		assertEquals(200, save(parent, body(true, false, true, false, 20)).getStatus());
