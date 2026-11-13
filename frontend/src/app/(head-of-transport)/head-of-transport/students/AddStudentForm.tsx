@@ -184,7 +184,7 @@ export function AddStudentForm({ onAdd }: AddStudentFormProps) {
               transition={{ duration: 0.2, ease: "easeOut" }}
             >
               <Card>
-                <form onSubmit={handleSubmit} noValidate aria-labelledby="add-student-heading">
+                <form method="post" onSubmit={handleSubmit} noValidate aria-labelledby="add-student-heading">
                   <h2
                     id="add-student-heading"
                     className="text-lg font-semibold"

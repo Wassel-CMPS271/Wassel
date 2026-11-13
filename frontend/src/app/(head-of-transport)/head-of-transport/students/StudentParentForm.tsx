@@ -49,7 +49,7 @@ export function StudentParentForm({ student, onLinked, onBusyChange }: {
     finally { busy.current = false; setSaving(false); onBusyChange(false); }
   }
 
-  return <form onSubmit={submit} noValidate aria-label="Link parent" className="flex flex-col" style={{ gap: spacing.sm, marginTop: spacing.lg }}>
+  return <form method="post" onSubmit={submit} noValidate aria-label="Link parent" className="flex flex-col" style={{ gap: spacing.sm, marginTop: spacing.lg }}>
     <h3 className="text-lg font-semibold">Parent account</h3>
     <p style={{ color: darkTheme.text.secondary }}>Current parent: {current?.email ?? (student.parentUserId ? `Unavailable account (${student.parentUserId})` : "Not assigned")}</p>
     {loading && <p role="status">Loading parents…</p>}

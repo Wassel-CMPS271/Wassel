@@ -59,7 +59,7 @@ export function HolidayForm({ onAdd }: HolidayFormProps) {
 
   return (
     <Card>
-      <form onSubmit={handleSubmit} noValidate aria-labelledby="add-holiday-heading">
+      <form method="post" onSubmit={handleSubmit} noValidate aria-labelledby="add-holiday-heading">
         <h2
           id="add-holiday-heading"
           className="text-lg font-semibold"
