@@ -657,6 +657,24 @@ spy each make a distinct Spring context on the shared test database; if "too man
 executable). Report and bugs:
 `docs/testing/SCRUM-236/`.
 
+**Independent tests of Moustafa's Sprint 4 work (SCRUM-266, by Hashem)**, from the tickets and `docs/contracts/` (inbox,
+address-requests, transport-totals and their samples), not from `ParentInboxTests`, `AddressRequestControllerTests`,
+`TransportTotalsTests` or the 268 suites: `ParentInboxCriteriaTests` (267), `AddressRequestCriteriaTests` and
+`AddressRequestGeocodingCriteriaTests` (269), `TransportTotalsCriteriaTests` (271), and `NotificationPreferencesCriteriaTests`
+and `LateAlertCriteriaTests` (268). The inbox, totals and late-alert classes extend `common/RunCriteriaSupport` (a fresh school per
+test, runs driven through the real driver and head endpoints, entries made only by the driver's confirmation); the address-request
+classes extend `CriteriaTestSupport`. Nothing under `src/main` changed and the only addition under `common/` is the 268 gate; the classes copy `inParallel` privately
+(`TODO: use common.Parallel once #156 merges`). Address-request students always carry a manual pin so an approval never reaches the real
+Nominatim; `AddressRequestGeocodingCriteriaTests` alone replaces `Geocoder` with `@MockitoBean`, which costs one more cached Spring
+context (if "too many clients" appears, see the SCRUM-236 note above). The two 268 classes have no compile-time reference to PR
+#158's code and switch themselves on through `common/Scrum268Gate` when the five classes #158 adds to `inbox` are on the classpath
+(or with `-Dpending.SCRUM-268=true`, which on plain `develop` makes them fail, to show they can); if only some of the five are there
+(a class renamed before the merge) the gate throws and both suites fail loudly instead of skipping for ever (`Scrum268GateTests`). The late job has no HTTP trigger, so they call
+its `raise()` through the application context by name, and a missing class, bean or method fails the test instead of skipping it.
+When #158 merges, delete `Scrum268Gate`, `Scrum268GateTests` and the `@EnabledIf` line in both classes, and check that both report `Skipped: 0`. Two known findings stay as tests behind
+`-Dknown-bug.SCRUM-268-coercion=true` (wrong-typed preference values are accepted) and `-Dknown-bug.SCRUM-271-empty-date=true` (an
+empty `?from=` counts as omitted). Run one with `sh ./mvnw test -Dtest=<Class>`. Report and bugs: `docs/testing/SCRUM-266/`.
+
 Tests mirror the main package structure: a test for
 `main/java/com/wassel/backend/schools/controller/SchoolSettingsController.java`
 lives at `test/java/com/wassel/backend/schools/controller/SchoolSettingsControllerTests.java`.
