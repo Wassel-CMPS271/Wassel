@@ -18,6 +18,7 @@ import com.wassel.backend.runs.dto.LocationRequest;
 import com.wassel.backend.runs.dto.LocationStatus;
 import com.wassel.backend.runs.dto.RunLocationResponse;
 import com.wassel.backend.runs.dto.ConfirmationResponse;
+import com.wassel.backend.runs.dto.DailyRunTotals;
 import com.wassel.backend.runs.dto.DayType;
 import com.wassel.backend.runs.dto.EstimateResponse;
 import com.wassel.backend.runs.dto.NextStopResponse;
@@ -26,12 +27,14 @@ import com.wassel.backend.runs.dto.RunResponse;
 import com.wassel.backend.runs.dto.RunRouteResponse;
 import com.wassel.backend.runs.dto.RunStopResponse;
 import com.wassel.backend.runs.dto.RunsDayResponse;
+import com.wassel.backend.runs.dto.WaitingStop;
 import com.wassel.backend.runs.entity.Confirmation;
 import com.wassel.backend.runs.entity.ConfirmationStatus;
 import com.wassel.backend.runs.entity.Run;
 import com.wassel.backend.runs.entity.RunDirection;
 import com.wassel.backend.runs.entity.RunLocation;
 import com.wassel.backend.runs.entity.RunState;
+import com.wassel.backend.runs.event.ConfirmationRecordedEvent;
 import com.wassel.backend.runs.exception.ConfirmationConflictException;
 import com.wassel.backend.runs.exception.RunNotFoundException;
 import com.wassel.backend.runs.exception.RunStateConflictException;
@@ -46,6 +49,8 @@ import com.wassel.backend.students.dto.StudentResponse;
 import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.users.entity.User;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -65,6 +70,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.BinaryOperator;
 import java.util.UUID;
 import java.util.function.Function;
@@ -80,6 +86,7 @@ import java.util.stream.Stream;
  * request from the {@link Clock}.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class RunService {
 
@@ -109,6 +116,8 @@ public class RunService {
 	private final Clock clock;
 
 	private final TransactionTemplate transactionTemplate;
+
+	private final ApplicationEventPublisher events;
 
 	/**
 	 * Today's two runs of the signed-in driver's route, with stops. Empty when they have no route, or on a holiday.
@@ -224,7 +233,12 @@ public class RunService {
 						: "is " + current) + ", so they cannot be marked " + status);
 			}
 			// The time is read after the lock, so rows are saved in the order the rule saw them.
-			confirmationRepository.insertIfMissing(schoolId, runId, studentId, status.name(), Instant.now(clock));
+			Instant now = Instant.now(clock);
+			// Only a status saved for the first time is an event; listeners run in this transaction (SCRUM-267).
+			if (confirmationRepository.insertIfMissing(schoolId, runId, studentId, status.name(), now) == 1) {
+				events.publishEvent(new ConfirmationRecordedEvent(schoolId, runId, studentId,
+						locked.getDirection().name(), status.name(), now));
+			}
 			return locked;
 		});
 		return driverAnswer(run, route, dayType);
@@ -328,8 +342,78 @@ public class RunService {
 		if (dayTypeOf(schoolId, today) == DayType.HOLIDAY) {
 			return List.of();
 		}
-		List<Run> found = runRepository.findBySchoolIdAndRunDateAndState(schoolId, today, RunState.IN_PROGRESS);
-		// One read per route with a run in progress; a deleted route's run is left out (its read is empty).
+		Instant now = Instant.now(clock);
+		return progressOf(schoolId, today,
+				runRepository.findBySchoolIdAndRunDateAndState(schoolId, today, RunState.IN_PROGRESS), now).stream()
+				.map(progress -> {
+					Run run = progress.run();
+					NextStopResponse next = null;
+					if (!progress.toDo().isEmpty()) {
+						StopResponse stop = progress.toDo().getFirst();
+						next = new NextStopResponse(stop.studentId(), stop.firstName(), stop.lastName(),
+								plannedTime(run.getDirection(), stop), estimateIfLive(progress.bus(), List.of(stop), now));
+					}
+					return new RunLocationResponse(run.getId(), progress.bus().status(), progress.bus().position(),
+							progress.toDo().size(), next);
+				}).toList();
+	}
+
+	/**
+	 * For the inbox's late alerts (SCRUM-268): every child still waiting on a morning run that is in progress today and
+	 * whose stop has a planned time, with that time and the live estimate. It reads every school, which no other read
+	 * here does, so it is a job's call and works through the schools one at a time: a school whose read fails is logged
+	 * and left out, and the next call tries it again. A holiday has no runs to show, as in {@link #locationsToday}; an
+	 * afternoon run has no planned times, so nothing is asked of it.
+	 */
+	public List<WaitingStop> waitingStopsToday() {
+		LocalDate today = LocalDate.now(clock);
+		Map<UUID, List<Run>> bySchool = runRepository
+				.findByRunDateAndStateAndDirection(today, RunState.IN_PROGRESS, RunDirection.MORNING).stream()
+				.collect(Collectors.groupingBy(Run::getSchoolId));
+		List<WaitingStop> waiting = new ArrayList<>();
+		bySchool.forEach((schoolId, runs) -> {
+			try {
+				waiting.addAll(waitingStopsOf(schoolId, today, runs));
+			}
+			catch (RuntimeException e) {
+				log.error("Could not read the waiting stops of school {}; the next call tries again", schoolId, e);
+			}
+		});
+		return waiting;
+	}
+
+	private List<WaitingStop> waitingStopsOf(UUID schoolId, LocalDate today, List<Run> runs) {
+		if (dayTypeOf(schoolId, today) == DayType.HOLIDAY) {
+			return List.of();
+		}
+		Instant now = Instant.now(clock);
+		List<WaitingStop> waiting = new ArrayList<>();
+		for (RunProgress progress : progressOf(schoolId, today, runs, now)) {
+			List<StopResponse> toDo = progress.toDo();
+			// The only place a live estimate is made for every stop: one chain, from a LIVE fix only.
+			List<Instant> arrivals = progress.bus().status() == LocationStatus.LIVE
+					? LiveEta.arrivals(straightLine, progress.bus().position(), toDo, now) : null;
+			for (int i = 0; i < toDo.size(); i++) {
+				LocalTime planned = plannedTime(progress.run().getDirection(), toDo.get(i));
+				if (planned != null) {
+					waiting.add(new WaitingStop(schoolId, progress.run().getId(), toDo.get(i).studentId(),
+							today.atTime(planned).atZone(clock.getZone()).toInstant(),
+							arrivals == null ? null : arrivals.get(i)));
+				}
+			}
+		}
+		return waiting;
+	}
+
+	/** A run in progress with where its bus is and the stops still to do. */
+	private record RunProgress(Run run, BusLocationResponse bus, List<StopResponse> toDo) {
+	}
+
+	/**
+	 * What {@link #locationsToday} and {@link #waitingStopsOf} both need for runs of one school in progress: the bus's
+	 * position and the stops still to do. One read per route; a run of a deleted route is left out (its read is empty).
+	 */
+	private List<RunProgress> progressOf(UUID schoolId, LocalDate today, List<Run> found, Instant now) {
 		Map<UUID, List<StopResponse>> stopsOf = new HashMap<>();
 		found.stream().map(Run::getRouteId).distinct().forEach(routeId ->
 				routeService.findStops(schoolId, routeId).ifPresent(stops -> stopsOf.put(routeId, stops)));
@@ -343,19 +427,9 @@ public class RunService {
 		Map<UUID, List<Confirmation>> confirmed = confirmationsOf(schoolId, inProgress);
 		Set<UUID> absent = absenceService.absentStudentIds(schoolId, stopsOf.values().stream().flatMap(List::stream)
 				.map(StopResponse::studentId).collect(Collectors.toSet()), today);
-		Instant now = Instant.now(clock);
-		return inProgress.stream().map(run -> {
-			BusLocationResponse bus = locate(byRun.get(run.getId()), now);
-			List<StopResponse> toDo = toDo(run.getDirection(), stopsOf.get(run.getRouteId()),
-					confirmed.getOrDefault(run.getId(), List.of()), absent);
-			NextStopResponse next = null;
-			if (!toDo.isEmpty()) {
-				StopResponse stop = toDo.getFirst();
-				next = new NextStopResponse(stop.studentId(), stop.firstName(), stop.lastName(),
-						plannedTime(run.getDirection(), stop), estimateIfLive(bus, List.of(stop), now));
-			}
-			return new RunLocationResponse(run.getId(), bus.status(), bus.position(), toDo.size(), next);
-		}).toList();
+		return inProgress.stream().map(run -> new RunProgress(run, locate(byRun.get(run.getId()), now),
+				toDo(run.getDirection(), stopsOf.get(run.getRouteId()), confirmed.getOrDefault(run.getId(), List.of()),
+						absent))).toList();
 	}
 
 	/**
@@ -402,6 +476,29 @@ public class RunService {
 		}
 		return runLocationRepository.findBySchoolIdAndRunIdIn(schoolId, runs.stream().map(Run::getId).toList()).stream()
 				.filter(RunLocation::isSharing).map(RunLocation::getRunId).collect(Collectors.toSet());
+	}
+
+	/**
+	 * For the {@code reports} module (SCRUM-271): the run figures of each date in the range that has a run or a
+	 * confirmation, from two grouped queries and nothing else (no road time, no roster). A date with neither is not
+	 * in the list; the caller fills it with zeros.
+	 */
+	@Transactional(readOnly = true)
+	public List<DailyRunTotals> dailyTotals(UUID schoolId, LocalDate from, LocalDate to) {
+		Map<LocalDate, long[]> byDate = new TreeMap<>();
+		for (Object[] row : runRepository.countByDate(schoolId, from, to)) {
+			long[] figures = byDate.computeIfAbsent((LocalDate) row[0], date -> new long[5]);
+			figures[0] = ((Number) row[1]).longValue();
+			figures[1] = ((Number) row[2]).longValue();
+		}
+		for (Object[] row : confirmationRepository.riderCountsByDate(schoolId, from, to)) {
+			long[] figures = byDate.computeIfAbsent(LocalDate.parse(row[0].toString()), date -> new long[5]);
+			figures[2] = ((Number) row[1]).longValue();
+			figures[3] = ((Number) row[2]).longValue();
+			figures[4] = ((Number) row[3]).longValue();
+		}
+		return byDate.entrySet().stream().map(entry -> new DailyRunTotals(entry.getKey(), entry.getValue()[0],
+				entry.getValue()[1], entry.getValue()[2], entry.getValue()[3], entry.getValue()[4])).toList();
 	}
 
 	/** One run as the driver sees it, with the confirmations as stored now. */

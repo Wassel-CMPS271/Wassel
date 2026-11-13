@@ -453,7 +453,7 @@ that's the structure this codebase moved away from.
   `arrivalTime` only and is never used to compute the estimate. The head's list now also drops a run whose route has been
   deleted (the contract already said such runs are not listed), and the parent read answers `UNAVAILABLE` if the route goes
   between its reads: `findStops` is empty rather than throwing, because `runs` must not import `routes`' exceptions. Known limits: the estimate runs early (straight lines, no time at stops), a passed but
-  unconfirmed stop still adds a leg, and per-stop lists and a delay value are left out (SCRUM-268 owns lateness).
+  unconfirmed stop still adds a leg, and per-stop lists and a delay value are left out (lateness is the inbox's, SCRUM-268).
 - `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
   of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
   are in `docs/contracts/runs.md` (owned jointly with the `runs` module, SCRUM-232/239); build
@@ -511,6 +511,68 @@ that's the structure this codebase moved away from.
   arrival time from the same `RouteService#schedule` the route's own stops use, one read per distinct route), none when the
   child has no route — the same "no route" treatment `findStudentRoute` (`absences`) gives a
   vanished route.
+- `addressrequests` — a parent asks to change a child's pickup address and the head of transportation decides it
+  (SCRUM-269). Shapes and rules are in `docs/contracts/address-requests.md`. A new module because it has its own table
+  (`address_requests`, migration V11, no foreign keys) and two controllers (`ParentAddressRequestController`,
+  `HeadOfTransportAddressRequestController`); it reads and writes the student only through `StudentService`
+  (`findChildOf`, `getStudent`, `updateAddress`, `updateLocation`), and nothing depends on it. The student's name and
+  address and the parent's email are copied into the request, so it reads the same later. **One pending request per
+  child**: `submit` takes the same per-student advisory lock as absences (`AddressRequestRepository.lockStudent`) before
+  checking for a pending one, with a partial unique index (`status = 'PENDING'`) as the backstop. **A decision takes the
+  request's row lock** (`findLockedBySchoolIdAndId`, like a run's confirmation), so two decisions of one request run
+  one after the other and the second is a 409. `approve` runs in one transaction: it checks the student is active
+  (409, the request stays pending), saves the address through `StudentService.updateAddress` (geocoded unless the student
+  has a manual pin, exactly like the head's own edit) and, if the parent sent a pin, `updateLocation` (a manual pin),
+  then marks the request approved. `reject` never touches the student, so it works for an inactive one too. A parent
+  lists only the requests they sent for their own child. The status is stored as `PENDING`/`APPROVED`/`REJECTED` and
+  sent lower case, like a student's; the `status` filter is parsed in the controller, an unknown one a 400 on `status`.
+  Known limits are in the contract: a manual pin stays when the request has none, a request stays with the parent who
+  sent it after a re-link, no withdrawing and no notification.
+- `inbox` — a parent's inbox of what happened to their child on a run (SCRUM-267): `GET /api/parent/inbox?unread=`,
+  `GET .../unread-count`, `POST .../{id}/read`, `POST .../read-all`. Shapes and rules are in `docs/contracts/inbox.md`.
+  Its own module (table `inbox_events`, migration V12, no foreign keys); nothing depends on it and `runs` does not import
+  it. `RunService.confirm` publishes `runs.event.ConfirmationRecordedEvent` (status and direction as text, so a listener
+  imports no runs entity) **only when the confirmation row was newly inserted** (`ConfirmationRepository.insertIfMissing`
+  now returns the row count), and `InboxService.recordConfirmation` listens in that same transaction: the confirmation
+  and its entry exist together or not at all, which also means a failing listener would fail the driver's tap. The entry
+  copies the parent linked to the child at that moment, the child's name and the run's direction; a child with no parent
+  makes none. A unique key on run + student + type, with `INSERT ... ON CONFLICT DO NOTHING`, keeps a replay from making
+  a second entry. Reading is scoped by school and parent in every statement; marking read is a conditional
+  `UPDATE ... WHERE read_at IS NULL`, so a repeat keeps the first time, and another parent's entry is the same 404 as an
+  unknown one. The list is the newest 50 (there is no paging or clean-up yet); the unread count is not limited to them.
+  Notification preferences and late alerts (SCRUM-268), rules in `docs/contracts/inbox.md`: `GET`/`PUT
+  /api/parent/notification-preferences` (`NotificationPreferencesController`). One row per parent in
+  `notification_preferences` (migration V15, provisional: renumber to the next free number at merge), made by the first save
+  with one `INSERT ... ON CONFLICT DO UPDATE`; a parent with no row has the defaults, supplied by
+  `NotificationPreferencesResponse.DEFAULTS` (everything on, 10 minutes), so reading never writes. `PUT` replaces all five
+  choices (`lateAfterMinutes` 5 to 60, also a table check). Its body is read strictly (`dto/StrictScalar`: a boolean or an
+  integer exactly as JSON writes it, so `"true"`, `1`, `"10"` and `10.5` are a 400): Jackson converts those by default, and
+  turning that off is left to this request, because doing it for the application would change every other endpoint. `InboxService.recordConfirmation` asks
+  `NotificationPreferenceService.receives` before it inserts, so a type that is off makes no entry (nothing already there is
+  touched, and the driver's tap is unaffected). Late alerts: `config/LateAlertJob` (`@Scheduled` every minute after the last
+  run, not in the `test` profile, like `LocationPurge`) calls `LateAlertService.raise`, which asks
+  `RunService.waitingStopsToday` for every child still waiting on a morning run in progress with a planned time (one
+  `WaitingStop` each: the planned moment in the school's zone, and the live estimate for that stop, null unless the position
+  is `LIVE`). `runs` only reads here and knows nothing of lateness; the rule is `LateRule`: the expected time (the estimate,
+  else now) after the planned time plus the parent's minutes. So a stale or missing position never makes a delay, only the
+  clock does. `raise` skips a stop that is not late by the shortest allowed minutes (5) before looking up any parent, then
+  reads the child's parent and choices, and `InboxService.recordLate` inserts a `LATE` entry with the same
+  `insertIfMissing` as every entry (unique on run, child and type), so any number of calls, retries or instances make one.
+  One stop that fails is logged at ERROR and left for the next call; `RunService.waitingStopsToday` does the same for a
+  school. `LiveEta.arrivals` is the one chain that gives the arrival at every stop (`estimate` is its entry for one stop).
+  Known limits: morning runs only (no afternoon schedule), a run never started or not yet created is not watched, an alert is
+  never withdrawn, and the head of transportation's "run not started" alert (SCRUM-77) is not built.
+- `reports` — the head of transportation's transport totals and their CSV export over a date range (SCRUM-271):
+  `GET /api/head-of-transport/transport-totals?from=&to=` and `.../export`. Shapes and rules are in
+  `docs/contracts/transport-totals.md`. Stores nothing and nothing depends on it; `ReportService` reads three
+  services, each one grouped query for the whole range (no per-day loop): `RunService.dailyTotals` (runs per date
+  from `RunRepository.countByDate`, riders from `ConfirmationRepository.riderCountsByDate`),
+  `AbsenceService.countAbsentStudentsByDate` and `StudentService.countOnRoutes`. A student's status on a run is their
+  latest (highest) one, and each student counts once a day, so `total` is a sum of student-days, not different
+  students; `studentsOnRoutes` is the roster now because a run stores no roster. Every date of the range is listed
+  (zeros), the range is at most 62 days (400 on `to`), and the CSV is built from the same `TransportTotalsResponse`
+  as the JSON with a final `TOTAL` row, so the two cannot disagree. The absence query counts by an integer offset
+  from `from`, not `generate_series` over dates (that returns timestamps and would depend on the session time zone).
 
 ## Where things go
 

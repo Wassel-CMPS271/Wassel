@@ -22,8 +22,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -139,6 +142,20 @@ public class AbsenceService {
 		} else {
 			absence.setCancelled(true);
 		}
+	}
+
+	/**
+	 * For the {@code reports} module (SCRUM-271): how many distinct students have a live absence on each date of the
+	 * range, in one query. A date with none is not in the map.
+	 */
+	@Transactional(readOnly = true)
+	public Map<LocalDate, Long> countAbsentStudentsByDate(UUID schoolId, LocalDate from, LocalDate to) {
+		Map<LocalDate, Long> counts = new HashMap<>();
+		for (Object[] row : absenceRepository.countAbsentStudentsByDate(schoolId, from,
+				(int) ChronoUnit.DAYS.between(from, to))) {
+			counts.put(LocalDate.parse(row[0].toString()), ((Number) row[1]).longValue());
+		}
+		return counts;
 	}
 
 	/** Every active absence in the school on {@code date} (today when null), for the head of transportation. */
