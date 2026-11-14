@@ -1,0 +1,6 @@
+/* Scope the existing 44px token to this parent map, including touch-mode Leaflet controls. */
+.map :global(.leaflet-container .leaflet-control-zoom a) {
+  width: var(--parent-map-target);
+  height: var(--parent-map-target);
+  line-height: var(--parent-map-target);
+}
