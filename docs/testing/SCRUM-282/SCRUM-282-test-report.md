@@ -1,5 +1,25 @@
 # SCRUM-282 â€” Independent operations UI tests
 
+## Accepted backend refresh and independent retest — 14 November 2026
+
+Merged accepted develop `5da9d2c2f9b829747c47571dfb541d32a1f6aa64` into the existing test branch. **Address #145 and Inbox #146 are now merged.** The latest Majd heads are unchanged: driver #144 `e3ec66670324a77edfe014dec7a00f18ee39ac3c`, roster #142 `d81b06859a36f7807272c4f81d2f03f0a7a9a7b9`; both remain drafts. No acceptance test, assertion, feature implementation or teammate branch was changed.
+
+| Executed check | Result |
+| --- | --- |
+| All 29 current candidate acceptance cases | **28 passed / 1 genuine failure / 0 skipped** |
+| Full regression with exact candidate refs | **780 passed / 1 genuine failure / 1 existing expected failure / 6 existing skips** (788; 58 files) |
+| ESLint / production build | Passed |
+| TypeScript | Exactly 13 accepted-develop diagnostics, zero introduced |
+
+The three verified fixes remain passing: deadline through response-body consumption, both cross-tab taps surviving durable reload, and another row's reject draft surviving a delayed 409 refresh. The earlier old-head negative-control evidence remains preserved; it was not relabeled as a new run.
+
+**Remaining genuine failure:** #142 still exports `addressRequestsApi = null`. The backend is now available, so Majd can wire its real authenticated list/approve/reject API and verify ownership, receipt refresh, persistence, conflict/error handling and saved address/pin updates. This test must continue to fail until that production client exists.
+
+**Other incomplete scope:** #144 replay client is still null; #155 is now at `9eaaca7c545d88062f27bc5c3a0b2bab6e062266`, still unmerged. SCRUM-274 remains To Do with no control/reassignment UI. Its backend dependencies (#153 ETA, #156 reassignment, #158 late alerts) are also open; do not synthesize a screen or fake a passing test. After features land, add/execute the live/late/stale/reassignment/mobile matrix and real reconnect/replay/address-decision browser slice. PR #151 remains a blocked draft; Jira statuses untouched.
+
+Evidence: ignored `tmp/SCRUM-282-20261114/`; prior tests and November 9–12 evidence retained. Normal HEAD integration checks intentionally remain failing while feature modules are missing; candidate results are a separate check.
+
+
 ## Dependency refresh and independent regression — 12 November 2026
 
 Accepted develop: `4cbfcc7172520e683366d6eaab482ff95015dba0`, including merged GPS #143. Executed read-only candidate Git source: driver #144 **`e3ec66670324a77edfe014dec7a00f18ee39ac3c`**, roster #142 **`d81b06859a36f7807272c4f81d2f03f0a7a9a7b9`**. Both remain drafts. No feature implementation was changed or merged. All original 29 acceptance cases remain.
