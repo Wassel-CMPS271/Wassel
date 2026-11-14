@@ -160,6 +160,8 @@ class RoleAccessMatrixTests {
 		TABLE.put("PUT /api/driver/runs/{runId}/location", Access.DRIVER_ONLY);
 		TABLE.put("GET /api/head-of-transport/runs/locations", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("GET /api/head-of-transport/runs", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("POST /api/head-of-transport/runs/{runId}/reassignments", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("GET /api/head-of-transport/runs/{runId}/reassignments", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("GET /api/head-of-transport/absences", Access.HEAD_OF_TRANSPORT_ONLY);
 
 		// parent (SCRUM-238)
@@ -175,6 +177,21 @@ class RoleAccessMatrixTests {
 		TABLE.put("GET /api/parent/children/{studentId}/attendance", Access.PARENT_ONLY);
 		TABLE.put("GET /api/head-of-transport/attendance", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("GET /api/head-of-transport/attendance/audit", Access.HEAD_OF_TRANSPORT_ONLY);
+
+		// address requests (SCRUM-269)
+		TABLE.put("POST /api/parent/children/{studentId}/address-requests", Access.PARENT_ONLY);
+		TABLE.put("GET /api/parent/children/{studentId}/address-requests", Access.PARENT_ONLY);
+		TABLE.put("GET /api/head-of-transport/address-requests", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("POST /api/head-of-transport/address-requests/{id}/approve", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("POST /api/head-of-transport/address-requests/{id}/reject", Access.HEAD_OF_TRANSPORT_ONLY);
+		// parent inbox (SCRUM-267)
+		TABLE.put("GET /api/parent/inbox", Access.PARENT_ONLY);
+		TABLE.put("GET /api/parent/inbox/unread-count", Access.PARENT_ONLY);
+		TABLE.put("POST /api/parent/inbox/{id}/read", Access.PARENT_ONLY);
+		TABLE.put("POST /api/parent/inbox/read-all", Access.PARENT_ONLY);
+		// transport totals (SCRUM-271)
+		TABLE.put("GET /api/head-of-transport/transport-totals", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("GET /api/head-of-transport/transport-totals/export", Access.HEAD_OF_TRANSPORT_ONLY);
 	}
 
 	// Path variables are all ids, so one UUID fits every {name}; the service then answers 404 or 400.
@@ -199,6 +216,8 @@ class RoleAccessMatrixTests {
 				+ "\"phone\":\"+961 3 123 456\",\"email\":\"driver@wassel.test\"}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/drivers/{id}/vehicle", "{\"vehicleId\":\"" + SOME_ID + "\"}");
 		VALID_BODIES.put("PUT /api/driver/runs/{runId}/students/{studentId}/confirmation", "{\"status\":\"PICKED_UP\"}");
+		VALID_BODIES.put("POST /api/head-of-transport/runs/{runId}/reassignments",
+				"{\"driverId\":\"" + SOME_ID + "\",\"fromDriverId\":\"" + SOME_ID + "\"}");
 		VALID_BODIES.put("PUT /api/driver/runs/{runId}/location-sharing", "{\"enabled\":true}");
 		VALID_BODIES.put("PUT /api/driver/runs/{runId}/location",
 				"{\"latitude\":33.9,\"longitude\":35.5,\"accuracyMeters\":10}");
@@ -215,6 +234,7 @@ class RoleAccessMatrixTests {
 		VALID_BODIES.put("POST /api/head-of-transport/routes/{id}/students", "{\"studentId\":\"" + SOME_ID + "\"}");
 		VALID_BODIES.put("PUT /api/head-of-transport/routes/{id}/stops", "{\"studentIds\":[]}");
 		VALID_BODIES.put("POST /api/parent/children/{studentId}/absences", "{\"fromDate\":\"2030-01-04\"}");
+		VALID_BODIES.put("POST /api/parent/children/{studentId}/address-requests", "{\"address\":\"Hamra Street, Beirut\"}");
 	}
 
 	/**

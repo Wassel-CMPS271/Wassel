@@ -6,5 +6,11 @@
     "accuracyMeters": 12.5,
     "receivedAt": "2026-10-21T04:15:50Z",
     "ageSeconds": 10
+  },
+  "stopsLeft": 2,
+  "plannedTime": "07:18",
+  "estimate": {
+    "arrivesAt": "2026-10-21T04:21:50Z",
+    "secondsAway": 350
   }
 }

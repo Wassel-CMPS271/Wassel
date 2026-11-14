@@ -5,22 +5,29 @@ import com.wassel.backend.absences.exception.AbsenceNotFoundException;
 import com.wassel.backend.absences.exception.AbsenceOverlapException;
 import com.wassel.backend.absences.exception.InvalidAbsenceDateException;
 import com.wassel.backend.attendance.exception.InvalidAttendanceQueryException;
+import com.wassel.backend.addressrequests.exception.AddressRequestConflictException;
+import com.wassel.backend.addressrequests.exception.AddressRequestNotFoundException;
+import com.wassel.backend.addressrequests.exception.InvalidAddressRequestException;
 import com.wassel.backend.auth.exception.CodeCooldownException;
 import com.wassel.backend.auth.exception.InvalidCodeException;
 import com.wassel.backend.auth.exception.InvalidCredentialsException;
 import com.wassel.backend.auth.exception.InvalidPasswordTokenException;
 import com.wassel.backend.auth.exception.LoginExpiredException;
 import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
+import com.wassel.backend.inbox.exception.InboxEventNotFoundException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
+import com.wassel.backend.reports.exception.InvalidTotalsRangeException;
 import com.wassel.backend.routes.exception.ActiveRunConflictException;
 import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteCapacityExceededException;
+import com.wassel.backend.routes.exception.RouteDriverChangedException;
 import com.wassel.backend.routes.exception.RouteNotFoundException;
 import com.wassel.backend.routes.exception.RouteOptimizationConflictException;
 import com.wassel.backend.runs.exception.ConfirmationConflictException;
+import com.wassel.backend.runs.exception.ConfirmationKeyReusedException;
 import com.wassel.backend.runs.exception.RunNotFoundException;
 import com.wassel.backend.runs.exception.RunStateConflictException;
 import com.wassel.backend.schools.exception.CalendarDateConflictException;
@@ -249,6 +256,13 @@ public class GlobalExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
 	}
 
+	// A plain detail naming the route's current driver, as the runs contract has it for a reassignment.
+	@ExceptionHandler(RouteDriverChangedException.class)
+	public ProblemDetail handleRouteDriverChanged(RouteDriverChangedException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
 	@ExceptionHandler(ProposalNotFoundException.class)
 	public ProblemDetail handleProposalNotFound(ProposalNotFoundException ex) {
 		logRejected(ex);
@@ -302,6 +316,43 @@ public class GlobalExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
 
+	// Same "errors" shape again, keyed by the field that was wrong (address, latitude, longitude, status).
+	@ExceptionHandler(InvalidAddressRequestException.class)
+	public ProblemDetail handleInvalidAddressRequest(InvalidAddressRequestException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
+		return problem;
+	}
+
+	// Same "errors" shape again, keyed by the field of the date range that was wrong (to).
+	@ExceptionHandler(InvalidTotalsRangeException.class)
+	public ProblemDetail handleInvalidTotalsRange(InvalidTotalsRangeException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
+		return problem;
+	}
+
+	// A plain detail, as the contract has it: a second pending request, or one already decided.
+	@ExceptionHandler(AddressRequestConflictException.class)
+	public ProblemDetail handleAddressRequestConflict(AddressRequestConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	@ExceptionHandler(AddressRequestNotFoundException.class)
+	public ProblemDetail handleAddressRequestNotFound(AddressRequestNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	@ExceptionHandler(InboxEventNotFoundException.class)
+	public ProblemDetail handleInboxEventNotFound(InboxEventNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
 	// A plain detail, as the contract has it. Stops without a pin also get "studentIds" as an extra
 	// property, not under "errors", because "errors" is for field messages.
 	@ExceptionHandler(RouteOptimizationConflictException.class)
@@ -332,6 +383,13 @@ public class GlobalExceptionHandler {
 	public ProblemDetail handleConfirmationConflict(ConfirmationConflictException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	// A replayed confirmation whose key was used for something else: a client bug, never retried (runs contract).
+	@ExceptionHandler(ConfirmationKeyReusedException.class)
+	public ProblemDetail handleConfirmationKeyReused(ConfirmationKeyReusedException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
 	}
 
 	// A signed-in caller asking for a path nobody serves (a typo, or an actuator endpoint that is not exposed) is a
