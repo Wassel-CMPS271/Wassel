@@ -45,3 +45,6 @@ next-env.d.ts
 
 # Generated isolated Parent GPS review launcher
 /e2e/.parent-tracking-review-run.mjs
+
+# Versioned generated tracking launchers preserve prior review runs
+/e2e/.parent-tracking-review-run-*.mjs

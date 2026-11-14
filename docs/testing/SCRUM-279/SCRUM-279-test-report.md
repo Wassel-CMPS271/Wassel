@@ -1,5 +1,24 @@
 # SCRUM-279 — Parent live bus map and countdown
 
+## Accepted backend refresh and weekend-safe verification — 14 November 2026
+
+Merged only accepted develop `5da9d2c2f9b829747c47571dfb541d32a1f6aa64` into the existing #149 branch, preserving implementation and all prior evidence. Address #145 and Inbox #146 are accepted; ETA #153 remains open at `aef97a37f4c77cb0b56f153a65e5389dc6813804`, and #144 remains a draft at `e3ec66670324a77edfe014dec7a00f18ee39ac3c`. Production GPS stays real; production ETA stays explicitly disabled.
+
+Added a test-classpath-only ticking Monday school clock and explicit source in the isolated review launcher. A Saturday/Sunday is a real production holiday, so run-dependent browser tests must control their school clock rather than skip the scenario or alter production date rules. The clock advances normally, preserving the real 60-second stale boundary. The original empty loopback PostgreSQL and account guards remain; auth/JWT use real time. No teammate production file changed. The small test configuration is byte-identical to our Inbox/driver review support, allowing either own-branch merge order without overwriting a shared file.
+
+| Executed check | Result |
+| --- | --- |
+| Focused tracking/client/navigation | 65 passed |
+| Full frontend regression | 829 passed / 0 unexpected failures / 1 existing expected failure / 6 existing skips (836; 62 files) |
+| ESLint / production build | Passed |
+| Standalone TypeScript | Exactly 13 current accepted-develop diagnostics; zero introduced |
+| Real PostgreSQL/Flyway + production Chromium GPS | **1 passed**, launcher exit 0; actual auth/2FA/APIs/Leaflet/child switch/server STALE/withdrawal/foreign-child denial/360px and cleanup |
+
+Evidence: ignored `tmp/SCRUM-279-20261114/` and archived Playwright artifacts. New generated launchers use content-derived names so older versions are preserved. This is a controlled school-date test (Monday 2026-11-02), not real Nov 14 bus activity, physical-phone verification or accepted live ETA integration.
+
+Remaining: merge/verify #153's actual ETA/progress, null/afternoon/confirmation cases before enabling ETA; finish/accept #144 and verify the complete real phone/driver-to-parent slice; independent review and required checks. Keep #149 a draft. The separate Inbox implementation stays on #150; no unmerged feature branch was copied here. No Jira statuses changed and no PR was merged.
+
+
 ## Dependency refresh and implementation — 12 November 2026
 
 Accepted develop: `4cbfcc7172520e683366d6eaab482ff95015dba0` (merged #143 / SCRUM-261). Existing branch, commits, tests and dated evidence preserved. Only accepted develop was merged; no teammate feature was changed or merged.
