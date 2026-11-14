@@ -66,7 +66,8 @@ try {
   await page.getByRole("region", { name: `${family[1].firstName} ${family[1].lastName}` }).waitFor();
   const nav = page.getByRole("navigation", { name: "Family views" });
   assert.equal(await nav.getByRole("button", { name: "Bus tracking", exact: true }).count(), 0);
-  assert.equal(await nav.getByRole("button", { name: "Inbox", exact: true }).count(), 0);
+  assert.equal(await nav.getByRole("button", { name: "Inbox", exact: true }).count(), 1);
+  assert(await nav.getByRole("button", { name: "Inbox", exact: true }).isEnabled());
   const homeWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   assert(homeWidth <= 360, "Long child name fits the 360px Home layout");
   await page.screenshot({ path: resolve(out, "home-360.png"), fullPage: true });
@@ -92,7 +93,7 @@ try {
   await page.getByRole("region", { name: `${family[1].firstName} ${family[1].lastName}` }).waitFor();
   const absences = nav.getByRole("button", { name: "Absences", exact: true }); await absences.focus(); await page.keyboard.press("Enter");
   await page.getByRole("combobox").waitFor();
-  assert(!requests.some(r => /bus-location|inbox/.test(r.path)), "Unavailable features must not call unmerged APIs");
+  assert(!requests.some(r => /bus-location|inbox/.test(r.path)), "Features are loaded only when explicitly opened");
   assert.deepEqual(errors, []);
   writeFileSync(resolve(out, "metrics.json"), JSON.stringify({ scope: "fixture-only production UI; no backend/GPS/inbox claim", ...measurements, homeWidth, longChildWidth, requests, errors }, null, 2));
   writeFileSync(resolve(frontend, "../tmp/parent-navigation-mobile/latest.json"), JSON.stringify({ directory: out }));

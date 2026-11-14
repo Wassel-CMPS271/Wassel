@@ -1,5 +1,42 @@
 # SCRUM-280 — Parent inbox and notification preferences
 
+## Real Inbox integration and verification — 14 November 2026
+
+Accepted develop `5da9d2c2f9b829747c47571dfb541d32a1f6aa64` now contains #145/address, #146/inbox and #152/totals. Reused this branch, PR #150, prior implementation and every dated evidence set; merged only accepted develop. No teammate production file or branch was edited, no PR merged, and no Jira status changed.
+
+### Implemented
+
+- Production ParentPage now supplies the real cookie-authenticated `parentInboxApi` to ParentInboxHome. Inbox is a functional, lazy destination alongside Home/Absences, with no sample fallback or unmerged request.
+- Verified the accepted canonical GET list/unread count and POST receipt/read-all contracts. Preserved authoritative totals beyond the newest 50, sibling event identity, original-parent historical ownership, read state after reload, account reset, loading/empty/errors and retry.
+- SCRUM-268 now has a real contract in open **#158 `7baf727f4bf1f4e042495a952befdf65a5217cd3`**, stacked on open ETA #153. Prepared its authenticated GET/PUT preferences client, all five required fields, four boolean choices and integer threshold 5–60, full replacement/server receipt behavior, validation, retries and privacy guards. Prepared LATE rendering accepts only server events; the UI never calculates lateness from stale GPS.
+- **Production preferences and LATE extension remain explicitly disabled.** The accepted Inbox client still rejects unsupported LATE data; only an explicitly enabled test adapter accepts the proposed type. Production shows an unavailable message and makes zero preference calls. No guessed endpoint, production fixture or false persistence claim.
+- A new integration regression reproduced a race: an in-flight Inbox response could restore private data after preferences rejected the session. Invalidate that load generation and clear data on access loss; the original and delayed-response cases now pass. Preference save/load sessions also discard old clients/accounts and prevent duplicate submissions.
+- Added a separate PostgreSQL Parent Inbox CI job, guarded wrapper and test-classpath-only ticking Monday configuration. This makes run-generated events testable on Saturday/Sunday without changing production time, authentication, endpoint logic or data. The normal empty loopback-database/seed guards remain intact; auth/JWT still use real time.
+
+### Executed results
+
+| Check | Result |
+| --- | --- |
+| Focused unit/client/component integration | **91 passed / 0 failed** (7 files) |
+| Final full regression | **851 passed / 0 unexpected failures / 1 existing expected failure / 6 existing skips** (858; 63 files) |
+| ESLint | Passed, zero warnings after fixing lifecycle cleanup |
+| Production build | Passed, including actual proxy-mode browser builds |
+| Standalone TypeScript | Exactly **13 accepted-develop diagnostics**, zero introduced |
+| Real Chromium + PostgreSQL/Flyway Inbox scenario | **1 passed**, runner exit 0 |
+| Production Home/Absences navigation at 360px | Passed, explicit fixtures |
+| Prepared Inbox/preferences components at 360px | Passed, explicit fixtures; save, threshold, read/read-all, errors/retry and reset |
+
+The real scenario used actual password/2FA and Spring APIs: two parents, three confirmation-generated event types, deduplication, authoritative counts, POST read/read-all and first readAt stability, reload persistence, foreign-parent 404, other-role 403 and unsigned 401, historical entries after re-linking, real browser offline/retry, logout/account replacement, revocation, 44px controls and no 360px overflow/crashes. Route cleanup succeeded. No business responses were intercepted or fabricated. Real preferences/late-alert integration was NOT executed.
+
+Preserved failed evidence: a heading locator initially matched H1 and H2 (scoped to H2); initial test-clock registration did not take effect (the explicit Monday assertion caught it; switched to an explicit test configuration source); the genuine async privacy race was fixed in our own code. No acceptance assertion or check was skipped/weakened.
+
+Evidence: ignored `tmp/SCRUM-280-20261114/`, timestamped mobile review directories, and archived `frontend/e2e-artifacts/history/`. Real browser logs/credentials/traces/database files are excluded from commits; generated credentials are deleted by the runner. The sample school date is explicitly controlled (Monday 2026-11-02) and advances with elapsed time; this is not a claim of real-world Nov 14 bus activity.
+
+### Remaining completion gates
+
+#158 is unmerged and depends on unmerged #153. After their accepted contract is rechecked, enable the prepared preferences client and late-event adapter in the production composition; verify real preference persistence across refresh/accounts, event suppression for future confirmations, threshold/timezone/late-event generation and delivery behavior. Do not confuse NOT_PRESENT with an absence report: the accepted contract says absence reports create no Inbox entry. Complete independent review and required CI before final readiness. Keep #150 a draft. Preserve #149 GPS navigation when the two unmerged Parent compositions are reconciled; no other feature branch was imported here.
+
+
 ## Dependency refresh and verification — 12 November 2026
 
 Merged only accepted develop `4cbfcc7172520e683366d6eaab482ff95015dba0` into the existing branch, preserving all implementation, tests, commits and previous evidence. No teammate feature branch was changed.

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { parentInboxApi as api } from "./parentInbox";
+import { parentInboxApi as api, createParentInboxApi } from "./parentInbox";
 afterEach(() => vi.unstubAllGlobals());
 const event = { id: "a", type: "PICKED_UP", studentId: "s", studentName: "Lina", runId: "r", direction: "MORNING", createdAt: "2026-11-09T07:00:00Z", readAt: null };
 function response(value: unknown, status = 200) { const fetcher = vi.fn().mockResolvedValue(new Response(status === 204 ? null : JSON.stringify(value), { status })); vi.stubGlobal("fetch", fetcher); return fetcher; }
@@ -21,3 +21,5 @@ it("read-all sends no parent or student identity and no preference payload", asy
   expect(fetcher.mock.calls[0][1]).toMatchObject({ method: "POST", credentials: "include" });
   expect(fetcher.mock.calls[0][1].body).toBeUndefined(); expect(fetcher.mock.calls[0][0]).toMatch(/\/api\/parent\/inbox\/read-all$/);
 });
+
+it("accepts the agreed LATE shape only in an explicitly enabled future adapter", async () => { response([{ ...event, type: "LATE" }]); expect((await createParentInboxApi({ allowLate: true }).list())[0].type).toBe("LATE"); });

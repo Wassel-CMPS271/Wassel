@@ -18,11 +18,12 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
-it("keeps unavailable tracking and inbox non-interactive in the production entry", async () => {
+it("enables the accepted Inbox lazily while unmerged tracking stays unavailable", async () => {
   render(<ParentPage />); await screen.findByText("Lina Navigation");
   const nav = screen.getByRole("navigation", { name: "Family views" });
   expect(nav).toBeVisible();
-  for (const label of ["Bus tracking", "Inbox"]) {
+  expect(screen.getByRole("button", { name: "Inbox" })).toBeEnabled();
+  for (const label of ["Bus tracking"]) {
     expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
     expect(screen.getByText(label).closest('[aria-disabled="true"]')).toHaveTextContent("Soon");
   }

@@ -5,16 +5,18 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ApiError } from "@/lib/api/errors";
 import type { InboxEvent, ParentInboxApi } from "@/lib/api/parentInbox";
+import type { NotificationPreferencesApi } from "@/lib/api/notificationPreferences";
+import { NotificationPreferencesPanel } from "./NotificationPreferencesPanel";
 import { colors, darkTheme, sizing, spacing } from "@/styles/tokens";
 
-const wording = { PICKED_UP: "Picked up", DROPPED_OFF: "Dropped off", NOT_PRESENT: "Not at the stop" };
+const wording = { PICKED_UP: "Picked up", DROPPED_OFF: "Dropped off", NOT_PRESENT: "Not at the stop", LATE: "Pickup delayed" };
 const time = (value: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Beirut", dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-// Deliberately unmounted until #146 merges. api=null never substitutes fixtures.
+// Production supplies the accepted inbox client. api=null never substitutes fixtures.
 // Only backend read receipts are applied; this UI never creates business events.
-export function InboxPanel({ api = null, accountKey = "current-parent" }: { api?: ParentInboxApi | null; accountKey?: string }) {
-  return <InboxContent key={accountKey} api={api} />;
+export function InboxPanel({ api = null, accountKey = "current-parent", preferencesApi = null }: { api?: ParentInboxApi | null; accountKey?: string; preferencesApi?: NotificationPreferencesApi | null }) {
+  return <InboxContent key={accountKey} api={api} preferencesApi={preferencesApi} />;
 }
-function InboxContent({ api }: { api: ParentInboxApi | null }) {
+function InboxContent({ api, preferencesApi }: { api: ParentInboxApi | null; preferencesApi: NotificationPreferencesApi | null }) {
   const [data, setData] = useState<{ source: ParentInboxApi; rows: InboxEvent[]; count: number } | null>(null);
   const [error, setError] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -77,6 +79,6 @@ function InboxContent({ api }: { api: ParentInboxApi | null }) {
           </Card></li>)}</ul>}
       </>}
     </>}
-    <Card><h3 className="text-lg font-semibold">Notification preferences</h3><p>Preferences and late alerts are not available yet.</p></Card>
+    <NotificationPreferencesPanel api={preferencesApi} onAccessDenied={status => { generation.current++; setData(null); setError(status); setLoading(false); setBusy(false); locked.current = false; }} />
   </section>;
 }

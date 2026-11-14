@@ -22,6 +22,7 @@ import "@/app/globals.css";
 import { Button } from "@/components/ui/Button";
 import { ${feature} } from "@/app/(parent)/parent/${feature}";
 let gpsStatus = "LIVE", failed = false, account = "first", unread = 73;
+let preferences = { pickedUp: true, droppedOff: true, notPresent: true, late: true, lateAfterMinutes: 15 };
 let rows = [
  { id: "lina-entry", studentId: "40000000-0000-4000-8000-000000000001", studentName: "Lina " + "Longname".repeat(8), type: "PICKED_UP", runId: "run", direction: "MORNING", createdAt: "2026-11-10T07:00:00Z", readAt: null },
  { id: "omar-entry", studentId: "40000000-0000-4000-8000-000000000002", studentName: "Omar Navigation", type: "DROPPED_OFF", runId: "run", direction: "AFTERNOON", createdAt: "2026-11-10T07:10:00Z", readAt: null },
@@ -32,6 +33,7 @@ const inbox = {
  async markRead(id) { const row = rows.find(item => item.id === id); if (!row.readAt) { row.readAt = "2026-11-10T08:00:00Z"; unread--; } return structuredClone(row); },
  async markAllRead() { rows.forEach(row => row.readAt = "2026-11-10T08:00:00Z"); unread = 0; },
 };
+const preferencesApi = { get: async () => preferences, save: async value => { preferences = value; return value; } };
 function Root() {
  const [identity, setIdentity] = useState("first"), [version, setVersion] = useState(0);
  const gps = React.useMemo(() => async () => gpsStatus === "UNAVAILABLE" ? { status: "UNAVAILABLE", position: null } : { status: gpsStatus, position: { latitude: 33.9, longitude: 35.5, accuracyMeters: 10, ageSeconds: gpsStatus === "LIVE" ? 5 : 140, receivedAt: "2026-11-10T07:00:00Z" } }, [version]);
@@ -40,7 +42,7 @@ function Root() {
  <Button onClick={() => { gpsStatus = "UNAVAILABLE"; setVersion(value => value + 1); }}>Fixture missing GPS</Button>
  <Button onClick={() => { failed = true; }}>Fixture fail next read</Button>
  <Button onClick={() => { account = "second"; setIdentity("second"); }}>Fixture switch account</Button>
- </aside><div id="product"><${feature} api={${kind === "tracking" ? "gps" : "inbox"}} accountKey={identity} /></div></>;
+ </aside><div id="product"><${feature} api={${kind === "tracking" ? "gps" : "inbox"}} accountKey={identity} ${kind === "inbox" ? "preferencesApi={preferencesApi}" : ""} /></div></>;
 }
 createRoot(document.getElementById("root")).render(<Root />);
 `;
@@ -85,6 +87,10 @@ try {
    assert.equal(await product.locator(".leaflet-marker-icon").count(), 0);
  } else {
    await product.getByText("73 unread updates", { exact: true }).waitFor();
+   await product.getByLabel("Minutes after planned pickup").fill("20");
+   await product.getByLabel("Late pickup", { exact: true }).uncheck();
+   await product.getByRole("button", { name: "Save preferences", exact: true }).click();
+   await product.getByText("Preferences saved.", { exact: true }).waitFor();
    assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= 360, "Long inbox event names fit 360px");
    await page.screenshot({ path: resolve(out, "inbox-360.png"), fullPage: true });
    await product.getByRole("button", { name: "Mark update for Omar Navigation as read" }).click();
