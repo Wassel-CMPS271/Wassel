@@ -556,6 +556,47 @@ class ConfirmationReplayTests {
 		assertEquals(1, confirmationRepository.count());
 	}
 
+	private Driver aReplacementDriver() {
+		return driverRepository.save(Driver.builder().schoolId(schoolA).userId(UUID.randomUUID())
+				.firstName("Nadia").lastName("Barakat").phone("0" + (int) (Math.random() * 100000000))
+				.email(UUID.randomUUID() + "@wassel.test").status(DriverStatus.ACTIVE).invitedAt(Instant.now()).build());
+	}
+
+	/** SCRUM-264: a replay that waits on the run lock while the route changes hands is the old driver's 404, not the 200. */
+	@Test
+	void aReplayWaitingOnTheRunLockWhileTheRouteIsReassignedIs404AndAddsNothing() throws Exception {
+		Bus bus = aBusInProgress();
+		UUID key = UUID.randomUUID();
+		confirm(bus, bus.rami(), "PICKED_UP", key).andExpect(status().isOk());
+		Driver other = aReplacementDriver();
+
+		MockHttpServletResponse answer = sentWhileRunLocked(bus.morning(), () -> {
+			Route route = routeRepository.findById(bus.route().getId()).orElseThrow();
+			route.setDriverId(other.getId());
+			routeRepository.saveAndFlush(route);
+		}, () -> confirm(bus, bus.rami(), "PICKED_UP", key).andReturn().getResponse());
+
+		assertEquals(404, answer.getStatus(), answer.getContentAsString());
+		assertEquals(1, keyRepository.count());
+		assertEquals(1, confirmationRepository.count());
+	}
+
+	@Test
+	void theNewDriverCanConfirmTheSameStudentAndStatusWithANewKey() throws Exception {
+		Bus bus = aBusInProgress();
+		confirm(bus, bus.rami(), "PICKED_UP", UUID.randomUUID()).andExpect(status().isOk());
+		Driver other = aReplacementDriver();
+		Route route = routeRepository.findById(bus.route().getId()).orElseThrow();
+		route.setDriverId(other.getId());
+		routeRepository.save(route);
+
+		send(schoolA, other.getUserId(), bus.morning(), bus.rami(), body("PICKED_UP", UUID.randomUUID()))
+				.andExpect(status().isOk());
+
+		assertEquals(2, keyRepository.count());
+		assertEquals(1, confirmationRepository.count());
+	}
+
 	@ParameterizedTest
 	@EnumSource(value = Role.class, names = { "HEAD_OF_TRANSPORT", "ADMIN", "PARENT" })
 	void anotherRoleIs403(Role role) throws Exception {
