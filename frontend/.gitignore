@@ -42,3 +42,8 @@ next-env.d.ts
 
 # landing page generated originals (large, kept local)
 /public/landing/originals/
+
+# Generated isolated Inbox browser launcher
+/e2e/.parent-inbox-review-run.mjs
+
+/e2e/.parent-inbox-review-run-*.mjs
