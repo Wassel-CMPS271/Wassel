@@ -3,7 +3,7 @@
 -- row of its route on its date. Plain ids with no foreign keys, as in runs and run_confirmations. Written in the
 -- same transaction as the route's new driver; a refused or no-op request writes nothing. A FINISHED run is never
 -- reassigned, so the state is checked here too.
--- V14 is provisional: renamed to the next free number when it merges (docs/contracts/runs.md, Interfaces).
+-- V14 follows V13 (confirmation_keys, SCRUM-263): the next free number when this merged.
 
 CREATE TABLE run_reassignments (
     id uuid NOT NULL,
