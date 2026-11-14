@@ -1,4 +1,5 @@
 import type { ConfirmationStatus, DriverDay, Run, RunStop } from "@/lib/api/runs";
+import type { QueueItem } from "@/lib/offline/queue";
 
 // The rules from the comments on DriverDay and RunStop in lib/api/runs.ts.
 
@@ -52,4 +53,48 @@ export function nextConfirmations(run: Run, stop: RunStop): ConfirmationStatus[]
     case "DROPPED_OFF":
       return [];
   }
+}
+
+// Overlays the offline queue's unsent taps onto the run the server last answered
+// with, so nextConfirmations/stopStates (and so the stop cards and the "N of M
+// stops done" line) show what the driver tapped even before it's reached the
+// server (SCRUM-273) — the same way the server's own answer is applied the moment
+// it arrives, just locally and sooner.
+//
+// Only "queued"/"sending"/"error"/"blocked" items count: a "conflict" means the
+// server disagrees with what's shown, so it must not be trusted for this, and a
+// "synced" one is already reflected in `run` itself (the server's answer replaced
+// the stop already). Items are in the order they were tapped, so the last one
+// kept per student is the most advanced status the driver tapped — matching what
+// a driver who tapped Picked up then Dropped off, with neither sent yet, expects
+// to see.
+export function projectRun(run: Run, items: readonly QueueItem[]): Run {
+  const pending = new Map<string, QueueItem>();
+  for (const item of items) {
+    if (item.runId !== run.id) continue;
+    if (item.state === "conflict" || item.state === "synced") continue;
+    pending.set(item.studentId, item);
+  }
+  if (pending.size === 0) return run;
+  return {
+    ...run,
+    stops: run.stops.map((stop) => {
+      const item = pending.get(stop.studentId);
+      // Never below what the server already has: a student's latest status is
+      // the highest one (runs.md), so a queued PICKED_UP behind a DROPPED_OFF
+      // another tab already sent mustn't roll the stop back.
+      if (!item || STATUS_RANK[item.status] <= rankOf(stop)) return stop;
+      return { ...stop, confirmation: { status: item.status, at: item.occurredAt } };
+    }),
+  };
+}
+
+const STATUS_RANK: Record<ConfirmationStatus, number> = {
+  NOT_PRESENT: 1,
+  PICKED_UP: 2,
+  DROPPED_OFF: 3,
+};
+
+function rankOf(stop: RunStop): number {
+  return stop.confirmation ? STATUS_RANK[stop.confirmation.status] : 0;
 }

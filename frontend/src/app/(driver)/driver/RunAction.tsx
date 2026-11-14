@@ -3,21 +3,34 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ApiError } from "@/lib/api/errors";
-import type { Run } from "@/lib/api/runs";
-// Sample calls until SCRUM-234 is merged; see the comments in runs.sample.ts.
-import { endRunSample, startRunSample } from "@/lib/api/runs.sample";
+import { endRun, startRun, type Run } from "@/lib/api/runs";
 import { colors, darkTheme, sizing, spacing } from "@/styles/tokens";
 import { stopStates } from "./today";
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 
 const ACTIONS = {
-  NOT_STARTED: { label: "Start run", pendingLabel: "Starting…", call: startRunSample },
-  IN_PROGRESS: { label: "End run", pendingLabel: "Ending…", call: endRunSample },
+  NOT_STARTED: { label: "Start run", pendingLabel: "Starting…", call: startRun },
+  IN_PROGRESS: { label: "End run", pendingLabel: "Ending…", call: endRun },
 } as const;
 
 export function actionError(error: unknown): string {
   return error instanceof ApiError && error.status < 500 ? error.message : GENERIC_ERROR;
+}
+
+// Why the button is disabled right now, besides a call being in flight (that
+// already disables it on its own, with its own pendingLabel). null means it
+// isn't.
+function disabledReason(run: Run, offline: boolean, hasUnsentConfirmations: boolean): string | null {
+  if (run.state === "IN_PROGRESS" && hasUnsentConfirmations) {
+    return "End run is disabled until every saved confirmation for this run has been sent or dismissed.";
+  }
+  if (offline) {
+    return run.state === "NOT_STARTED"
+      ? "Start run is disabled while you're offline."
+      : "End run is disabled while you're offline.";
+  }
+  return null;
 }
 
 interface UnconfirmedSummary {
@@ -51,8 +64,19 @@ function unconfirmedSummary(run: Run): UnconfirmedSummary {
 // End run with stops still open swaps the button for an inline confirm step
 // (focus moves to Confirm; Cancel or Escape brings back the button).
 // A failure shows an alert and "Try again" next to it; the rest of the page
-// stays as it is.
-export function RunAction({ run, onRunChange }: { run: Run; onRunChange: (run: Run) => void }) {
+// stays as it is. SCRUM-273: disabled (with an explanation, not just greyed
+// out) while this run has confirmations not yet sent, or while offline.
+export function RunAction({
+  run,
+  onRunChange,
+  offline = false,
+  hasUnsentConfirmations = false,
+}: {
+  run: Run;
+  onRunChange: (run: Run) => void;
+  offline?: boolean;
+  hasUnsentConfirmations?: boolean;
+}) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -65,6 +89,7 @@ export function RunAction({ run, onRunChange }: { run: Run; onRunChange: (run: R
   const refocusMain = useRef(false);
   const promptId = useId();
   const { count: unconfirmed, onboardOnly } = unconfirmedSummary(run);
+  const disabledWhy = disabledReason(run, offline, hasUnsentConfirmations);
 
   useEffect(() => {
     if (confirming) confirmButton.current?.focus();
@@ -91,11 +116,17 @@ export function RunAction({ run, onRunChange }: { run: Run; onRunChange: (run: R
     if (confirming && unconfirmed === 0) closeConfirm();
   }, [confirming, unconfirmed]);
 
+  // Going offline, or a confirmation being saved, while the confirm step is open
+  // closes it the same way, so "Confirm end run" can't bypass the disabled button.
+  useEffect(() => {
+    if (confirming && disabledWhy) closeConfirm();
+  }, [confirming, disabledWhy]);
+
   if (run.state === "FINISHED") return null;
   const action = ACTIONS[run.state];
 
   async function submit() {
-    if (busy.current) return;
+    if (busy.current || disabledWhy) return;
     busy.current = true;
     setPending(true);
     setError(null);
@@ -111,6 +142,7 @@ export function RunAction({ run, onRunChange }: { run: Run; onRunChange: (run: R
   }
 
   function onMainClick() {
+    if (disabledWhy) return; // The button is disabled; this guards a race with that render.
     if (unconfirmed > 0) {
       setError(null);
       setConfirming(true);
@@ -166,12 +198,17 @@ export function RunAction({ run, onRunChange }: { run: Run; onRunChange: (run: R
         <Button
           ref={mainButton}
           onClick={onMainClick}
-          disabled={pending}
+          disabled={pending || disabledWhy !== null}
           className="w-full sm:w-auto"
           style={{ minHeight: sizing.tapTarget, paddingInline: spacing.lg }}
         >
           {pending ? action.pendingLabel : action.label}
         </Button>
+      )}
+      {disabledWhy && !pending && (
+        <p role="status" className="text-sm" style={{ color: darkTheme.text.secondary }}>
+          {disabledWhy}
+        </p>
       )}
       {error && (
         <div className="flex items-center flex-wrap" style={{ gap: spacing.sm }}>
@@ -181,7 +218,7 @@ export function RunAction({ run, onRunChange }: { run: Run; onRunChange: (run: R
           <Button
             variant="secondary"
             onClick={submit}
-            disabled={pending}
+            disabled={pending || disabledWhy !== null}
             style={{ minHeight: sizing.tapTarget }}
           >
             Try again

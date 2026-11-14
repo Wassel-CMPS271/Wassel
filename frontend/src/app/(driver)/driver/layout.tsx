@@ -7,6 +7,7 @@ import { RoleGuard } from "@/components/auth/RoleGuard";
 import { UserBlock } from "@/components/auth/UserBlock";
 import { DriverIcon, StudentIcon, VehicleIcon } from "@/components/ui/icons";
 import { colors, darkPageBackground, darkTheme, radius, spacing } from "@/styles/tokens";
+import { DriverOfflineProvider, useDriverOfflineContext } from "./driverOfflineContext";
 
 interface NavItem {
   label: string;
@@ -24,12 +25,24 @@ const NAV_ITEMS: NavItem[] = [
 export default function DriverLayout({ children }: { children: React.ReactNode }) {
   return (
     <RoleGuard role="DRIVER">
-      <DriverShell>{children}</DriverShell>
+      <DriverOfflineProvider>
+        <DriverShell>{children}</DriverShell>
+      </DriverOfflineProvider>
     </RoleGuard>
   );
 }
 
 function DriverShell({ children }: { children: React.ReactNode }) {
+  const { hasUnsentConfirmations } = useDriverOfflineContext();
+  // SCRUM-273: a plain sign-out would silently abandon confirmations still
+  // saved on this phone, since they're kept per signed-in user — the next
+  // driver on this device wouldn't see or send them.
+  function confirmSignOut(): string | null {
+    return hasUnsentConfirmations
+      ? "Some confirmations haven't been sent yet. They'll be sent next time you sign in on this phone."
+      : null;
+  }
+
   return (
     <MotionConfig reducedMotion="user">
       <div
@@ -120,7 +133,7 @@ function DriverShell({ children }: { children: React.ReactNode }) {
               borderTop: `1px solid ${darkTheme.surface.cardBorder}`,
             }}
           >
-            <UserBlock />
+            <UserBlock confirmSignOut={confirmSignOut} />
           </div>
         </aside>
 

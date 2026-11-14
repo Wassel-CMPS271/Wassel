@@ -28,6 +28,7 @@ function run(n: number, overrides: Partial<RunSummary> = {}): RunSummary {
     vehicle: { id: `vehicle-${n}`, plateNumber: `P ${n}`, capacity: 14 },
     driver: { id: `driver-${n}`, firstName: `Driver${n}`, lastName: "Independent" },
     counts: { students: 5, absent: 0, pickedUp: 0, droppedOff: 0, notPresent: 0 },
+    locationSharing: false,
     ...overrides,
   } as RunSummary;
 }

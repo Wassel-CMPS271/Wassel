@@ -18,6 +18,13 @@ const BASE_URL =
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
+  // Aborts the call after this many ms with no answer. Unset by default (no
+  // timeout), so existing callers are unaffected. A caller that needs to find
+  // out an attempt is stuck rather than wait on it forever (the offline queue,
+  // SCRUM-273) passes this; the abort rejects like any other network failure
+  // (a DOMException named "AbortError"), so it's already "try again" to code
+  // that only distinguishes ApiValidationError and ApiError from everything else.
+  timeoutMs?: number;
 }
 
 // Resolves with the parsed JSON body, or undefined for a 204. A failure throws
@@ -25,26 +32,39 @@ interface RequestOptions {
 // network failure rejects as it is, so callers treat anything else as "try again".
 export async function request<T = void>(
   path: string,
-  { method = "GET", body }: RequestOptions = {},
+  { method = "GET", body, timeoutMs }: RequestOptions = {},
 ): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    method,
-    credentials: "include",
-    // The backend's CORS only allows Content-Type, so send it only with a body.
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const controller = timeoutMs === undefined ? undefined : new AbortController();
+  const timer = controller && setTimeout(() => controller.abort(), timeoutMs);
+  // The timer runs until the body is read, not just until the headers arrive:
+  // a body that stalls would otherwise hang the call forever.
+  try {
+    const response = await fetch(`${BASE_URL}${path}`, {
+      method,
+      credentials: "include",
+      // The backend's CORS only allows Content-Type, so send it only with a body.
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller?.signal,
+    });
 
-  if (response.ok) {
-    return (response.status === 204 ? undefined : await response.json()) as T;
-  }
+    if (response.ok) {
+      return (response.status === 204 ? undefined : await response.json()) as T;
+    }
 
-  // The body can be empty or not JSON (a 401 from /api/auth/me is empty).
-  const problem = await response.json().catch(() => undefined);
-  if (problem?.errors && typeof problem.errors === "object") {
-    throw new ApiValidationError(problem.errors);
+    // The body can be empty or not JSON (a 401 from /api/auth/me is empty). A
+    // timeout while reading it still rejects as an AbortError, not an ApiError.
+    const problem = await response.json().catch((error: unknown) => {
+      if (controller?.signal.aborted) throw error;
+      return undefined;
+    });
+    if (problem?.errors && typeof problem.errors === "object") {
+      throw new ApiValidationError(problem.errors);
+    }
+    throw new ApiError(response.status, problem?.detail, studentIdsOf(problem));
+  } finally {
+    clearTimeout(timer);
   }
-  throw new ApiError(response.status, problem?.detail, studentIdsOf(problem));
 }
 
 // Only a list of strings counts; anything else is dropped.

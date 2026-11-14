@@ -2,30 +2,39 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
-import type { ConfirmationStatus, DriverDay, Run } from "@/lib/api/runs";
 import {
-  confirmStudentSample,
-  endRunSample,
-  getDriverTodaySample,
-  startRunSample,
-} from "@/lib/api/runs.sample";
+  confirmStudent,
+  endRun,
+  getDriverToday,
+  startRun,
+  type ConfirmationStatus,
+  type DriverDay,
+  type Run,
+} from "@/lib/api/runs";
 import sample from "../../../../../docs/contracts/samples/runs/driver-today.json";
 import DriverTodayPage from "./page";
 
-vi.mock("@/lib/api/runs.sample", () => ({
-  getDriverTodaySample: vi.fn(),
-  startRunSample: vi.fn(),
-  endRunSample: vi.fn(),
-  confirmStudentSample: vi.fn(),
+vi.mock("@/lib/api/runs", () => ({
+  getDriverToday: vi.fn(),
+  startRun: vi.fn(),
+  endRun: vi.fn(),
+  confirmStudent: vi.fn(),
+}));
+
+// useOfflineQueue (SCRUM-273) needs a signed-in user; confirmationReplayApi stays
+// null in this file (SCRUM-263 not merged), so these tests exercise the same
+// online-only path they always did — see page.queue.test.tsx for the queue itself.
+vi.mock("@/components/auth/RoleGuard", () => ({
+  useCurrentUser: () => ({ id: "driver-1", email: "karim@wassel.local", role: "DRIVER", schoolId: "s-1" }),
 }));
 
 const DAY = sample as unknown as DriverDay;
 
 beforeEach(() => {
-  vi.mocked(getDriverTodaySample).mockReset();
-  vi.mocked(startRunSample).mockReset();
-  vi.mocked(endRunSample).mockReset();
-  vi.mocked(confirmStudentSample).mockReset();
+  vi.mocked(getDriverToday).mockReset();
+  vi.mocked(startRun).mockReset();
+  vi.mocked(endRun).mockReset();
+  vi.mocked(confirmStudent).mockReset();
 });
 
 afterEach(() => {
@@ -37,7 +46,7 @@ function card(name: string) {
 }
 
 it("shows a loading status while today's run loads", () => {
-  vi.mocked(getDriverTodaySample).mockReturnValue(new Promise(() => {}));
+  vi.mocked(getDriverToday).mockReturnValue(new Promise(() => {}));
   render(<DriverTodayPage />);
 
   expect(screen.getByText("Loading today's run…")).toHaveAttribute("role", "status");
@@ -45,7 +54,7 @@ it("shows a loading status while today's run loads", () => {
 });
 
 it("shows only the current run's stops, with done, skip and next states", async () => {
-  vi.mocked(getDriverTodaySample).mockResolvedValue(DAY);
+  vi.mocked(getDriverToday).mockResolvedValue(DAY);
   render(<DriverTodayPage />);
 
   expect(await screen.findByRole("heading", { name: "Hamra morning run" })).toBeInTheDocument();
@@ -74,7 +83,7 @@ it("shows an absent stop with a confirmation as done, not skip", async () => {
       ? { ...stop, confirmation: { status: "NOT_PRESENT" as const, at: "2026-10-21T04:20:00Z" } }
       : stop,
   );
-  vi.mocked(getDriverTodaySample).mockResolvedValue({ ...DAY, runs: [{ ...morning, stops }] });
+  vi.mocked(getDriverToday).mockResolvedValue({ ...DAY, runs: [{ ...morning, stops }] });
   render(<DriverTodayPage />);
 
   await screen.findByRole("heading", { name: "Hamra morning run" });
@@ -85,7 +94,7 @@ it("shows an absent stop with a confirmation as done, not skip", async () => {
 
 it("moves to the afternoon run once the morning run is finished", async () => {
   const [morning, afternoon] = DAY.runs;
-  vi.mocked(getDriverTodaySample).mockResolvedValue({
+  vi.mocked(getDriverToday).mockResolvedValue({
     ...DAY,
     runs: [{ ...morning, state: "FINISHED" }, afternoon],
   });
@@ -97,7 +106,7 @@ it("moves to the afternoon run once the morning run is finished", async () => {
 });
 
 it("shows an error when loading fails and loads again on Try again", async () => {
-  vi.mocked(getDriverTodaySample)
+  vi.mocked(getDriverToday)
     .mockRejectedValueOnce(new TypeError("Failed to fetch"))
     .mockResolvedValueOnce(DAY);
   render(<DriverTodayPage />);
@@ -111,7 +120,7 @@ it("shows an error when loading fails and loads again on Try again", async () =>
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
 
   expect(await screen.findByRole("heading", { name: "Hamra morning run" })).toBeInTheDocument();
-  expect(getDriverTodaySample).toHaveBeenCalledTimes(2);
+  expect(getDriverToday).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
   expect(within(screen.getByRole("list", { name: "Stops" })).getAllByRole("listitem")).toHaveLength(
@@ -121,7 +130,7 @@ it("shows an error when loading fails and loads again on Try again", async () =>
 });
 
 it("says when every run is finished", async () => {
-  vi.mocked(getDriverTodaySample).mockResolvedValue({
+  vi.mocked(getDriverToday).mockResolvedValue({
     ...DAY,
     runs: DAY.runs.map((run) => ({ ...run, state: "FINISHED" as const })),
   });
@@ -131,21 +140,21 @@ it("says when every run is finished", async () => {
 });
 
 it("says when it's a holiday", async () => {
-  vi.mocked(getDriverTodaySample).mockResolvedValue({ ...DAY, dayType: "HOLIDAY", runs: [] });
+  vi.mocked(getDriverToday).mockResolvedValue({ ...DAY, dayType: "HOLIDAY", runs: [] });
   render(<DriverTodayPage />);
 
   expect(await screen.findByRole("heading", { name: "No school today" })).toBeInTheDocument();
 });
 
 it("says when the driver has no route", async () => {
-  vi.mocked(getDriverTodaySample).mockResolvedValue({ ...DAY, runs: [] });
+  vi.mocked(getDriverToday).mockResolvedValue({ ...DAY, runs: [] });
   render(<DriverTodayPage />);
 
   expect(await screen.findByRole("heading", { name: "No route today" })).toBeInTheDocument();
 });
 
 it("shows End run, not Start run, while the run is in progress", async () => {
-  vi.mocked(getDriverTodaySample).mockResolvedValue(DAY);
+  vi.mocked(getDriverToday).mockResolvedValue(DAY);
   render(<DriverTodayPage />);
 
   expect(await screen.findByRole("button", { name: "End run" })).toBeInTheDocument();
@@ -155,9 +164,9 @@ it("shows End run, not Start run, while the run is in progress", async () => {
 it("starts the run and shows End run without reloading the day", async () => {
   const [morning, afternoon] = DAY.runs;
   const notStarted = { ...morning, state: "NOT_STARTED" as const, startedAt: null };
-  vi.mocked(getDriverTodaySample).mockResolvedValue({ ...DAY, runs: [notStarted, afternoon] });
+  vi.mocked(getDriverToday).mockResolvedValue({ ...DAY, runs: [notStarted, afternoon] });
   let resolveStart!: (run: typeof morning) => void;
-  vi.mocked(startRunSample).mockReturnValue(new Promise((resolve) => (resolveStart = resolve)));
+  vi.mocked(startRun).mockReturnValue(new Promise((resolve) => (resolveStart = resolve)));
   render(<DriverTodayPage />);
 
   const start = await screen.findByRole("button", { name: "Start run" });
@@ -165,36 +174,36 @@ it("starts the run and shows End run without reloading the day", async () => {
   fireEvent.click(start);
 
   expect(start).toBeDisabled();
-  expect(startRunSample).toHaveBeenCalledTimes(1);
-  expect(startRunSample).toHaveBeenCalledWith(morning.id);
+  expect(startRun).toHaveBeenCalledTimes(1);
+  expect(startRun).toHaveBeenCalledWith(morning.id);
 
   resolveStart({ ...morning, state: "IN_PROGRESS" });
 
   expect(await screen.findByRole("button", { name: "End run" })).toBeEnabled();
   expect(screen.queryByRole("button", { name: "Start run" })).not.toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Hamra morning run" })).toBeInTheDocument();
-  expect(getDriverTodaySample).toHaveBeenCalledTimes(1);
+  expect(getDriverToday).toHaveBeenCalledTimes(1);
 });
 
 it("ends the run and moves on to the next one", async () => {
   const [morning] = DAY.runs;
-  vi.mocked(getDriverTodaySample).mockResolvedValue(DAY);
-  vi.mocked(endRunSample).mockResolvedValue({ ...morning, state: "FINISHED" });
+  vi.mocked(getDriverToday).mockResolvedValue(DAY);
+  vi.mocked(endRun).mockResolvedValue({ ...morning, state: "FINISHED" });
   render(<DriverTodayPage />);
 
   fireEvent.click(await screen.findByRole("button", { name: "End run" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm end run" }));
 
   expect(await screen.findByText("Afternoon run")).toBeInTheDocument();
-  expect(endRunSample).toHaveBeenCalledWith(morning.id);
+  expect(endRun).toHaveBeenCalledWith(morning.id);
   expect(screen.getByRole("button", { name: "Start run" })).toBeEnabled();
-  expect(getDriverTodaySample).toHaveBeenCalledTimes(1);
+  expect(getDriverToday).toHaveBeenCalledTimes(1);
 });
 
 it("shows the error next to the button and retries the same action", async () => {
   const [morning] = DAY.runs;
-  vi.mocked(getDriverTodaySample).mockResolvedValue(DAY);
-  vi.mocked(endRunSample)
+  vi.mocked(getDriverToday).mockResolvedValue(DAY);
+  vi.mocked(endRun)
     .mockRejectedValueOnce(new TypeError("Failed to fetch"))
     .mockResolvedValueOnce({ ...morning, state: "FINISHED" });
   render(<DriverTodayPage />);
@@ -212,13 +221,13 @@ it("shows the error next to the button and retries the same action", async () =>
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
 
   expect(await screen.findByText("Afternoon run")).toBeInTheDocument();
-  expect(endRunSample).toHaveBeenCalledTimes(2);
+  expect(endRun).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 it("shows the backend's message when the action is refused", async () => {
-  vi.mocked(getDriverTodaySample).mockResolvedValue(DAY);
-  vi.mocked(endRunSample).mockRejectedValue(new ApiError(409, "This run can't be ended"));
+  vi.mocked(getDriverToday).mockResolvedValue(DAY);
+  vi.mocked(endRun).mockRejectedValue(new ApiError(409, "This run can't be ended"));
   render(<DriverTodayPage />);
 
   fireEvent.click(await screen.findByRole("button", { name: "End run" }));
@@ -230,8 +239,8 @@ it("shows the backend's message when the action is refused", async () => {
 
 it("asks before ending a run with stops left, and ends it only on Confirm", async () => {
   const [morning] = DAY.runs;
-  vi.mocked(getDriverTodaySample).mockResolvedValue(DAY);
-  vi.mocked(endRunSample).mockResolvedValue({ ...morning, state: "FINISHED" });
+  vi.mocked(getDriverToday).mockResolvedValue(DAY);
+  vi.mocked(endRun).mockResolvedValue({ ...morning, state: "FINISHED" });
   render(<DriverTodayPage />);
 
   fireEvent.click(await screen.findByRole("button", { name: "End run" }));
@@ -240,25 +249,25 @@ it("asks before ending a run with stops left, and ends it only on Confirm", asyn
   expect(screen.getByText("1 stop isn't confirmed yet. End the run anyway?")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Confirm end run" })).toHaveFocus();
   expect(screen.queryByRole("button", { name: "End run" })).not.toBeInTheDocument();
-  expect(endRunSample).not.toHaveBeenCalled();
+  expect(endRun).not.toHaveBeenCalled();
 
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
   expect(screen.getByRole("button", { name: "End run" })).toHaveFocus();
   expect(screen.queryByRole("button", { name: "Confirm end run" })).not.toBeInTheDocument();
-  expect(endRunSample).not.toHaveBeenCalled();
+  expect(endRun).not.toHaveBeenCalled();
 
   fireEvent.click(screen.getByRole("button", { name: "End run" }));
   fireEvent.keyDown(screen.getByRole("button", { name: "Confirm end run" }), { key: "Escape" });
 
   expect(screen.getByRole("button", { name: "End run" })).toHaveFocus();
-  expect(endRunSample).not.toHaveBeenCalled();
+  expect(endRun).not.toHaveBeenCalled();
 
   fireEvent.click(screen.getByRole("button", { name: "End run" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm end run" }));
 
-  expect(endRunSample).toHaveBeenCalledTimes(1);
-  expect(endRunSample).toHaveBeenCalledWith(morning.id);
+  expect(endRun).toHaveBeenCalledTimes(1);
+  expect(endRun).toHaveBeenCalledWith(morning.id);
   // Focus goes back to the run button, which now starts the afternoon run.
   // Focus is set by an effect just after the element appears, so wait for it.
   const focusTarget1 = await screen.findByRole("button", { name: "Start run" });
@@ -279,7 +288,7 @@ it("warns before ending a morning run while children are still on the bus, even 
     stops,
     counts: { students: 4, absent: 0, pickedUp: 4, droppedOff: 0, notPresent: 0 },
   };
-  vi.mocked(getDriverTodaySample).mockResolvedValue({ ...DAY, runs: [allPickedUp, afternoon] });
+  vi.mocked(getDriverToday).mockResolvedValue({ ...DAY, runs: [allPickedUp, afternoon] });
   render(<DriverTodayPage />);
 
   fireEvent.click(await screen.findByRole("button", { name: "End run" }));
@@ -288,7 +297,7 @@ it("warns before ending a morning run while children are still on the bus, even 
     screen.getByText("4 children are still on the bus, not dropped off yet. End the run anyway?"),
   ).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Confirm end run" })).toHaveFocus();
-  expect(endRunSample).not.toHaveBeenCalled();
+  expect(endRun).not.toHaveBeenCalled();
 });
 
 it("ends a run straight away when every stop is skippable and nobody is onboard", async () => {
@@ -299,15 +308,15 @@ it("ends a run straight away when every stop is skippable and nobody is onboard"
     stops,
     counts: { students: 4, absent: 4, pickedUp: 0, droppedOff: 0, notPresent: 0 },
   };
-  vi.mocked(getDriverTodaySample).mockResolvedValue({ ...DAY, runs: [allAbsent, afternoon] });
-  vi.mocked(endRunSample).mockResolvedValue({ ...allAbsent, state: "FINISHED" });
+  vi.mocked(getDriverToday).mockResolvedValue({ ...DAY, runs: [allAbsent, afternoon] });
+  vi.mocked(endRun).mockResolvedValue({ ...allAbsent, state: "FINISHED" });
   render(<DriverTodayPage />);
 
   fireEvent.click(await screen.findByRole("button", { name: "End run" }));
 
   expect(screen.queryByRole("button", { name: "Confirm end run" })).not.toBeInTheDocument();
-  expect(endRunSample).toHaveBeenCalledTimes(1);
-  expect(endRunSample).toHaveBeenCalledWith(morning.id);
+  expect(endRun).toHaveBeenCalledTimes(1);
+  expect(endRun).toHaveBeenCalledWith(morning.id);
   expect(await screen.findByText("Afternoon run")).toBeInTheDocument();
 });
 
@@ -332,9 +341,9 @@ it("closes the confirm step itself if a delayed confirmation brings the count to
     stops,
     counts: { students: 4, absent: 0, pickedUp: 3, droppedOff: 2, notPresent: 1 },
   };
-  vi.mocked(getDriverTodaySample).mockResolvedValue({ ...DAY, runs: [onboardOne, afternoon] });
+  vi.mocked(getDriverToday).mockResolvedValue({ ...DAY, runs: [onboardOne, afternoon] });
   let resolveDropOff!: (run: Run) => void;
-  vi.mocked(confirmStudentSample).mockReturnValue(
+  vi.mocked(confirmStudent).mockReturnValue(
     new Promise((resolve) => (resolveDropOff = resolve)),
   );
   render(<DriverTodayPage />);
@@ -363,7 +372,7 @@ it("closes the confirm step itself if a delayed confirmation brings the count to
 
   await waitFor(() => expect(focusTarget2).toHaveFocus());
   expect(screen.queryByRole("button", { name: "Confirm end run" })).not.toBeInTheDocument();
-  expect(endRunSample).not.toHaveBeenCalled();
+  expect(endRun).not.toHaveBeenCalled();
 });
 
 function buttonNames(name: string) {
@@ -388,7 +397,7 @@ function stopId(name: string) {
 }
 
 it("offers only the confirmations each stop can still take", async () => {
-  vi.mocked(getDriverTodaySample).mockResolvedValue(DAY);
+  vi.mocked(getDriverToday).mockResolvedValue(DAY);
   render(<DriverTodayPage />);
   await screen.findByRole("list", { name: "Stops" });
 
@@ -402,7 +411,7 @@ it("offers only the confirmations each stop can still take", async () => {
 it("offers no confirmations before the run is started", async () => {
   const [morning, afternoon] = DAY.runs;
   const notStarted = { ...morning, state: "NOT_STARTED" as const, startedAt: null };
-  vi.mocked(getDriverTodaySample).mockResolvedValue({ ...DAY, runs: [notStarted, afternoon] });
+  vi.mocked(getDriverToday).mockResolvedValue({ ...DAY, runs: [notStarted, afternoon] });
   render(<DriverTodayPage />);
   await screen.findByRole("button", { name: "Start run" });
 
@@ -413,9 +422,9 @@ it("offers no confirmations before the run is started", async () => {
 
 it("confirms a stop, locking only that stop while it saves", async () => {
   const [morning] = DAY.runs;
-  vi.mocked(getDriverTodaySample).mockResolvedValue(DAY);
+  vi.mocked(getDriverToday).mockResolvedValue(DAY);
   let resolveConfirm!: (run: Run) => void;
-  vi.mocked(confirmStudentSample).mockReturnValue(
+  vi.mocked(confirmStudent).mockReturnValue(
     new Promise((resolve) => (resolveConfirm = resolve)),
   );
   render(<DriverTodayPage />);
@@ -425,8 +434,8 @@ it("confirms a stop, locking only that stop while it saves", async () => {
   fireEvent.click(pickedUp);
   fireEvent.click(pickedUp);
 
-  expect(confirmStudentSample).toHaveBeenCalledTimes(1);
-  expect(confirmStudentSample).toHaveBeenCalledWith(morning.id, stopId("Dana Fares"), "PICKED_UP");
+  expect(confirmStudent).toHaveBeenCalledTimes(1);
+  expect(confirmStudent).toHaveBeenCalledWith(morning.id, stopId("Dana Fares"), "PICKED_UP");
   expect(within(card("Dana Fares")).getByRole("button", { name: "Saving…" })).toBeDisabled();
   expect(within(card("Dana Fares")).getByRole("button", { name: "Not present" })).toBeDisabled();
   expect(within(card("Tarek Mansour")).getByRole("button", { name: "Picked up" })).toBeEnabled();
@@ -436,13 +445,13 @@ it("confirms a stop, locking only that stop while it saves", async () => {
 
   expect(await within(card("Dana Fares")).findByText("Done · Picked up")).toBeInTheDocument();
   expect(buttonNames("Dana Fares")).toEqual(["Dropped off"]);
-  expect(getDriverTodaySample).toHaveBeenCalledTimes(1);
+  expect(getDriverToday).toHaveBeenCalledTimes(1);
 });
 
 it("activates the button that replaces a confirmed one with Enter or Space, not just a click", async () => {
   const user = userEvent.setup();
-  vi.mocked(getDriverTodaySample).mockResolvedValue(DAY);
-  vi.mocked(confirmStudentSample)
+  vi.mocked(getDriverToday).mockResolvedValue(DAY);
+  vi.mocked(confirmStudent)
     .mockResolvedValueOnce(withConfirmation(stopId("Dana Fares"), "PICKED_UP"))
     .mockResolvedValueOnce(withConfirmation(stopId("Dana Fares"), "DROPPED_OFF"))
     .mockResolvedValueOnce(withConfirmation(stopId("Tarek Mansour"), "NOT_PRESENT"))
@@ -457,7 +466,7 @@ it("activates the button that replaces a confirmed one with Enter or Space, not 
 
   await user.keyboard("{Enter}");
 
-  expect(confirmStudentSample).toHaveBeenLastCalledWith(
+  expect(confirmStudent).toHaveBeenLastCalledWith(
     DAY.runs[0].id,
     stopId("Dana Fares"),
     "DROPPED_OFF",
@@ -471,7 +480,7 @@ it("activates the button that replaces a confirmed one with Enter or Space, not 
 
   await user.keyboard(" ");
 
-  expect(confirmStudentSample).toHaveBeenLastCalledWith(
+  expect(confirmStudent).toHaveBeenLastCalledWith(
     DAY.runs[0].id,
     stopId("Tarek Mansour"),
     "PICKED_UP",
@@ -480,8 +489,8 @@ it("activates the button that replaces a confirmed one with Enter or Space, not 
 });
 
 it("shows a failed confirmation on its own stop and retries the same status", async () => {
-  vi.mocked(getDriverTodaySample).mockResolvedValue(DAY);
-  vi.mocked(confirmStudentSample)
+  vi.mocked(getDriverToday).mockResolvedValue(DAY);
+  vi.mocked(confirmStudent)
     .mockRejectedValueOnce(new TypeError("Failed to fetch"))
     .mockResolvedValueOnce(withConfirmation(stopId("Dana Fares"), "NOT_PRESENT"));
   render(<DriverTodayPage />);
@@ -499,8 +508,8 @@ it("shows a failed confirmation on its own stop and retries the same status", as
   fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Try again" }));
 
   expect(await within(card("Dana Fares")).findByText("Done · Not present")).toBeInTheDocument();
-  expect(confirmStudentSample).toHaveBeenCalledTimes(2);
-  expect(confirmStudentSample).toHaveBeenLastCalledWith(
+  expect(confirmStudent).toHaveBeenCalledTimes(2);
+  expect(confirmStudent).toHaveBeenLastCalledWith(
     DAY.runs[0].id,
     stopId("Dana Fares"),
     "NOT_PRESENT",
@@ -509,9 +518,9 @@ it("shows a failed confirmation on its own stop and retries the same status", as
 });
 
 it("keeps a stop confirmed meanwhile when an older answer arrives later", async () => {
-  vi.mocked(getDriverTodaySample).mockResolvedValue(DAY);
+  vi.mocked(getDriverToday).mockResolvedValue(DAY);
   let resolveDana!: (run: Run) => void;
-  vi.mocked(confirmStudentSample)
+  vi.mocked(confirmStudent)
     .mockReturnValueOnce(new Promise((resolve) => (resolveDana = resolve)))
     .mockResolvedValueOnce(withConfirmation(stopId("Tarek Mansour"), "PICKED_UP"));
   render(<DriverTodayPage />);

@@ -247,3 +247,149 @@ describe("request", () => {
     await expect(request("/api/auth/me")).rejects.toThrow("Failed to fetch");
   });
 });
+
+describe("request timeoutMs", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("sends no signal when timeoutMs is not given", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, json: () => Promise.resolve({}) });
+
+    await request("/api/auth/me");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ signal: undefined }),
+    );
+  });
+
+  it("sends an AbortSignal when timeoutMs is given", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, json: () => Promise.resolve({}) });
+
+    await request("/api/auth/me", { timeoutMs: 5000 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  // A real fetch rejects with a DOMException named "AbortError" once its signal
+  // aborts; the mock here does the same so the test matches what callers see.
+  function fetchThatRejectsOnAbort() {
+    return vi.fn((_url: string, init?: RequestInit) => {
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+  }
+
+  it("aborts and rejects once timeoutMs elapses with no answer", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", fetchThatRejectsOnAbort());
+
+    const pending = request("/api/auth/me", { timeoutMs: 3000 });
+    const assertion = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(3000);
+
+    await assertion;
+  });
+
+  it("clears the timeout once the response arrives, so it never fires later", async () => {
+    vi.useFakeTimers();
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+    mockFetchOnce({ ok: true, status: 200, json: () => Promise.resolve({}) });
+
+    await request("/api/auth/me", { timeoutMs: 3000 });
+
+    expect(clearSpy).toHaveBeenCalled();
+  });
+
+  // The headers arrive at once but the body never does; like a real body read,
+  // json() rejects with an AbortError once the request's signal aborts.
+  function fetchWithStalledBody(status: number) {
+    return vi.fn((_url: string, init?: RequestInit) =>
+      Promise.resolve({
+        ok: status >= 200 && status < 300,
+        status,
+        json: () =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              reject(new DOMException("The operation was aborted.", "AbortError"));
+            });
+          }),
+      }),
+    );
+  }
+
+  it("aborts a 200 whose body stalls once timeoutMs elapses", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", fetchWithStalledBody(200));
+
+    const pending = request("/api/auth/me", { timeoutMs: 3000 });
+    const assertion = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(3000);
+
+    await assertion;
+  });
+
+  it("rejects a 409 whose body stalls as an AbortError, not an ApiError", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", fetchWithStalledBody(409));
+
+    const pending = request("/api/auth/me", { timeoutMs: 3000 });
+    const assertion = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(3000);
+
+    await assertion;
+    await expect(pending).rejects.not.toBeInstanceOf(ApiError);
+  });
+
+  it("resolves a 200 read in time and leaves no timer behind", async () => {
+    vi.useFakeTimers();
+    mockFetchOnce({ ok: true, status: 200, json: () => Promise.resolve({ id: "u1" }) });
+
+    await expect(request("/api/auth/me", { timeoutMs: 3000 })).resolves.toEqual({ id: "u1" });
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("throws ApiError or ApiValidationError for a 409 read in time, and clears the timer", async () => {
+    vi.useFakeTimers();
+    mockFetchOnce({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({ errors: { name: "Name is taken" } }),
+    });
+    await expect(request("/api/routes", { method: "POST", timeoutMs: 3000 })).rejects.toBeInstanceOf(
+      ApiValidationError,
+    );
+    expect(vi.getTimerCount()).toBe(0);
+
+    mockFetchOnce({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({ detail: "Run already started" }),
+    });
+    await expect(request("/api/runs/r1/start", { method: "POST", timeoutMs: 3000 })).rejects.toMatchObject({
+      status: 409,
+      message: "Run already started",
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("clears the timer on a 204 without reading a body", async () => {
+    vi.useFakeTimers();
+    const jsonSpy = vi.fn().mockResolvedValue({ shouldNotBeRead: true });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 204, json: jsonSpy }));
+
+    await expect(request("/api/runs/r1/location", { method: "PUT", timeoutMs: 3000 })).resolves.toBeUndefined();
+
+    expect(jsonSpy).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
