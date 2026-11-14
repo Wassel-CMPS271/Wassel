@@ -409,6 +409,19 @@ that's the structure this codebase moved away from.
   their current routes in one `StudentService.findRouteIds`). Tests hold the run lock in another transaction to prove
   `confirm` takes it before its checks, and that it and the run ending wait for each other. `ConfirmationStatus` order
   is pinned by a test, because "latest" depends on it.
+  Offline replay (SCRUM-263): the same endpoint takes an optional `clientRequestId` (UUID, one per tap, resent unchanged),
+  one item per request, so the HTTP status is the item's result (table in the contract's "Offline replay"); no batch
+  endpoint, no new role-matrix row. Keys live in `confirmation_keys` (migration V13, `ConfirmationKey`,
+  `ConfirmationKeyRepository`, unique on driver user + key, no foreign keys, never pruned), one row per key so a double tap's
+  second key is remembered too. Inside `confirm`'s transaction, after the run is locked and found to be the driver's today:
+  a key this driver already used for the same run, student and status returns 200 with nothing written and skips the state
+  checks (so it answers after End run or a later status); a different run, student or status is
+  `ConfirmationKeyReusedException` (422). Otherwise the usual checks run and the key is saved on every path that answers 200,
+  *before* the confirmation row (`insertIfMissing` returning 0 means another request of the driver, on another run, committed
+  the same key first: same tap is fine, else 422 and the transaction rolls back), so a 404/409 stores no key. The time is still
+  the server's, so a replayed tap carries its sync time. Tests: `ConfirmationReplayTests` (shares `RunControllerTests`' context
+  and reads the two new samples). A migration number is taken at merge: V10 to V12 were claimed by open PRs when this was
+  written.
   Start and end (SCRUM-234): `POST /api/driver/runs/{runId}/start` and `/end` (`DriverRunController`, `RunService.start`/`end`
   over one `move`), no migration (`started_at`/`ended_at` were in V7). `start`/`end` are not `@Transactional` (the route lookup can wait on the road provider): `move` finds the route first, then does the checks, the update and the re-read in one `TransactionTemplate`. The move is `RunRepository.markStarted`/`markEnded`,
   a conditional `UPDATE ... WHERE school AND state = <expected>` (the `LoginCode` pattern, no `@Version` or lock), so
