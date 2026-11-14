@@ -495,6 +495,47 @@ that's the structure this codebase moved away from.
   arrival time from the same `RouteService#schedule` the route's own stops use, one read per distinct route), none when the
   child has no route — the same "no route" treatment `findStudentRoute` (`absences`) gives a
   vanished route.
+- `addressrequests` — a parent asks to change a child's pickup address and the head of transportation decides it
+  (SCRUM-269). Shapes and rules are in `docs/contracts/address-requests.md`. A new module because it has its own table
+  (`address_requests`, migration V11, no foreign keys) and two controllers (`ParentAddressRequestController`,
+  `HeadOfTransportAddressRequestController`); it reads and writes the student only through `StudentService`
+  (`findChildOf`, `getStudent`, `updateAddress`, `updateLocation`), and nothing depends on it. The student's name and
+  address and the parent's email are copied into the request, so it reads the same later. **One pending request per
+  child**: `submit` takes the same per-student advisory lock as absences (`AddressRequestRepository.lockStudent`) before
+  checking for a pending one, with a partial unique index (`status = 'PENDING'`) as the backstop. **A decision takes the
+  request's row lock** (`findLockedBySchoolIdAndId`, like a run's confirmation), so two decisions of one request run
+  one after the other and the second is a 409. `approve` runs in one transaction: it checks the student is active
+  (409, the request stays pending), saves the address through `StudentService.updateAddress` (geocoded unless the student
+  has a manual pin, exactly like the head's own edit) and, if the parent sent a pin, `updateLocation` (a manual pin),
+  then marks the request approved. `reject` never touches the student, so it works for an inactive one too. A parent
+  lists only the requests they sent for their own child. The status is stored as `PENDING`/`APPROVED`/`REJECTED` and
+  sent lower case, like a student's; the `status` filter is parsed in the controller, an unknown one a 400 on `status`.
+  Known limits are in the contract: a manual pin stays when the request has none, a request stays with the parent who
+  sent it after a re-link, no withdrawing and no notification.
+- `inbox` — a parent's inbox of what happened to their child on a run (SCRUM-267): `GET /api/parent/inbox?unread=`,
+  `GET .../unread-count`, `POST .../{id}/read`, `POST .../read-all`. Shapes and rules are in `docs/contracts/inbox.md`.
+  Its own module (table `inbox_events`, migration V12, no foreign keys); nothing depends on it and `runs` does not import
+  it. `RunService.confirm` publishes `runs.event.ConfirmationRecordedEvent` (status and direction as text, so a listener
+  imports no runs entity) **only when the confirmation row was newly inserted** (`ConfirmationRepository.insertIfMissing`
+  now returns the row count), and `InboxService.recordConfirmation` listens in that same transaction: the confirmation
+  and its entry exist together or not at all, which also means a failing listener would fail the driver's tap. The entry
+  copies the parent linked to the child at that moment, the child's name and the run's direction; a child with no parent
+  makes none. A unique key on run + student + type, with `INSERT ... ON CONFLICT DO NOTHING`, keeps a replay from making
+  a second entry. Reading is scoped by school and parent in every statement; marking read is a conditional
+  `UPDATE ... WHERE read_at IS NULL`, so a repeat keeps the first time, and another parent's entry is the same 404 as an
+  unknown one. The list is the newest 50 (there is no paging or clean-up yet); the unread count is not limited to them.
+  Selecting which entries a parent receives and late alerts are SCRUM-268.
+- `reports` — the head of transportation's transport totals and their CSV export over a date range (SCRUM-271):
+  `GET /api/head-of-transport/transport-totals?from=&to=` and `.../export`. Shapes and rules are in
+  `docs/contracts/transport-totals.md`. Stores nothing and nothing depends on it; `ReportService` reads three
+  services, each one grouped query for the whole range (no per-day loop): `RunService.dailyTotals` (runs per date
+  from `RunRepository.countByDate`, riders from `ConfirmationRepository.riderCountsByDate`),
+  `AbsenceService.countAbsentStudentsByDate` and `StudentService.countOnRoutes`. A student's status on a run is their
+  latest (highest) one, and each student counts once a day, so `total` is a sum of student-days, not different
+  students; `studentsOnRoutes` is the roster now because a run stores no roster. Every date of the range is listed
+  (zeros), the range is at most 62 days (400 on `to`), and the CSV is built from the same `TransportTotalsResponse`
+  as the JSON with a final `TOTAL` row, so the two cannot disagree. The absence query counts by an integer offset
+  from `from`, not `generate_series` over dates (that returns timestamps and would depend on the session time zone).
 
 ## Where things go
 

@@ -4,15 +4,20 @@ import com.wassel.backend.absences.exception.AbsenceNotCancellableException;
 import com.wassel.backend.absences.exception.AbsenceNotFoundException;
 import com.wassel.backend.absences.exception.AbsenceOverlapException;
 import com.wassel.backend.absences.exception.InvalidAbsenceDateException;
+import com.wassel.backend.addressrequests.exception.AddressRequestConflictException;
+import com.wassel.backend.addressrequests.exception.AddressRequestNotFoundException;
+import com.wassel.backend.addressrequests.exception.InvalidAddressRequestException;
 import com.wassel.backend.auth.exception.CodeCooldownException;
 import com.wassel.backend.auth.exception.InvalidCodeException;
 import com.wassel.backend.auth.exception.InvalidCredentialsException;
 import com.wassel.backend.auth.exception.InvalidPasswordTokenException;
 import com.wassel.backend.auth.exception.LoginExpiredException;
 import com.wassel.backend.drivers.exception.DriverAlreadyExistsException;
+import com.wassel.backend.inbox.exception.InboxEventNotFoundException;
 import com.wassel.backend.drivers.exception.DriverNotFoundException;
 import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
+import com.wassel.backend.reports.exception.InvalidTotalsRangeException;
 import com.wassel.backend.routes.exception.ActiveRunConflictException;
 import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
@@ -282,6 +287,43 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(AbsenceNotFoundException.class)
 	public ProblemDetail handleAbsenceNotFound(AbsenceNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// Same "errors" shape again, keyed by the field that was wrong (address, latitude, longitude, status).
+	@ExceptionHandler(InvalidAddressRequestException.class)
+	public ProblemDetail handleInvalidAddressRequest(InvalidAddressRequestException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
+		return problem;
+	}
+
+	// Same "errors" shape again, keyed by the field of the date range that was wrong (to).
+	@ExceptionHandler(InvalidTotalsRangeException.class)
+	public ProblemDetail handleInvalidTotalsRange(InvalidTotalsRangeException ex) {
+		logRejected(ex);
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+		problem.setProperty("errors", Map.of(ex.getField(), ex.getMessage()));
+		return problem;
+	}
+
+	// A plain detail, as the contract has it: a second pending request, or one already decided.
+	@ExceptionHandler(AddressRequestConflictException.class)
+	public ProblemDetail handleAddressRequestConflict(AddressRequestConflictException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	@ExceptionHandler(AddressRequestNotFoundException.class)
+	public ProblemDetail handleAddressRequestNotFound(AddressRequestNotFoundException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	@ExceptionHandler(InboxEventNotFoundException.class)
+	public ProblemDetail handleInboxEventNotFound(InboxEventNotFoundException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
 	}
