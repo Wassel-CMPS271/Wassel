@@ -35,6 +35,14 @@ else {
   const browserTest = readFileSync(resolve(source, "frontend/e2e/driver-client-review.e2e.ts"));
   const reviewName = `driver-client-review-${createHash("sha256").update(browserTest).digest("hex").slice(0, 12)}.e2e.ts`;
   overlay(`frontend/e2e/${reviewName}`, browserTest);
+  const backendRoot = options.backend ? resolve(options.backend, "..") : checkout;
+  const clockPath = "backend/src/test/java/com/wassel/backend/e2e/WeekdayE2eClock.java";
+  const clock = readFileSync(resolve(source, clockPath));
+  const clockTarget = resolve(backendRoot, clockPath);
+  const backendGit = (...args) => execFileSync("git", args, { cwd: backendRoot, encoding: "utf8", windowsHide: true }).trim();
+  if (backendGit("status", "--porcelain", "--untracked-files=no")) throw new Error("Backend has tracked modifications");
+  if (existsSync(clockTarget) && !readFileSync(clockTarget).equals(clock)) throw new Error("Preserving different school clock source");
+  if (!existsSync(clockTarget)) { if (backendGit("ls-files", "--", clockPath)) throw new Error("Refusing tracked backend clock edit"); mkdirSync(dirname(clockTarget), { recursive: true }); writeFileSync(clockTarget, clock); }
   const runner = readFileSync(resolve(checkout, "frontend/e2e/run.mjs"), "utf8");
   const marker = '["auth.e2e.ts", "auth-revocation.e2e.ts"]';
   if (runner.split(marker).length !== 2) throw new Error("Review the candidate launcher before adapting its test selection");
@@ -51,6 +59,9 @@ else {
     adapted = adapted.replace(backendMarker, `const backend = ${JSON.stringify(backend)};`);
     console.log(`Accepted backend ${accepted}; only the generated review launcher changes its backend directory.`);
   }
+  const clockMarker = '"--spring.profiles.active=local,e2e"';
+  if (adapted.split(clockMarker).length !== 2) throw new Error("Review school clock launcher marker");
+  adapted = adapted.replace(clockMarker, '"--spring.profiles.active=local,e2e", "--spring.main.sources=com.wassel.backend.e2e.WeekdayE2eClock"');
   const launcherName = `.driver-review-run-${createHash("sha256").update(adapted).digest("hex").slice(0, 12)}.mjs`;
   overlay(`frontend/e2e/${launcherName}`, Buffer.from(adapted));
   command = [`e2e/${launcherName}`, "--suite=auth"];

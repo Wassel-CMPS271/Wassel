@@ -1,5 +1,26 @@
 # SCRUM-250 — Independent driver frontend tests
 
+## Accepted Inbox/backend refresh and independent retest — 14 November 2026
+
+Merged accepted develop `5da9d2c2f9b829747c47571dfb541d32a1f6aa64` into the existing #148 branch. All **65 original independent acceptance tests and assertions remain unchanged**. Latest #144 is still a draft at `e3ec66670324a77edfe014dec7a00f18ee39ac3c`.
+
+| Executed check | Actual result |
+| --- | --- |
+| Original 65 cases on exact latest #144 | **65 passed / 0 failed / 0 skipped** |
+| Full accepted-source regression | **816 passed / 1 genuine real-endpoint failure / 1 existing expected failure / 6 existing skips** (824; 59 files) |
+| ESLint / production build | Passed |
+| Standalone TypeScript | Exactly 13 current accepted-develop diagnostics; zero introduced |
+| Exact #144 frontend + accepted 5da9d2c backend, real PostgreSQL/Flyway/Chromium | **1 passed**, runner exit 0 |
+
+Real browser verification retained actual password/2FA, GET today/start/confirm/end, pickup/drop-off/not-present persistence after reload, real GPS consent/location body and parent LIVE/withdrawal, wrong-role denial and 360px/no crashes. Both candidate and accepted-backend tracked source remained unchanged. No mocked business responses or feature merge.
+
+The review runner now safely overlays our small test-classpath-only ticking Monday school-clock source into the detached backend if absent, refuses differing existing content/tracked edits, and passes it as an explicit test source. This allows a real run scenario on a Saturday rather than skipping the production holiday. Auth/JWT still use real time; the tested school date is controlled (2026-11-02), not a claim of real Nov 14 activity. The same support is used by our GPS/Inbox browser suites. Content-derived overlay names preserve earlier test/launcher versions. The Windows candidate build emitted a standalone symlink-copy warning; it exited successfully and the actual Next production server/browser scenario passed. This is not standalone deployment certification.
+
+**Remaining genuine failure:** accepted Driver Today still uses sample runs, so the request-based `/api/driver/runs/today` test remains red. Majd must finish/accept #144's real-client integration and its outstanding phone/auth/offline work. Replay #155 has advanced to `9eaaca7c545d88062f27bc5c3a0b2bab6e062266` but is unmerged; the frontend replay client remains null. After integration, rerun the same 65 cases and required CI on HEAD. Keep #148 a draft. No teammate branch/code or Jira status changed; no PR merged.
+
+Evidence: ignored `tmp/SCRUM-250-20261114/` and preserved candidate Playwright artifacts/history. The November 10/12 evidence remains historical and intact.
+
+
 ## Dependency refresh and independent review — 12 November 2026
 
 Accepted develop `4cbfcc7172520e683366d6eaab482ff95015dba0` includes #143 GPS. Reused the existing branch and all **65 independent acceptance tests**. No assertion or case was skipped, removed or weakened. The only fixture change adds `locationSharing: false` compatibly to the run factory for the candidate's additive Run field.
