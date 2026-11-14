@@ -1,0 +1,18 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { me, type AuthUser, type Role } from "@/lib/api/auth";
+import { ApiError } from "@/lib/api/errors";
+import AdminLayout from "./layout";
+import AdminHome from "./page";
+const router = vi.hoisted(() => ({ replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/admin" }));
+vi.mock("@/lib/api/auth", async original => ({ ...await original<typeof import("@/lib/api/auth")>(), me: vi.fn() }));
+const user = (role: Role): AuthUser => ({ id: "a", email: "test@example.invalid", role, schoolId: "school" });
+beforeEach(() => vi.resetAllMocks());
+afterEach(() => vi.restoreAllMocks());
+const show = () => render(<AdminLayout><AdminHome /></AdminLayout>);
+it("shows no administration data before authentication completes", () => { vi.mocked(me).mockReturnValue(new Promise(() => {})); show(); expect(screen.queryByRole("heading", { name: "School administration" })).not.toBeInTheDocument(); });
+it.each([["PARENT", "/parent"], ["DRIVER", "/driver"], ["HEAD_OF_TRANSPORT", "/head-of-transport"]] as [Role, string][])("hides Admin navigation from %s", async (role, home) => { vi.mocked(me).mockResolvedValue(user(role)); show(); await waitFor(() => expect(router.replace).toHaveBeenCalledWith(home)); expect(screen.queryByRole("navigation", { name: /admin/i })).not.toBeInTheDocument(); expect(screen.queryByRole("heading", { name: "School administration" })).not.toBeInTheDocument(); });
+it("redirects a signed-out user", async () => { vi.mocked(me).mockRejectedValue(new ApiError(401)); show(); await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login")); });
+it("shows an outage without exposing the shell or signing out", async () => { vi.mocked(me).mockRejectedValue(new ApiError(500)); show(); await screen.findByRole("alert"); expect(router.replace).not.toHaveBeenCalled(); expect(screen.queryByRole("heading", { name: "School administration" })).not.toBeInTheDocument(); });
+it("gives an authorized Admin the three real destinations and logout", async () => { vi.mocked(me).mockResolvedValue(user("ADMIN")); show(); await screen.findByRole("heading", { name: "School administration" }); expect(screen.getByRole("link", { name: /Open school times$/ })).toHaveAttribute("href", "/admin/school-times"); expect(screen.getByRole("link", { name: /Open school calendar$/ })).toHaveAttribute("href", "/admin/calendar"); expect(screen.getByRole("link", { name: /Invite head of transportation$/ })).toHaveAttribute("href", "/admin/head-of-transport"); expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled(); });
