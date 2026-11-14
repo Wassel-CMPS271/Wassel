@@ -173,6 +173,11 @@ class RoleAccessMatrixTests {
 		TABLE.put("GET /api/parent/children", Access.PARENT_ONLY);
 		TABLE.put("GET /api/parent/children/{studentId}/bus-location", Access.PARENT_ONLY);
 
+		// attendance history and audit (SCRUM-265)
+		TABLE.put("GET /api/parent/children/{studentId}/attendance", Access.PARENT_ONLY);
+		TABLE.put("GET /api/head-of-transport/attendance", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("GET /api/head-of-transport/attendance/audit", Access.HEAD_OF_TRANSPORT_ONLY);
+
 		// address requests (SCRUM-269)
 		TABLE.put("POST /api/parent/children/{studentId}/address-requests", Access.PARENT_ONLY);
 		TABLE.put("GET /api/parent/children/{studentId}/address-requests", Access.PARENT_ONLY);
@@ -230,6 +235,20 @@ class RoleAccessMatrixTests {
 		VALID_BODIES.put("PUT /api/head-of-transport/routes/{id}/stops", "{\"studentIds\":[]}");
 		VALID_BODIES.put("POST /api/parent/children/{studentId}/absences", "{\"fromDate\":\"2030-01-04\"}");
 		VALID_BODIES.put("POST /api/parent/children/{studentId}/address-requests", "{\"address\":\"Hamra Street, Beirut\"}");
+	}
+
+	/**
+	 * The query string for each endpoint with required query parameters (SCRUM-265). Spring resolves them before the
+	 * role check, so without them a caller who is not allowed would get 400 instead of 403. Sent to every caller; the
+	 * endpoints are reads, so nothing is written.
+	 */
+	private static final Map<String, String> VALID_QUERIES = new LinkedHashMap<>();
+
+	static {
+		String range = "from=2030-01-01&to=2030-01-31";
+		VALID_QUERIES.put("GET /api/parent/children/{studentId}/attendance", range);
+		VALID_QUERIES.put("GET /api/head-of-transport/attendance", range);
+		VALID_QUERIES.put("GET /api/head-of-transport/attendance/audit", range);
 	}
 
 	@Autowired
@@ -324,6 +343,10 @@ class RoleAccessMatrixTests {
 	private MockHttpServletResponse call(String endpoint, Caller caller, boolean allowed) throws Exception {
 		String[] parts = endpoint.split(" ", 2);
 		String path = parts[1].replaceAll("\\{[^}]+}", SOME_ID);
+		String query = VALID_QUERIES.get(endpoint);
+		if (query != null) {
+			path += "?" + query;
+		}
 		String body = allowed ? "{}" : VALID_BODIES.getOrDefault(endpoint, "{}");
 		MockHttpServletRequestBuilder request = request(org.springframework.http.HttpMethod.valueOf(parts[0]), path)
 				.contentType(MediaType.APPLICATION_JSON)

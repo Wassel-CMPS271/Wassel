@@ -1,0 +1,26 @@
+[
+  {
+    "date": "2026-11-04",
+    "direction": "AFTERNOON",
+    "status": "DROPPED_OFF",
+    "notPresentAt": null,
+    "pickedUpAt": "2026-11-04T11:41:00Z",
+    "droppedOffAt": "2026-11-04T12:07:00Z"
+  },
+  {
+    "date": "2026-11-04",
+    "direction": "MORNING",
+    "status": "PICKED_UP",
+    "notPresentAt": "2026-11-04T05:12:00Z",
+    "pickedUpAt": "2026-11-04T05:19:00Z",
+    "droppedOffAt": null
+  },
+  {
+    "date": "2026-11-03",
+    "direction": "MORNING",
+    "status": "NOT_PRESENT",
+    "notPresentAt": "2026-11-03T05:11:00Z",
+    "pickedUpAt": null,
+    "droppedOffAt": null
+  }
+]
