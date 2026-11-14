@@ -62,4 +62,18 @@ public interface AbsenceRepository extends JpaRepository<Absence, UUID> {
 			+ "AND a.cancelled = false AND a.fromDate <= :date AND a.toDate >= :date")
 	List<UUID> findAbsentStudentIds(@Param("schoolId") UUID schoolId,
 			@Param("studentIds") Collection<UUID> studentIds, @Param("date") LocalDate date);
+
+	/**
+	 * For the transport totals (SCRUM-271): per date in the range, how many distinct students have a live
+	 * (non-cancelled) absence covering it. Rows are {@code [date, students]}; a date with none has no row.
+	 */
+	@Query(value = """
+			SELECT CAST(:from AS date) + g.n AS day, COUNT(DISTINCT a.student_id)
+			FROM generate_series(0, CAST(:days AS integer)) AS g(n)
+			JOIN absences a ON a.school_id = :schoolId AND NOT a.cancelled
+				AND a.from_date <= CAST(:from AS date) + g.n AND a.to_date >= CAST(:from AS date) + g.n
+			GROUP BY 1
+			""", nativeQuery = true)
+	List<Object[]> countAbsentStudentsByDate(@Param("schoolId") UUID schoolId, @Param("from") LocalDate from,
+			@Param("days") int days);
 }
