@@ -201,7 +201,7 @@ export function RouteFormDialog({
         transition={{ duration: 0.2, ease: "easeOut" }}
       >
         <Card>
-          <form onSubmit={handleSubmit} noValidate aria-labelledby={headingId}>
+          <form method="post" onSubmit={handleSubmit} noValidate aria-labelledby={headingId}>
             <h2
               id={headingId}
               className="text-lg font-semibold"

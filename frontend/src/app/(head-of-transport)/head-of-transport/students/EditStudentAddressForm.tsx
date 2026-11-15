@@ -218,7 +218,7 @@ export function EditStudentAddressForm({ student, onSave, onSaveLocation, onLink
               transition={{ duration: 0.2, ease: "easeOut" }}
             >
               <Card>
-                <form onSubmit={submit} noValidate aria-labelledby={headingId}>
+                <form method="post" onSubmit={submit} noValidate aria-labelledby={headingId}>
                   <h2 id={headingId} className="text-lg font-semibold" style={{ color: darkTheme.text.primary, marginBottom: spacing.md }}>
                     Edit pickup details
                   </h2>
