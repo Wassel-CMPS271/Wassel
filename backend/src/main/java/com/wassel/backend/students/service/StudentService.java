@@ -13,6 +13,7 @@ import com.wassel.backend.students.exception.InvalidStopOrderException;
 import com.wassel.backend.students.exception.StudentAlreadyExistsException;
 import com.wassel.backend.students.exception.StudentNotActiveException;
 import com.wassel.backend.students.exception.StudentNotFoundException;
+import com.wassel.backend.students.exception.StudentStatusConflictException;
 import com.wassel.backend.students.repository.StudentRepository;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.service.UserService;
@@ -20,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -48,6 +50,12 @@ public class StudentService {
 	private static final String NOT_ACTIVE_MESSAGE = "Only active students can be added to a route.";
 
 	private static final String NOT_ON_ROUTE_MESSAGE = "Student is not on this route.";
+
+	/** The status changes the roster allows (SCRUM-270); asking for the status a student already has is always fine. */
+	private static final Map<StudentStatus, Set<StudentStatus>> ALLOWED_CHANGES = Map.of(
+			StudentStatus.ACTIVE, Set.of(StudentStatus.PAUSED, StudentStatus.INACTIVE),
+			StudentStatus.PAUSED, Set.of(StudentStatus.ACTIVE, StudentStatus.INACTIVE),
+			StudentStatus.INACTIVE, Set.of(StudentStatus.ACTIVE));
 
 	private static final String DUPLICATE_STOP_MESSAGE = "A student appears more than once in the new order.";
 
@@ -144,6 +152,31 @@ public class StudentService {
 	}
 
 	/**
+	 * The student's status now, after checking they may go to {@code target} (SCRUM-270, docs/contracts/roster.md): an
+	 * archived student can only be restored to active, every other change is allowed, and the status they already have is
+	 * a change of nothing. Throws {@link StudentStatusConflictException} (409) otherwise, and
+	 * {@link StudentNotFoundException} (404) for a student that is not in this school. Read-only, so a caller can check
+	 * before it releases the student's route.
+	 */
+	@Transactional(readOnly = true)
+	public StudentStatus requireChange(UUID schoolId, UUID studentId, StudentStatus target) {
+		StudentStatus current = findOwned(schoolId, studentId).getStatus();
+		if (current != target && !ALLOWED_CHANGES.get(current).contains(target)) {
+			throw new StudentStatusConflictException("An archived student can only be restored to active.");
+		}
+		return current;
+	}
+
+	/** Gives the student this status, under the rules of {@link #requireChange}. The same status again changes nothing. */
+	@Transactional
+	public StudentResponse changeStatus(UUID schoolId, UUID studentId, StudentStatus target) {
+		requireChange(schoolId, studentId, target);
+		Student student = findOwned(schoolId, studentId);
+		student.setStatus(target);
+		return toResponse(student);
+	}
+
+	/**
 	 * Puts an active student on a route, as its new last stop. A student already on a different
 	 * route is moved: this just overwrites {@code routeId}/{@code stopPosition} on the student's
 	 * own row, so the old route's count drops without anything else to clean up. Takes a plain
@@ -162,6 +195,29 @@ public class StudentService {
 		Integer maxPosition = studentRepository.findMaxStopPosition(schoolId, routeId);
 		student.setRouteId(routeId);
 		student.setStopPosition((maxPosition == null ? 0 : maxPosition) + 1);
+	}
+
+	/**
+	 * Puts an active student on a route at this stop position (1 is the first stop), for the best-route insertion
+	 * (SCRUM-270). The route's stops are rewritten as a clean 1..n with the student in their place, like
+	 * {@link #reorderRoute}. Takes no seat check (the routes module does that, under the route's lock) and, like
+	 * {@link #assignToRoute}, refuses a student who is not active. A student already on this route is moved to the place.
+	 */
+	@Transactional
+	public void assignToRouteAt(UUID schoolId, UUID studentId, UUID routeId, int position) {
+		Student student = findOwned(schoolId, studentId);
+		if (student.getStatus() != StudentStatus.ACTIVE) {
+			throw new StudentNotActiveException(NOT_ACTIVE_MESSAGE);
+		}
+		List<Student> stops = new ArrayList<>(
+				studentRepository.findBySchoolIdAndRouteIdOrderByStopPositionAsc(schoolId, routeId));
+		stops.removeIf(stop -> stop.getId().equals(studentId));
+		int index = Math.max(0, Math.min(position - 1, stops.size()));
+		stops.add(index, student);
+		student.setRouteId(routeId);
+		for (int i = 0; i < stops.size(); i++) {
+			stops.get(i).setStopPosition(i + 1);
+		}
 	}
 
 	/** Throws if the student isn't currently a stop on this particular route. */
