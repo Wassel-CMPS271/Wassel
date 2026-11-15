@@ -162,7 +162,7 @@ that's the structure this codebase moved away from.
   Doing it twice is fine. `AccountResponse.status` is `"revoked"` while disabled. A driver's revoke also sets
   `DriverStatus.DEACTIVATED` and releases the vehicle (so another driver can take it); restore goes back to
   `ACTIVE`, or `INVITED` if no password was ever set, and does not give the vehicle back. Known limit: the
-  driver's route still names them; the head of transportation reassigns it. There is no admin screen for
+  driver's route still names them; the head of transportation reassigns it through a run (`POST /api/head-of-transport/runs/{runId}/reassignments`, SCRUM-264, in `runs`). There is no admin screen for
   revoking a head of transportation yet (API only).
 - `geocoding` — turns a free-text address into coordinates via the public Nominatim instance
   (SCRUM-211). `service/Geocoder` is the interface other modules use (`students` is the only
@@ -409,6 +409,19 @@ that's the structure this codebase moved away from.
   their current routes in one `StudentService.findRouteIds`). Tests hold the run lock in another transaction to prove
   `confirm` takes it before its checks, and that it and the run ending wait for each other. `ConfirmationStatus` order
   is pinned by a test, because "latest" depends on it.
+  Offline replay (SCRUM-263): the same endpoint takes an optional `clientRequestId` (UUID, one per tap, resent unchanged),
+  one item per request, so the HTTP status is the item's result (table in the contract's "Offline replay"); no batch
+  endpoint, no new role-matrix row. Keys live in `confirmation_keys` (migration V13, `ConfirmationKey`,
+  `ConfirmationKeyRepository`, unique on driver user + key, no foreign keys, never pruned), one row per key so a double tap's
+  second key is remembered too. Inside `confirm`'s transaction, after the run is locked and found to be the driver's today:
+  a key this driver already used for the same run, student and status returns 200 with nothing written and skips the state
+  checks (so it answers after End run or a later status); a different run, student or status is
+  `ConfirmationKeyReusedException` (422). Otherwise the usual checks run and the key is saved on every path that answers 200,
+  *before* the confirmation row (`insertIfMissing` returning 0 means another request of the driver, on another run, committed
+  the same key first: same tap is fine, else 422 and the transaction rolls back), so a 404/409 stores no key. The time is still
+  the server's, so a replayed tap carries its sync time. Tests: `ConfirmationReplayTests` (shares `RunControllerTests`' context
+  and reads the two new samples). A migration number is taken at merge: V10 to V12 were claimed by open PRs when this was
+  written.
   Start and end (SCRUM-234): `POST /api/driver/runs/{runId}/start` and `/end` (`DriverRunController`, `RunService.start`/`end`
   over one `move`), no migration (`started_at`/`ended_at` were in V7). `start`/`end` are not `@Transactional` (the route lookup can wait on the road provider): `move` finds the route first, then does the checks, the update and the re-read in one `TransactionTemplate`. The move is `RunRepository.markStarted`/`markEnded`,
   a conditional `UPDATE ... WHERE school AND state = <expected>` (the `LoginCode` pattern, no `@Version` or lock), so
@@ -423,6 +436,26 @@ that's the structure this codebase moved away from.
   repeated end that arrives after midnight is a 404, not the usual 200. A start racing an end on the same run can get a 409
   `FINISHED`. Confirmations follow the same rule: `confirm` finds the route with `routeOf`, then locks the run and checks it is
   that route's run for today.
+  Reassignment (SCRUM-264): `POST /api/head-of-transport/runs/{runId}/reassignments {driverId, fromDriverId, reason?}` and
+  `GET .../reassignments` (`HeadOfTransportRunController`, `RunService.reassign`/`reassignments`, table `run_reassignments`,
+  migration V14, no foreign keys; rules in `docs/contracts/runs.md`). It changes **the route's** driver from
+  now on (both of today's runs, every later day); the run and its confirmations are not touched, and the audit rows are the
+  record of who drove when (a run's list is every row of its route on its date, so the afternoon run lists a change made
+  through the morning one). Only today's `NOT_STARTED`/`IN_PROGRESS` runs (409 otherwise); the replacement must be `active`
+  and on no other route; a `driverId` the route already has is a 200 that records nothing; `fromDriverId` is required and a
+  mismatch is a 409 naming the current driver (`RouteDriverChangedException`). **Lock order: a route's run rows (id order,
+  `RunRepository.findLockedBySchoolIdAndRouteIdAndRunDateOrderByIdAsc`), then the route row.** `reassign` is the only path
+  that takes both, in one `TransactionTemplate` (it is not `@Transactional`, and the answer is built after the commit
+  from `runsDay`); `editRoute` and the capacity paths take vehicle then route and never a run. `RouteService.reassignDriver`
+  writes the driver and skips `ActiveRunGuard` (changing the driver mid-run is its point); the unique constraint on the
+  route's driver is the backstop (`lostRace`; the write is the one-statement `RouteRepository.updateDriverId`, because a failed
+  entity update is repeated by Hibernate and logs a spurious "transaction is aborted" error). **Ownership is re-checked under the run's lock** in `start`, `end` and
+  `confirm` (`RunService.lockOwnedRun`, `RouteService.findDriverIdOfRoute`, a scalar read so no stale cached `Route`): the
+  driver was found on the route before the lock, so a reassignment that committed while their request waited gives them a
+  404 instead of a write. **Every driver write to a run takes `lockOwnedRun` first**: a new one (SCRUM-261's location
+  sharing, SCRUM-263's replay of queued confirmations) must go through it too, or an in-flight request from the old driver
+  can still write after a reassignment commits; `runs/service/DriverWritesRecheckOwnershipTests` (a source-level check on `RunService`) fails when a driver write locks the run any other way, when a replay looks up its key before `lockOwnedRun`, or when `reassign` does not call `stopSharing`. Known limits: `PUT /routes/{id}` still changes a driver without an audit row; no swap of two
+  routes' drivers in one call; location sharing is withdrawn by `reassign` (`stopSharing` on every run of the route today); no notifications (SCRUM-268). Tests: `RunReassignmentTests`, `RunReassignmentDayTurnoverTests`, `RunOwnershipRecheckTests`.
   Live location (SCRUM-261): `PUT /api/driver/runs/{runId}/location-sharing` (the driver's opt-in or withdrawal, per run),
   `PUT .../location` (the latest position, 204), `GET /api/parent/children/{studentId}/bus-location` and
   `GET /api/head-of-transport/runs/locations`; rules and samples in `docs/contracts/runs.md` "Live location". One row per run in
@@ -436,8 +469,43 @@ that's the structure this codebase moved away from.
   `RouteService.findRouteIdOfDriver`, not `findRouteOfDriver`, because it runs every few seconds and must not build stops or road
   times. A parent gets the position only while `todayRunStatus` gives their child a non-null `stopsLeft` (so not after pickup, drop-off,
   skip or absence), and never a reason for `UNAVAILABLE`. Known limits: no throttle on how often a position may be sent, no history,
-  the driver's consent does not survive a driver change but SCRUM-264 (reassignment) must also call `stopSharing`, and a browser pauses
+  the driver's consent does not survive a driver change (`reassign` calls `stopSharing`, SCRUM-264), and a browser pauses
   GPS when the phone is locked, so `STALE` is common on real phones.
+  Live ETA and stop progress (SCRUM-262): no endpoint and no migration of its own, only new fields on the two reads above
+  (`BusLocation.stopsLeft/plannedTime/estimate`, `RunLocation.remainingStops/nextStop`; rules in `docs/contracts/runs.md`
+  "Live ETA and stop progress"). `RunService.childBusLocation` and `locationsToday` read each route once with
+  `RouteService.findStops` (stops in order, with pins and morning arrival times) and take the stops still to do from the same
+  `pending`/`isDone` as `stopsLeft` (`toDo`, afternoon reversed), so the progress follows the same rules as the parent's `todayRun` (the two are separate reads, so a confirmation between them shows on the next poll).
+  `LiveEta.estimate` adds the legs bus, each stop still to do, target with `StraightLineTravelTimes` (30 km/h, whole minutes
+  rounded up per leg; `LiveEta` takes that type, so it cannot be handed the road client): a moving bus is a new uncached point
+  every few seconds and the provider's free quota is small. The planned times still come from the route's cached schedule
+  (`RouteService.findStops`, not `@Transactional`, empty for a deleted route), which asks the provider only when a pin is new,
+  never per poll; `ParentService.busLocation` is not `@Transactional` either, so a cold cache never holds a connection. An estimate exists only while the position is `LIVE` (`RunLocation.LIVE_FOR`,
+  the one freshness threshold), starts from the fix's receive time and is never earlier than the answer, so `secondsAway` is
+  never negative. A stop without a pin adds no leg and, as the target, gives no estimate. `plannedTime` is the morning
+  `arrivalTime` only and is never used to compute the estimate. The head's list now also drops a run whose route has been
+  deleted (the contract already said such runs are not listed), and the parent read answers `UNAVAILABLE` if the route goes
+  between its reads: `findStops` is empty rather than throwing, because `runs` must not import `routes`' exceptions. Known limits: the estimate runs early (straight lines, no time at stops), a passed but
+  unconfirmed stop still adds a leg, and per-stop lists and a delay value are left out (SCRUM-268 owns lateness).
+- `attendance` — the attendance history and the pickup/drop-off audit (SCRUM-265): `GET /api/parent/children/{studentId}/attendance`
+  and, for the head of transportation only, `GET /api/head-of-transport/attendance` (one row per student and run) and
+  `.../attendance/audit` (one entry per stored confirmation). Shapes, rules and samples are in `docs/contracts/attendance.md`.
+  Read-only, no migration: the audit is `run_confirmations` itself, which is append-only and keeps every status
+  (`ConfirmationRepository.attendanceRows`/`auditRows` and their counts, native SQL over `runs` and `run_confirmations`,
+  reached through `RunService.attendance`/`audit`). `from` and `to` are required (a missing one is a 400 from the global
+  `MissingServletRequestParameterException` handler in `common`, `errors: { from: "from is required" }`), inclusive, filter on
+  the run's date (never the moment recorded), at most 62 days, meant to match the range words of the transport totals report
+  (SCRUM-271, PR #152 while it is open), so a follow-up should unify the two range exceptions (`InvalidAttendanceQueryException`
+  here, also used for `page`, `size` and a repeated parameter) and add a test that the totals equal the rows. The status of a row is the
+  highest one recorded (`AttendanceRecord.status()`), not the newest time, as in `ConfirmationStatus`. Head endpoints page
+  with `page`/`size` (own `AttendancePageResponse`, never Spring's `Page`; a page and its count run in one `REPEATABLE_READ` transaction in `RunService`) and optional `studentId`/`routeId` (a foreign or
+  unknown id is a 404, not an empty list). The parent endpoint checks the range, then `StudentService.findChildOf` (404
+  "Child not found." for anyone else's child, by the link as it is now), and returns only date, direction, status and the three
+  times: no run, route, driver or other child. Runs of a deleted route stay, with `route.name` null (`RouteService.findRouteNames`
+  has no entry for them); a confirmation whose student is gone is a 500 that names the run and student in the log, never a skipped row. Times are when the server
+  recorded the tap (the sync time for an offline replay); no driver and no client time are shown, and there is no rows CSV yet.
+  Own `AttendanceStatus`/`AttendanceDirection` enums are mapped by name from `runs`' (a test keeps the names equal), so no `runs`
+  entity is imported. Depends on `runs`, `students` and `routes` through their services; nothing depends on it.
 - `absences` — a parent reports and cancels a child's absence for one day or a date range; a head
   of transportation lists who is absent on a given date (SCRUM-238). Shapes, endpoints and rules
   are in `docs/contracts/runs.md` (owned jointly with the `runs` module, SCRUM-232/239); build
@@ -656,6 +724,24 @@ spy each make a distinct Spring context on the shared test database; if "too man
 `hikari.maximum-pool-size` for the test profile. Run one with `sh ./mvnw test -Dtest=<Class>` (`mvnw` is not marked
 executable). Report and bugs:
 `docs/testing/SCRUM-236/`.
+
+**Independent tests of Moustafa's Sprint 4 work (SCRUM-266, by Hashem)**, from the tickets and `docs/contracts/` (inbox,
+address-requests, transport-totals and their samples), not from `ParentInboxTests`, `AddressRequestControllerTests`,
+`TransportTotalsTests` or the 268 suites: `ParentInboxCriteriaTests` (267), `AddressRequestCriteriaTests` and
+`AddressRequestGeocodingCriteriaTests` (269), `TransportTotalsCriteriaTests` (271), and `NotificationPreferencesCriteriaTests`
+and `LateAlertCriteriaTests` (268). The inbox, totals and late-alert classes extend `common/RunCriteriaSupport` (a fresh school per
+test, runs driven through the real driver and head endpoints, entries made only by the driver's confirmation); the address-request
+classes extend `CriteriaTestSupport`. Nothing under `src/main` changed and the only addition under `common/` is the 268 gate; the classes copy `inParallel` privately
+(`TODO: use common.Parallel once #156 merges`). Address-request students always carry a manual pin so an approval never reaches the real
+Nominatim; `AddressRequestGeocodingCriteriaTests` alone replaces `Geocoder` with `@MockitoBean`, which costs one more cached Spring
+context (if "too many clients" appears, see the SCRUM-236 note above). The two 268 classes have no compile-time reference to PR
+#158's code and switch themselves on through `common/Scrum268Gate` when the five classes #158 adds to `inbox` are on the classpath
+(or with `-Dpending.SCRUM-268=true`, which on plain `develop` makes them fail, to show they can); if only some of the five are there
+(a class renamed before the merge) the gate throws and both suites fail loudly instead of skipping for ever (`Scrum268GateTests`). The late job has no HTTP trigger, so they call
+its `raise()` through the application context by name, and a missing class, bean or method fails the test instead of skipping it.
+When #158 merges, delete `Scrum268Gate`, `Scrum268GateTests` and the `@EnabledIf` line in both classes, and check that both report `Skipped: 0`. Two known findings stay as tests behind
+`-Dknown-bug.SCRUM-268-coercion=true` (wrong-typed preference values are accepted) and `-Dknown-bug.SCRUM-271-empty-date=true` (an
+empty `?from=` counts as omitted). Run one with `sh ./mvnw test -Dtest=<Class>`. Report and bugs: `docs/testing/SCRUM-266/`.
 
 Tests mirror the main package structure: a test for
 `main/java/com/wassel/backend/schools/controller/SchoolSettingsController.java`
