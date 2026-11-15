@@ -1,5 +1,16 @@
 # SCRUM-250 — Independent driver frontend tests
 
+## Fresh readiness audit — 15 November 2026
+
+#144 is now marked Ready, but its head is still `e3ec66670324a77edfe014dec7a00f18ee39ac3c`; the production replay adapter remains null and no formal approval exists. Develop is unchanged at `3798b40`. The existing #148 branch already contains it, so no redundant merge or feature edit was made.
+
+Re-executed all original independent driver acceptance cases against the exact tracked-clean candidate: **65 passed / 0 failed**. Fresh log: ignored `tmp/SCRUM-250-20261115-review/candidate-65.log`. The same accepted-source endpoint gate remains a genuine failure (64/65; full 826 pass/1 fail in current-head CI before this report update), because the accepted Driver Today screen still uses sample data. No assertion, skip or expected-failure marker changed.
+
+The new SCRUM-279 test now runs this actual candidate driver UI and the production Parent UI together against the same accepted PostgreSQL/Flyway backend. It verifies actual login/2FA, UI Start/Share/Stop, real consent/location APIs, Parent Leaflet/ETA, withdrawal, child switching, roles and both 360px layouts. Browser GPS is simulated; this is not offline replay, physical-GPS or feature-merge certification. Evidence and a live-head guard are on #149; #150 preserves the combined GPS/Inbox interface. The original 65 tests are not replaced by that new test.
+
+**Review/completion:** the independent tests can be inspected, but #148 remains blocked for complete acceptance until the real client is integrated into develop. Ask Majd to finish #144's replay/auth-expiry/reconnect/phone work and obtain review. Its Ready flag does not resolve those requirements. Keep #148 Draft; changing Ready requires Wassim's explicit approval. No teammate branch, Jira status or PR merge was changed.
+
+
 ## Latest develop and preserved driver acceptance — 15 November 2026
 
 Normally merged accepted develop `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c` into the existing test branch without conflicts/history rewriting. All original 65 assertions are byte-for-byte unchanged relative to preserved `a09c3bd`; no feature implementation was copied or edited. All prior reports and evidence remain. The accepted backend now includes GPS, ETA, idempotent replay and reassignment (Flyway V1–V14).
