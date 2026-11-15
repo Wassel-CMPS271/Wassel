@@ -117,6 +117,26 @@ With `brevo`, `MAIL_USERNAME` and `MAIL_PASSWORD` are not used. Missing the key 
 startup. Never put the key in git, in a chat or in a screenshot; set it only where the backend runs (Railway's
 Variables tab). If a key was ever pasted somewhere shared, delete it in Brevo and create a new one.
 
+### Notification email (parents' inbox entries)
+
+Each entry in a parent's inbox (picked up, dropped off, not at the stop, late) can also be emailed to the parent. It is
+**off by default** and uses the mail provider above, so there is no new secret. Rules, wording and the monitoring
+response are in `docs/contracts/notification-delivery.md`.
+
+| Variable | Value |
+| -------- | ----- |
+| `NOTIFICATION_EMAIL_ENABLED` | `true` to turn it on (default `false`) |
+| `NOTIFICATION_EMAIL_DAILY_CAP` | the most emails a day, default `150` |
+
+- **It shares the provider's daily limit with sign-in codes.** When the limit runs out every sign-in fails, so read the real
+  daily limit off the Brevo account (the free plan is thought to be 300 a day, not checked) and set the cap to about half of it.
+- **Turn it on only where every parent address is real.** Fake addresses bounce, and a high bounce rate can get the
+  provider account suspended. The demo accounts use `DEMO_EMAIL_BASE`, so point that at a real mailbox first.
+- **Rollback** is `NOTIFICATION_EMAIL_ENABLED=false` and a restart. The `notification_deliveries` table (migration V16)
+  stays and is harmless.
+- **Check how it is going** (administrator session, counts only, no addresses or names):
+  `curl -b cookies.txt "$BACKEND/api/admin/notification-deliveries/summary?date=2026-11-16"`
+
 ### Email on staging
 
 Staging sends real email (login codes, set-password and reset links) through Gmail. Nothing is

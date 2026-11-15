@@ -614,6 +614,29 @@ that's the structure this codebase moved away from.
   school. `LiveEta.arrivals` is the one chain that gives the arrival at every stop (`estimate` is its entry for one stop).
   Known limits: morning runs only (no afternoon schedule), a run never started or not yet created is not watched, an alert is
   never withdrawn, and the head of transportation's "run not started" alert (SCRUM-77) is not built.
+  Email delivery (SCRUM-283), rules in `docs/contracts/notification-delivery.md`: `GET /api/admin/notification-deliveries/summary?date=`
+  (ADMIN, own school, counts only). Table `notification_deliveries` (migration V16, unique `inbox_event_id`, no foreign keys; V16 also adds
+  `idx_inbox_events_created_at` on SCRUM-267's table). Email only, through `auth.service.Mailer` (so `inbox` now depends on `auth` and `users`).
+  **Rows are found, not pushed:** `NotificationDeliveryService.deliverDue` (called by `config/NotificationDeliveryJob`, every 30 s, not in the
+  `test` profile, and only when `NOTIFICATION_EMAIL_ENABLED=true`) inserts a delivery for every entry made in the last 60 minutes with one
+  `INSERT ... SELECT ... ON CONFLICT DO NOTHING`, so the driver's confirmation transaction is untouched and a mail failure can never fail a tap.
+  The service is deliberately not `@Transactional`: every repository change is one conditional statement in its own transaction and none is
+  open during `Mailer.send`. `claim` (`UPDATE ... WHERE status = 'PENDING' AND next_attempt_at <= now`) counts the attempt and is what stops two
+  instances or two ticks both sending. **At most once means against a crash:** a crash mid-send leaves a `SENDING` row that becomes `FAILED`/`INTERRUPTED` after
+  5 minutes and is never sent again; a provider that accepts the email and then times out is retried like any error, so that email can arrive twice
+  (a timeout type in `BrevoMailer` is the follow-up). Constants, not settings (as `RunLocation.LIVE_FOR`): 4 attempts, retried after 1, 5 and 15 minutes,
+  `EXPIRED` when not sent within 60 minutes of the entry (the same 60 as the look-back, so turning the sender on never emails older entries), batch of 20.
+  Every exception from `Mailer.send` is retryable (no permanent-vs-transient split: that is a follow-up in `BrevoMailer`, and the bound caps what a
+  rejected address costs at 3 more calls). The parent, their enabled account and their choice are re-checked at send time (`SKIPPED`
+  `NO_RECIPIENT`/`PREFERENCE_OFF`); the child's first name is read then with `StudentService.getStudent`, because the entry stores only the full name.
+  `NotificationDeliveryProperties` (`wassel.notifications.email.enabled`, `daily-cap`, default 150): the cap is counted from the table
+  (the `attempts` of every delivery but a `SKIPPED` one, claimed since midnight in the school's zone, across the whole deployment, because the provider's limit is per account;
+  assumed 300 a day on Brevo's free plan, unverified), and a due delivery over it is `SKIPPED`/`DAILY_CAP`. The cap check and the `claim` run in one short transaction under a Postgres advisory lock (`lockForCap`), so two instances cannot both take the last attempt; entries are sent oldest first (`discover` sets `next_attempt_at` from the entry's time). `deliverDue` never throws: a failure outside one delivery is logged as an error with the class only. The three scheduled jobs get `spring.task.scheduling.pool.size: 3` so a slow provider cannot hold up the late alerts. **Privacy:** the email has the first name,
+  the type, the school-local time and a link (`DeliveryEmail`, pinned by `docs/contracts/samples/notification-delivery/email-picked-up.txt`); logs hold
+  the delivery id, the entry id, the attempt and the exception's class only, never `e.getMessage()` (an SMTP error can hold the recipient) or the
+  exception itself. No Micrometer and no new actuator endpoint (`HealthEndpointTests` stays): the summary is the monitoring. Tests use a
+  `RecordingMailer` (a real class that stands in for the provider and can refuse) through `DeliverySupport`, which empties the outbox and the inbox
+  first because the sender looks at every school's entries. Known limits: see the contract (at most once against a crash only, a rejected address is retried, the cap counts attempts, English plain text, no unsubscribe link).
 - `reports` — the head of transportation's transport totals and their CSV export over a date range (SCRUM-271):
   `GET /api/head-of-transport/transport-totals?from=&to=` and `.../export`. Shapes and rules are in
   `docs/contracts/transport-totals.md`. Stores nothing and nothing depends on it; `ReportService` reads three
@@ -763,6 +786,12 @@ its `raise()` through the application context by name, and a missing class, bean
 When #158 merges, delete `Scrum268Gate`, `Scrum268GateTests` and the `@EnabledIf` line in both classes, and check that both report `Skipped: 0`. Two known findings stay as tests behind
 `-Dknown-bug.SCRUM-268-coercion=true` (wrong-typed preference values are accepted) and `-Dknown-bug.SCRUM-271-empty-date=true` (an
 empty `?from=` counts as omitted). Run one with `sh ./mvnw test -Dtest=<Class>`. Report and bugs: `docs/testing/SCRUM-266/`.
+
+**Independent tests of the notification delivery (SCRUM-283, for Moustafa's S4-12 suite)**: the author's suites are
+`NotificationDeliveryTests`, `NotificationDeliveryCapTests` (`inbox/service`), `NotificationDeliveryJobTests` (`inbox/config`) and
+`AdminNotificationDeliveryControllerTests`. The sender has no HTTP trigger, so independent tests call `NotificationDeliveryService.deliverDue()` by
+name and read the mail through a stand-in `Mailer`; rules to challenge from the contract alone: no second email across repeats, replays and
+parallel senders, the cap across Beirut midnight, privacy of logs and the summary, the preference re-check, the 60-minute window and at-most-once.
 
 **Independent tests of Hashem's Sprint 4 work (SCRUM-272, by Moustafa)**, written from the tickets and `docs/contracts/runs.md`, not
 from the authors' own suites: `LiveLocationCriteriaTests` (261), `LiveEtaCriteriaTests` (262), `OfflineReplayCriteriaTests` (263) and
