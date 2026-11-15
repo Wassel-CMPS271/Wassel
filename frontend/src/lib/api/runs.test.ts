@@ -2,11 +2,14 @@
 // are checked against the paths in docs/contracts/runs.md with fetch mocked.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getAbsentStudents, getRunsDay } from "./runs";
-import { ApiError } from "./errors";
+import { getAbsentStudents, getRunReassignments, getRunsDay, reassignRun } from "./runs";
+import { ApiError, ApiValidationError } from "./errors";
 import { getAbsentStudents as sampleAbsent, getRunsDay as sampleRuns } from "./runsSample";
 import runsFixture from "./__fixtures__/runs/hot-runs.json";
 import absencesFixture from "./__fixtures__/runs/hot-absences.json";
+import reassignRequest from "../../../../docs/contracts/samples/runs/hot-reassign-request.json";
+import reassignedRun from "../../../../docs/contracts/samples/runs/hot-reassign-run.json";
+import reassignments from "../../../../docs/contracts/samples/runs/hot-reassignments.json";
 
 const BASE = "http://localhost:8080/api/head-of-transport";
 
@@ -48,6 +51,84 @@ describe("runs reads", () => {
     mockFetchOnce(false, 403, { detail: "Access denied" });
 
     await expect(getRunsDay()).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("run reassignment (SCRUM-264)", () => {
+  const RUN = "50000000-0000-4000-8000-000000000001";
+
+  it("POSTs the body to the run's reassignments and returns the run", async () => {
+    const fetchMock = mockFetchOnce(true, 201, reassignedRun);
+
+    await expect(reassignRun(RUN, reassignRequest)).resolves.toEqual(reassignedRun);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE}/runs/${RUN}/reassignments`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify(reassignRequest) }),
+    );
+  });
+
+  it("GETs the audit list", async () => {
+    const fetchMock = mockFetchOnce(true, 200, reassignments);
+
+    await expect(getRunReassignments(RUN)).resolves.toEqual(reassignments);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE}/runs/${RUN}/reassignments`,
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("rejects a refused replacement as an ApiValidationError carrying the driver field", async () => {
+    mockFetchOnce(false, 409, {
+      detail: "Route assignment conflict",
+      errors: { driverId: "Cannot put a deactivated driver on a route." },
+    });
+
+    await expect(reassignRun(RUN, reassignRequest)).rejects.toEqual(
+      expect.objectContaining({ errors: { driverId: "Cannot put a deactivated driver on a route." } }),
+    );
+  });
+
+  it("rejects a refused replacement with an ApiValidationError instance", async () => {
+    mockFetchOnce(false, 409, { errors: { driverId: "Driver is already on route \"Verdun\"." } });
+
+    await expect(reassignRun(RUN, reassignRequest)).rejects.toBeInstanceOf(ApiValidationError);
+  });
+
+  it("rejects a stale precondition or a finished run as an ApiError with the detail", async () => {
+    mockFetchOnce(false, 409, { detail: "The driver of this run is now Walid Saad. Reload and try again." });
+
+    await expect(reassignRun(RUN, reassignRequest)).rejects.toMatchObject({
+      status: 409,
+      message: "The driver of this run is now Walid Saad. Reload and try again.",
+    });
+  });
+
+  it("rejects a bad body (400) as an ApiValidationError naming the field", async () => {
+    mockFetchOnce(false, 400, { errors: { reason: "size must be between 0 and 200" } });
+
+    await expect(reassignRun(RUN, { ...reassignRequest, reason: "x".repeat(201) })).rejects.toEqual(
+      expect.objectContaining({ errors: { reason: "size must be between 0 and 200" } }),
+    );
+  });
+
+  it("rejects an unknown run (404) as an ApiError with the detail", async () => {
+    mockFetchOnce(false, 404, { detail: "Run not found" });
+
+    const rejected = reassignRun(RUN, reassignRequest);
+    await expect(rejected).rejects.toBeInstanceOf(ApiError);
+    await expect(rejected).rejects.toMatchObject({ status: 404, message: "Run not found" });
+  });
+
+  it("returns the run for a repeat that changes nothing (200), as for the first request (201)", async () => {
+    mockFetchOnce(true, 200, reassignedRun);
+
+    await expect(reassignRun(RUN, reassignRequest)).resolves.toEqual(reassignedRun);
+  });
+
+  it("reads an audit list with no changes as an empty array", async () => {
+    mockFetchOnce(true, 200, []);
+
+    await expect(getRunReassignments(RUN)).resolves.toEqual([]);
   });
 });
 

@@ -2,13 +2,11 @@ package com.wassel.backend.runs.controller;
 
 import com.jayway.jsonpath.JsonPath;
 import com.wassel.backend.common.LiveRunCriteriaSupport;
-import com.wassel.backend.common.PendingFeature;
 import com.wassel.backend.drivers.entity.Driver;
 import com.wassel.backend.drivers.entity.DriverStatus;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.entity.User;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -38,20 +36,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * driver" and the ticket's acceptance criteria (only the school's head; atomic and validated; the run's confirmations and
  * history kept; an audit trail; competing assignments leave no partial change and no leak), not from the author's suites
  * or the code. Real app, PostgreSQL, every migration. Everything is an HTTP answer.
- *
- * <p>On {@code develop} this suite is off until the pull request that adds the feature merges ({@link PendingFeature}).
- * The two tests that need the live location (SCRUM-261, merged) or the replay (SCRUM-263, open) say so.
  */
-@EnabledIf("pending")
 class DriverReassignmentCriteriaTests extends LiveRunCriteriaSupport {
-
-	static boolean pending() {
-		return PendingFeature.present("SCRUM-264", "com.wassel.backend.runs.entity.RunReassignment");
-	}
-
-	static boolean replayPresent() {
-		return PendingFeature.present("SCRUM-263", "com.wassel.backend.runs.entity.ConfirmationKey");
-	}
 
 	private static final AtomicInteger UNIQUE = new AtomicInteger();
 
@@ -489,7 +475,6 @@ class DriverReassignmentCriteriaTests extends LiveRunCriteriaSupport {
 	// ---------------------------------------------------------------- with the offline replay (SCRUM-263)
 
 	@Test
-	@EnabledIf("replayPresent")
 	void aQueuedTapOfTheOldDriverIsA404EvenWithAKeyTheyUsedBeforeTheChange() throws Exception {
 		Trip t = aStartedTrip("Hamra morning run");
 		Spare spare = aSpare();

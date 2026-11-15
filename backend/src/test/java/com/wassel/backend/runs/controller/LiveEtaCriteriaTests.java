@@ -2,10 +2,8 @@ package com.wassel.backend.runs.controller;
 
 import com.jayway.jsonpath.JsonPath;
 import com.wassel.backend.common.LiveRunCriteriaSupport;
-import com.wassel.backend.common.PendingFeature;
 import com.wassel.backend.users.entity.Role;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.nio.file.Files;
@@ -35,15 +33,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * degree is 111.195 km, which is 222.39 minutes: 0.01 degree is 2.22 minutes (3), 0.02 is 4.45 (5), 0.03 is 6.67 (7), 0.04
  * is 8.90 (9). Stops: FIRST 33.90, SECOND 33.91, THIRD 33.93; the bus is usually at 33.89. So from the bus: FIRST 3
  * minutes, SECOND 3 + 3 = 6, THIRD 3 + 3 + 5 = 11.
- *
- * <p>On {@code develop} this suite is off until the pull request that adds the feature merges ({@link PendingFeature}).
  */
-@EnabledIf("pending")
 class LiveEtaCriteriaTests extends LiveRunCriteriaSupport {
-
-	static boolean pending() {
-		return PendingFeature.present("SCRUM-262", "com.wassel.backend.runs.service.LiveEta");
-	}
 
 	private static Integer secondsAway(String body) {
 		return whole(JsonPath.read(body, "$.estimate.secondsAway"));

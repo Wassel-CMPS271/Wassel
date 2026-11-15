@@ -60,7 +60,7 @@ export function SchoolTimesForm({ initial, onSave }: SchoolTimesFormProps) {
 
   return (
     <Card>
-      <form onSubmit={handleSubmit} noValidate aria-labelledby="school-times-heading">
+      <form method="post" onSubmit={handleSubmit} noValidate aria-labelledby="school-times-heading">
         <h2
           id="school-times-heading"
           className="text-lg font-semibold"

@@ -5,7 +5,7 @@ Written by Moustafa, the independent tester of Hashem's SCRUM-261, 262, 263 and 
 ## What was built
 
 - Five suites: `LiveLocationCriteriaTests` (261, 19 tests and 1 behind a switch), `LocationRetentionCriteriaTests` (261 retention, 3, in `runs/config`), `LiveEtaCriteriaTests` (262, 16), `OfflineReplayCriteriaTests` (263, 16) and `DriverReassignmentCriteriaTests` (264, 20, one of which needs 263 as well), all in `runs/controller` except the retention one. 74 tests plus the switched one.
-- Two small support classes in `common/`: `LiveRunCriteriaSupport` (on top of the SCRUM-242 `RunCriteriaSupport`, untouched: a started three-stop trip, the location calls, what a parent and the head read, a `together` helper that releases requests at the same instant) and `PendingFeature` (the gate below).
+- One small support class in `common/`: `LiveRunCriteriaSupport` (on top of the SCRUM-242 `RunCriteriaSupport`, untouched: a started three-stop trip, the location calls, what a parent and the head read, a `together` helper that releases requests at the same instant).
 - No production code, no migration, no contract, no sample, no `ci.yml`, no new dependency. `backend/CLAUDE.md` has one paragraph. This report and `SCRUM-272-bugs.md`.
 - Real application on a PostgreSQL container with every Flyway migration, a fresh random school per test, nothing deleted, only the clock moved ("now" is Wednesday 2026-11-04, 07:00 in Beirut). Everything is an HTTP answer; only accounts and pins, which have no endpoint, are saved directly.
 
@@ -20,15 +20,15 @@ Written by Moustafa, the independent tester of Hashem's SCRUM-261, 262, 263 and 
 | Story | Jira / PR | In `develop`? | Suite | Result |
 |---|---|---|---|---|
 | 261 live location | merged (#143) | yes | `LiveLocationCriteriaTests` (19 + 1), `LocationRetentionCriteriaTests` (3) | 19 and 3 pass; the 1 behind `known-bug.SCRUM-261-coercion` **fails** when switched on (BUG-1). Also 19 of 19 on the 262 branch |
-| 262 live ETA | #153, open | **no** | `LiveEtaCriteriaTests` (16) | skipped on `develop`; on `origin/feat/SCRUM-262-live-eta` (`aef97a3`) **16 of 16** |
-| 263 offline replay | #155, open | **no** | `OfflineReplayCriteriaTests` (16) | skipped on `develop`; on `origin/feat/SCRUM-263-offline-replay` (`9eaaca7`) **16 of 16** |
-| 264 reassignment | #156, open | **no** | `DriverReassignmentCriteriaTests` (20) | skipped on `develop`; on `origin/feat/SCRUM-264-driver-reassignment` (`e3d4a77`) **19 pass, 1 skipped** (needs 263); on the scratch merge of 263 and 264 **20 of 20** |
+| 262 live ETA | #153, merged 2026-11-14 | yes | `LiveEtaCriteriaTests` (16) | **16 of 16** on the merged `develop` (and on `aef97a3` before the merge) |
+| 263 offline replay | #155, merged 2026-11-14 | yes | `OfflineReplayCriteriaTests` (16) | **16 of 16** on the merged `develop` (and on `9eaaca7` before the merge) |
+| 264 reassignment | #156, merged 2026-11-14 | yes | `DriverReassignmentCriteriaTests` (20) | **20 of 20** on the merged `develop` (before the merge: 19 pass and 1 skipped on `e3d4a77` alone, 20 of 20 on a scratch merge with #155) |
 
-On `develop` with this branch added: `LiveLocationCriteriaTests` 19 run and `LocationRetentionCriteriaTests` 3 run, 0 failures (1 skipped, the switched one); the other three suites 52 skipped. **The whole backend suite on this branch: 1,407 tests, 0 failures, 0 errors, 54 skipped** (the 52 gated, the switched one and the live road-provider test that is always skipped).
+**On the merged `develop` with this branch added (2026-11-15): the five suites run 74 tests, 0 failures, 1 skipped** (the BUG-1 test behind its switch). The whole backend suite is in the PR description.
 
-**How the suites for the open PRs are gated.** Each compiles on `develop` (they use only HTTP) and switches itself on through `common/PendingFeature` when a class the feature's pull request adds is on the classpath: `runs.service.LiveEta` (262), `runs.entity.ConfirmationKey` (263), `runs.entity.RunReassignment` (264). So the day a PR merges its suite is on, with no flag to remember. Once on, a missing endpoint, field or answer **fails** the test. `-Dpending.SCRUM-26x=true` forces one on. The one test of 264 that needs 263 also has its own `@EnabledIf` on `ConfirmationKey`. When all three have merged, delete `PendingFeature` and the `@EnabledIf` lines, and check that all four classes report `Skipped: 0` (the BUG-1 test is the only skip that stays, until it is settled).
+**Gating (history).** While #153, #155 and #156 were open, the three suites for them compiled on `develop` and switched themselves on through a small `PendingFeature` check when a class the feature's PR adds was on the classpath. All three have merged (2026-11-14), the check has been deleted, and every suite now runs; the only skip left is the BUG-1 test behind its switch.
 
-**The suites were checked the other way**, to show they can fail:
+**The suites were checked the other way** (against `develop` as it was before #153, #155 and #156 merged), to show they can fail:
 
 | Suite | Against | Result |
 |---|---|---|
@@ -152,7 +152,6 @@ The clean-up is not a bean in the `test` profile, so the test builds `LocationPu
 ```
 sh ./mvnw test -Dtest='LiveLocationCriteriaTests,LiveEtaCriteriaTests,OfflineReplayCriteriaTests,DriverReassignmentCriteriaTests'
 sh ./mvnw test -Dtest=LiveLocationCriteriaTests -Dknown-bug.SCRUM-261-coercion=true       # fails today: BUG-1
-sh ./mvnw test -Dtest=LiveEtaCriteriaTests -Dpending.SCRUM-262=true                        # force a gated suite on
 ```
 
-Re-run the three gated suites on a scratch merge of `develop` with their branch just before each PR merges, and after any rebase.
+Re-run `LiveLocationCriteriaTests` with the switch whenever #143's bodies change.

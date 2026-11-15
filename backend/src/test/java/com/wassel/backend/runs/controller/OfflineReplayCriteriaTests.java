@@ -2,10 +2,8 @@ package com.wassel.backend.runs.controller;
 
 import com.jayway.jsonpath.JsonPath;
 import com.wassel.backend.common.LiveRunCriteriaSupport;
-import com.wassel.backend.common.PendingFeature;
 import com.wassel.backend.users.entity.Role;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -34,15 +32,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * {@code ConfirmationReplayTests} (the author's suite) or the code. Real app, PostgreSQL, every migration. A replay is an
  * ordinary {@code PUT .../confirmation} with a key, so every observation is an HTTP answer: the driver's own day, the head's
  * counts and the parent's inbox.
- *
- * <p>On {@code develop} this suite is off until the pull request that adds the feature merges ({@link PendingFeature}).
  */
-@EnabledIf("pending")
 class OfflineReplayCriteriaTests extends LiveRunCriteriaSupport {
-
-	static boolean pending() {
-		return PendingFeature.present("SCRUM-263", "com.wassel.backend.runs.entity.ConfirmationKey");
-	}
 
 	private static String key() {
 		return UUID.randomUUID().toString();
