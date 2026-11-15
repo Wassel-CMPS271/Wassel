@@ -44,9 +44,9 @@ jobs:
         working-directory: frontend
       - run: npm run test:e2e:install -- --with-deps
         working-directory: frontend
-      # Real merged GPS API, production Parent map, stale boundary and authorization.
+      # Accepted GPS/ETA APIs, production countdown/map, stale boundary and authorization.
       # No continue-on-error: compilation, migrations, seed or browser errors fail.
-      - name: PostgreSQL parent GPS browser test
+      - name: PostgreSQL parent GPS and ETA browser test
         run: node e2e/review-parent-tracking.mjs
         working-directory: frontend
         env:

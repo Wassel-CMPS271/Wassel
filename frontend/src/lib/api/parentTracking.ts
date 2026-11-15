@@ -1,5 +1,5 @@
-// GPS: merged SCRUM-261 (#143). Additive ETA: SCRUM-262 #153 at aef97a3.
-// ETA parsing is prepared, but production countdown remains disabled until acceptance.
+// Accepted SCRUM-261/262 GPS and ETA contract, docs/contracts/runs.md.
+// The same authenticated child endpoint supplies GPS, progress and nullable ETA.
 import { request } from "./client";
 
 export interface BusPosition {

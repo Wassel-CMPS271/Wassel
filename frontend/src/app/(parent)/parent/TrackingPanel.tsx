@@ -16,7 +16,7 @@ import styles from "./TrackingPanel.module.css";
 
 export type TrackingApi = (studentId: string) => Promise<BusLocation>;
 type State = { scope: string; api: TrackingApi; value: BusLocation | null; received: number; error: number | null };
-// GPS is accepted. ETA stays opt-in for isolated contract testing until #153 merges.
+// Production enables accepted ETA; isolated GPS-only compositions remain supported.
 export function TrackingPanel({ child, api = null, etaEnabled = false }: { child: Child; api?: TrackingApi | null; etaEnabled?: boolean }) {
   const [state, setState] = useState<State | null>(null);
   const [attempt, setAttempt] = useState(0);

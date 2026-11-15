@@ -1,5 +1,26 @@
 # SCRUM-279 — Parent live bus map and countdown
 
+## Accepted ETA integration and branch refresh — 15 November 2026
+
+Normally merged latest accepted develop `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c` into the existing branch, preserving all prior commits, tests and dated evidence. All four own-branch develop merges were clean; no conflict resolution or teammate feature edit was needed. #153/SCRUM-262 is now merged, as are GPS #143, replay #155, reassignment #156 and attendance #157. This section supersedes the older ETA-unavailable status below.
+
+Production now enables the canonical GPS/ETA client on the existing child bus-location endpoint. The countdown uses server seconds and monotonic elapsed time, planned school-local times remain separate, and stale/missing GPS never supplies a live timer or marker. Existing child/account/client resets, Home/Absences navigation and authorization remain intact. A new production-navigation regression proves real-client ETA activation; the existing GPS-only and all prior ETA tests remain.
+
+| Executed check | Result |
+| --- | --- |
+| Focused tracking/client/navigation/authentication | **74 passed** (7 files) |
+| Full frontend regression | **840 passed**, 0 unexpected failures; 1 existing expected failure, 6 existing skips (847 tests; 63 files) |
+| ESLint / production build / git diff --check | Passed |
+| Standalone TypeScript | Exit 2: exactly the **13 develop baseline diagnostics**, zero introduced or removed (exact diagnostic comparison) |
+| Real PostgreSQL/Flyway production Chromium | **1 passed**, launcher exit 0; all 14 migrations applied through V14 |
+
+The extended real browser scenario checks actual password/2FA and cookie-authenticated APIs, Leaflet, server-derived countdown ticking, canonical stops remaining, separate planned pickup, sibling switching, real server STALE after 60 seconds (timer hidden), consent withdrawal and null estimate, confirmation removing the child's progress/estimate, afternoon ETA with null planned time, foreign/unknown child 404, wrong-role 403, signed-out 401, no 360px overflow, 44px map controls and route cleanup. No production responses were mocked. The driver feed was sent through actual driver APIs; browser/physical phone GPS and the unfinished #144 driver UI are not claimed.
+
+Evidence: ignored `tmp/SCRUM-279-20261115/` (focused/regression/lint/build/typecheck, exact baseline comparison, browser log and exit JSON); Playwright artifacts remain ignored and prior histories are preserved. Browser CI uses PostgreSQL 16 and runs this same extended scenario; check the updated PR head's actual checks, not an older run. Source changes here are the accepted ETA switch, contract comments, navigation regression, extended browser test and its workflow description.
+
+**Readiness: keep #149 a draft.** Accepted backend ETA/GPS are verified and no longer blockers. SCRUM-273/#144 remains an unfinished draft with null replay client and outstanding real driver/phone/auth-expiry integration. Complete/accept that dependency, verify the full driver UI-to-parent slice, then obtain independent review and green current-head checks before Ready. No Jira status changed and no PR was merged.
+
+
 ## Accepted backend refresh and weekend-safe verification — 14 November 2026
 
 Merged only accepted develop `5da9d2c2f9b829747c47571dfb541d32a1f6aa64` into the existing #149 branch, preserving implementation and all prior evidence. Address #145 and Inbox #146 are accepted; ETA #153 remains open at `aef97a37f4c77cb0b56f153a65e5389dc6813804`, and #144 remains a draft at `e3ec66670324a77edfe014dec7a00f18ee39ac3c`. Production GPS stays real; production ETA stays explicitly disabled.

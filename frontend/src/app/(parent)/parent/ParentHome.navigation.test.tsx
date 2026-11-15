@@ -108,3 +108,16 @@ it("production requests the real cookie-authenticated GPS endpoint for the selec
   fireEvent.change(screen.getByRole("combobox"), { target: { value: family[1].studentId } }); await screen.findByRole("region", { name: /Omar/ });
   expect(fetcher).toHaveBeenLastCalledWith(expect.stringContaining(`/children/${family[1].studentId}/bus-location`), expect.objectContaining({ credentials: "include" }));
 });
+
+it("production displays the accepted live ETA separately from its planned time", async () => {
+  fetcher.mockImplementation(async (url: string) => url.endsWith("/children") ? Response.json(family) : Response.json({
+    status: "LIVE", position: { latitude: 33.9, longitude: 35.5, accuracyMeters: 12, receivedAt: "2026-11-15T07:00:00Z", ageSeconds: 0 },
+    stopsLeft: 0, plannedTime: "07:20", estimate: { arrivesAt: "2026-11-15T05:25:00Z", secondsAway: 300 },
+  }));
+  render(<ParentPage />); await screen.findByText("Lina Navigation"); fireEvent.click(screen.getByRole("button", { name: "Bus tracking" }));
+  expect(await screen.findByRole("timer")).toHaveTextContent("Estimated arrival in 5m 0s");
+  expect(screen.getByText("Stops remaining: 0")).toBeVisible();
+  expect(screen.getByText(/Planned pickup: 07:20/)).toHaveTextContent("not a live estimate");
+  expect(screen.getByText(/Estimated arrival:/)).toHaveTextContent("07:25");
+  expect(fetcher).toHaveBeenLastCalledWith(expect.stringContaining(`/children/${family[0].studentId}/bus-location`), expect.objectContaining({ credentials: "include" }));
+});
