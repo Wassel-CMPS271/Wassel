@@ -1,5 +1,26 @@
 # SCRUM-280 — Parent inbox and notification preferences
 
+## Latest develop and real Inbox re-verification — 15 November 2026
+
+Normally merged accepted develop `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c` into the existing branch without conflicts or history rewriting. All prior implementation, tests, reports and ignored evidence remain. GPS/ETA/replay/reassignment/attendance backend changes and the #129 POST-form security guard are now accepted. The only new UI code change is `method="post"` on our prepared preferences form, making it comply with that guard without changing hydrated submit behavior.
+
+Production continues to use the real authenticated SCRUM-267 Inbox API. Preferences and LATE remain explicitly gated: #158/SCRUM-268 is still open at `7baf727f4bf1f4e042495a952befdf65a5217cd3`, now targeting develop with a documentation conflict and no independent approval. No unmerged backend code or fake production data was imported.
+
+| Executed check | Result |
+| --- | --- |
+| Focused Inbox/preferences/client/navigation/authentication | **99 passed** (9 files) |
+| Full frontend regression | **861 passed**, 0 unexpected failures; 1 existing expected failure, 6 existing skips (868 tests; 64 files) |
+| ESLint / production build / git diff --check | Passed |
+| Standalone TypeScript | Exit 2: same **13 develop baseline diagnostics**, zero introduced; equivalent literal role-union display order normalized, with file/position/code/message retained |
+| Real PostgreSQL/Flyway production Chromium | **1 passed**, launcher exit 0 |
+
+The real browser uses a fresh database, real password/2FA and production APIs, checks all three accepted confirmation event types and deduplication, accurate parent-wide unread counts, stable read receipts/read-all/reload, foreign-parent 404, unsigned 401 and wrong-role 403, historical ownership after relinking, actual offline retry, logout/account reset, revocation and 360px behavior. It does not claim real preferences or late-alert acceptance; those APIs are deliberately not called by production. The existing isolated contract client/component tests for the five preference fields, validation, persistence receipts and access-denial races remain green.
+
+Evidence: ignored `tmp/SCRUM-280-20261115/` (focused/regression/lint/build/typecheck, baseline comparison, real-browser log/exit), with prior Playwright/log histories preserved. Current-head hosted checks must be inspected separately; local execution is not CI success. No secrets, database/mail logs or generated browser artifacts are staged.
+
+**Readiness: keep #150 a draft.** Once #158 is merged, normally update this branch, enable only the accepted real preferences/LATE adapter, verify preference persistence/reload and preference-respecting pickup/drop-off/not-present/late behavior with real APIs (threshold/timezone/privacy/retry included), rerun regression/browser/CI, then request independent review. No Jira status changed, no teammate branch changed and no PR was merged.
+
+
 ## Real Inbox integration and verification — 14 November 2026
 
 Accepted develop `5da9d2c2f9b829747c47571dfb541d32a1f6aa64` now contains #145/address, #146/inbox and #152/totals. Reused this branch, PR #150, prior implementation and every dated evidence set; merged only accepted develop. No teammate production file or branch was edited, no PR merged, and no Jira status changed.

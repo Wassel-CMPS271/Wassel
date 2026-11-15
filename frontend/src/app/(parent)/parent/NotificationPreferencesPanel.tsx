@@ -60,7 +60,7 @@ function PreferencesContent({ api, onAccessDenied }: { api: NotificationPreferen
       {denied !== null ? <div role="alert"><p>{denied === 401 ? "Your sign-in has expired." : "You do not have access to these preferences."}</p>{denied === 401 && <Link href="/login" className="inline-flex items-center focus-visible:outline focus-visible:outline-2" style={{ minHeight: sizing.tapTarget, outlineColor: colors.primary[400] }}>Sign in</Link>}</div> : <>
         {error && <p role="alert" style={{ color: colors.error[500] }}>{error}</p>}
         <Button variant="secondary" disabled={busy || loading} style={{ minHeight: sizing.tapTarget }} onClick={() => setAttempt(n => n + 1)}>Reload preferences</Button>
-        {current && <form noValidate onSubmit={submit} className="flex flex-col" style={{ gap: spacing.md }}>
+        {current && <form method="post" noValidate onSubmit={submit} className="flex flex-col" style={{ gap: spacing.md }}>
           {Object.entries(choices).map(([key, label]) => <label key={key} className="flex items-center" style={{ gap: spacing.sm, minHeight: sizing.tapTarget }}><input type="checkbox" checked={current[key as keyof typeof choices]} disabled={busy} onChange={e => { setDraft({ ...current, [key]: e.target.checked }); setSaved(false); }} />{label}</label>)}
           <Input label="Minutes after planned pickup" type="number" min={5} max={60} step={1} value={minutes} style={{ minHeight: sizing.tapTarget }} disabled={busy} error={fieldError} onChange={e => { setMinutes(e.target.value); setSaved(false); }} />
           <p>The threshold is saved even when late alerts are turned off.</p>
