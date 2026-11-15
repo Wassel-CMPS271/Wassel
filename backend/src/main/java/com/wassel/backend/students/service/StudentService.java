@@ -181,6 +181,12 @@ public class StudentService {
 		return studentRepository.countBySchoolIdAndRouteId(schoolId, routeId);
 	}
 
+	/** How many active students are on a route now, for the {@code reports} module's transport totals (SCRUM-271). */
+	@Transactional(readOnly = true)
+	public long countOnRoutes(UUID schoolId) {
+		return studentRepository.countBySchoolIdAndStatusAndRouteIdIsNotNull(schoolId, StudentStatus.ACTIVE);
+	}
+
 	/**
 	 * Whether this student is already a stop on this exact route, so the routes module can skip
 	 * the capacity check for them: re-adding them takes no new seat, since they're already
@@ -321,6 +327,19 @@ public class StudentService {
 		return studentRepository.findBySchoolIdAndIdIn(schoolId, studentIds).stream()
 				.filter(student -> student.getRouteId() != null)
 				.collect(Collectors.toMap(Student::getId, Student::getRouteId));
+	}
+
+	/**
+	 * These students of this school by id, in one read, for the {@code attendance} module to name the students of a page.
+	 * An id that is not in the school is missing from the map.
+	 */
+	@Transactional(readOnly = true)
+	public Map<UUID, StudentResponse> findStudents(UUID schoolId, Collection<UUID> studentIds) {
+		if (studentIds.isEmpty()) {
+			return Map.of();
+		}
+		return studentRepository.findBySchoolIdAndIdIn(schoolId, studentIds).stream()
+				.collect(Collectors.toMap(Student::getId, this::toResponse));
 	}
 
 	private StudentStatus parseStatus(String status) {

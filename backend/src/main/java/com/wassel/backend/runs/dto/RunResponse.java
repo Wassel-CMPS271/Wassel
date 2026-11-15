@@ -29,5 +29,6 @@ public record RunResponse(
 		RouteVehicleSummary vehicle,
 		RouteDriverSummary driver,
 		RunCountsResponse counts,
+		boolean locationSharing,
 		@JsonInclude(JsonInclude.Include.NON_NULL) List<RunStopResponse> stops) {
 }

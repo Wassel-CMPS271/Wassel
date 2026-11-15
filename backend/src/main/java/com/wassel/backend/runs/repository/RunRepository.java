@@ -1,6 +1,8 @@
 package com.wassel.backend.runs.repository;
 
 import com.wassel.backend.runs.entity.Run;
+import com.wassel.backend.runs.entity.RunDirection;
+import com.wassel.backend.runs.entity.RunState;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -21,15 +23,48 @@ import java.util.UUID;
  */
 public interface RunRepository extends JpaRepository<Run, UUID> {
 
+	Optional<Run> findBySchoolIdAndId(UUID schoolId, UUID id);
+
 	List<Run> findBySchoolIdAndRunDateAndRouteIdIn(UUID schoolId, LocalDate runDate, Collection<UUID> routeIds);
+
+	List<Run> findBySchoolIdAndRunDateAndState(UUID schoolId, LocalDate runDate, RunState state);
+
+	/**
+	 * The runs of every school in this state, direction and date. The one read not scoped by school: for the late-alert job
+	 * (SCRUM-268), which works through the schools one at a time, like {@code RunLocationRepository.clearReceivedBefore}.
+	 */
+	List<Run> findByRunDateAndStateAndDirection(LocalDate runDate, RunState state, RunDirection direction);
+
+	/**
+	 * For the transport totals (SCRUM-271): per date in the range that has runs, how many runs there are and how
+	 * many are finished. Rows are {@code [runDate, runs, finished]}; a date with no run has no row.
+	 */
+	@Query("""
+			SELECT r.runDate, COUNT(r), SUM(CASE WHEN r.state = com.wassel.backend.runs.entity.RunState.FINISHED
+				THEN 1 ELSE 0 END)
+			FROM Run r WHERE r.schoolId = :schoolId AND r.runDate BETWEEN :from AND :to
+			GROUP BY r.runDate
+			""")
+	List<Object[]> countByDate(@Param("schoolId") UUID schoolId, @Param("from") LocalDate from,
+			@Param("to") LocalDate to);
 
 	/**
 	 * The run with its row locked until the transaction ends. A confirmation takes it so that its checks (the run is
 	 * in progress, what the student already has) and its insert are not interleaved with another confirmation of
-	 * the same student or with the run ending. The first row lock in the codebase; it is held for milliseconds.
+	 * the same student or with the run ending. It is held for milliseconds.
 	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	Optional<Run> findLockedBySchoolIdAndId(UUID schoolId, UUID id);
+
+	/**
+	 * The route's runs on the date with their rows locked until the transaction ends, in id order (SCRUM-264). A
+	 * reassignment takes them before it checks or changes anything, so it waits for a run being started, ended or
+	 * confirmed and the other way round. Lock order of a reassignment: the route's run rows (by id), then the route row.
+	 * Capacity checks lock a vehicle before a route (SCRUM-259); a reassignment takes no vehicle lock, so the two
+	 * never wait on each other in a circle.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	List<Run> findLockedBySchoolIdAndRouteIdAndRunDateOrderByIdAsc(UUID schoolId, UUID routeId, LocalDate runDate);
 
 	/**
 	 * Creates the route's morning and afternoon run for the date, leaving any that exist. One statement, so

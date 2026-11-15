@@ -1,0 +1,17 @@
+{
+  "id": "5d3c0b8e-2f4a-4d57-9a41-6c1b7e0a9f10",
+  "studentId": "0b6f2d9a-7c11-4f3e-8a52-3e9d4c7b1a20",
+  "studentName": "Tarek Mansour",
+  "currentAddress": "Hamra Street, Beirut",
+  "requestedAddress": "Verdun Street 12, Beirut",
+  "requestedLat": 33.8707,
+  "requestedLng": 35.4842,
+  "requestedBy": {
+    "parentUserId": "a1f4c6d2-9b30-4e8a-b7d5-2c0e8f3a6b41",
+    "email": "rana.mansour@example.com"
+  },
+  "status": "pending",
+  "createdAt": "2026-11-09T07:30:00Z",
+  "decidedAt": null,
+  "rejectionReason": null
+}

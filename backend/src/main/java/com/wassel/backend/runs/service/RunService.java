@@ -2,30 +2,57 @@ package com.wassel.backend.runs.service;
 
 import com.wassel.backend.absences.service.AbsenceService;
 import com.wassel.backend.drivers.service.DriverService;
+import com.wassel.backend.routes.dto.DriverReassignment;
 import com.wassel.backend.routes.dto.DriverRouteResponse;
 import com.wassel.backend.routes.dto.DriverRouteStop;
 import com.wassel.backend.routes.dto.RouteDriverSummary;
 import com.wassel.backend.routes.dto.RouteSummaryResponse;
 import com.wassel.backend.routes.dto.RouteVehicleSummary;
+import com.wassel.backend.routes.exception.RouteNotFoundException;
+import com.wassel.backend.routes.dto.StopResponse;
 import com.wassel.backend.routes.service.RouteService;
+import com.wassel.backend.routing.service.StraightLineTravelTimes;
 import com.wassel.backend.runs.dto.ChildOnRoute;
+import com.wassel.backend.runs.dto.AttendanceRecord;
+import com.wassel.backend.runs.dto.AuditRecord;
+import com.wassel.backend.runs.dto.BusLocationResponse;
+import com.wassel.backend.runs.dto.BusPositionResponse;
 import com.wassel.backend.runs.dto.ChildRunResponse;
+import com.wassel.backend.runs.dto.LocationRequest;
+import com.wassel.backend.runs.dto.LocationStatus;
+import com.wassel.backend.runs.dto.RunLocationResponse;
 import com.wassel.backend.runs.dto.ConfirmationResponse;
+import com.wassel.backend.runs.dto.DailyRunTotals;
 import com.wassel.backend.runs.dto.DayType;
+import com.wassel.backend.runs.dto.RecordPage;
+import com.wassel.backend.runs.dto.ReassignRunRequest;
+import com.wassel.backend.runs.dto.ReassignmentActorResponse;
+import com.wassel.backend.runs.dto.ReassignmentResponse;
+import com.wassel.backend.runs.dto.EstimateResponse;
+import com.wassel.backend.runs.dto.NextStopResponse;
 import com.wassel.backend.runs.dto.RunCountsResponse;
 import com.wassel.backend.runs.dto.RunResponse;
 import com.wassel.backend.runs.dto.RunRouteResponse;
 import com.wassel.backend.runs.dto.RunStopResponse;
 import com.wassel.backend.runs.dto.RunsDayResponse;
+import com.wassel.backend.runs.dto.WaitingStop;
 import com.wassel.backend.runs.entity.Confirmation;
+import com.wassel.backend.runs.entity.ConfirmationKey;
 import com.wassel.backend.runs.entity.ConfirmationStatus;
 import com.wassel.backend.runs.entity.Run;
 import com.wassel.backend.runs.entity.RunDirection;
+import com.wassel.backend.runs.entity.RunReassignment;
+import com.wassel.backend.runs.entity.RunLocation;
 import com.wassel.backend.runs.entity.RunState;
+import com.wassel.backend.runs.event.ConfirmationRecordedEvent;
 import com.wassel.backend.runs.exception.ConfirmationConflictException;
+import com.wassel.backend.runs.exception.ConfirmationKeyReusedException;
 import com.wassel.backend.runs.exception.RunNotFoundException;
 import com.wassel.backend.runs.exception.RunStateConflictException;
+import com.wassel.backend.runs.repository.ConfirmationKeyRepository;
 import com.wassel.backend.runs.repository.ConfirmationRepository;
+import com.wassel.backend.runs.repository.RunReassignmentRepository;
+import com.wassel.backend.runs.repository.RunLocationRepository;
 import com.wassel.backend.runs.repository.RunRepository;
 import com.wassel.backend.schools.dto.SchoolTimesResponse;
 import com.wassel.backend.schools.service.HalfDayService;
@@ -34,12 +61,17 @@ import com.wassel.backend.schools.service.SchoolSettingsService;
 import com.wassel.backend.students.dto.StudentResponse;
 import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.users.entity.User;
+import com.wassel.backend.users.service.UserService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -47,11 +79,14 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.BinaryOperator;
 import java.util.UUID;
 import java.util.function.Function;
@@ -67,12 +102,21 @@ import java.util.stream.Stream;
  * request from the {@link Clock}.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class RunService {
 
 	private final RunRepository runRepository;
 
 	private final ConfirmationRepository confirmationRepository;
+
+	private final RunReassignmentRepository reassignmentRepository;
+
+	private final UserService userService;
+
+	private final ConfirmationKeyRepository confirmationKeyRepository;
+
+	private final RunLocationRepository runLocationRepository;
 
 	private final StudentService studentService;
 
@@ -88,9 +132,14 @@ public class RunService {
 
 	private final SchoolSettingsService schoolSettingsService;
 
+	/** The live estimate's legs (SCRUM-262): straight lines, never the road provider and its daily quota. */
+	private final StraightLineTravelTimes straightLine;
+
 	private final Clock clock;
 
 	private final TransactionTemplate transactionTemplate;
+
+	private final ApplicationEventPublisher events;
 
 	/**
 	 * Today's two runs of the signed-in driver's route, with stops. Empty when they have no route, or on a holiday.
@@ -113,8 +162,9 @@ public class RunService {
 			return runsOf(schoolId, today, List.of(route.id())).get(route.id());
 		});
 		Map<UUID, List<Confirmation>> confirmed = confirmationsOf(schoolId, runs.values());
+		Set<UUID> sharing = sharingOf(schoolId, runs.values());
 		List<RunResponse> result = Arrays.stream(RunDirection.values())
-				.map(direction -> driverRun(runs.get(direction), route, morning, dayType, times, confirmed))
+				.map(direction -> driverRun(runs.get(direction), route, morning, dayType, times, confirmed, sharing))
 				.toList();
 		return new RunsDayResponse(today, dayType, result);
 	}
@@ -135,7 +185,8 @@ public class RunService {
 	/**
 	 * A driver may act on a run only if it is in their list right now: one of today's runs on their own route,
 	 * on a day that is not a holiday. Anything else (another driver's, another school's, unknown, yesterday's,
-	 * hidden by a holiday) is the same 404. The move is one conditional update, so simultaneous requests keep
+	 * hidden by a holiday) is the same 404, re-checked under the run's lock so a reassignment that commits first wins
+	 * ({@link #lockOwnedRun}). The move is one conditional update, so simultaneous requests keep
 	 * the first time; the run is then re-read, which tells a repeat (already in the target state, 200) from a
 	 * conflict (409), and gives the answer the times as stored.
 	 */
@@ -147,11 +198,13 @@ public class RunService {
 		Instant now = Instant.now(clock);
 		// The route lookup above may wait on the road provider, so only the checks and the update are in a transaction.
 		Run run = transactionTemplate.execute(status -> {
-			todaysRun(schoolId, today, route.id(), runId).orElseThrow(RunService::runNotFound);
+			lockOwnedRun(schoolId, today, route, runId);
 			if (target == RunState.IN_PROGRESS) {
 				runRepository.markStarted(schoolId, runId, now);
 			} else {
 				runRepository.markEnded(schoolId, runId, now);
+				// Ending also withdraws consent and drops the position, in the same transaction as the end.
+				runLocationRepository.stopSharing(schoolId, runId);
 			}
 			Run current = todaysRun(schoolId, today, route.id(), runId).orElseThrow(RunService::runNotFound);
 			if (current.getState() != target) {
@@ -170,16 +223,27 @@ public class RunService {
 	 * is locked first, so another confirmation of the student, or the run ending, waits instead of interleaving.
 	 * The status a student already has is kept even when a later one exists: a retry that arrives after the next
 	 * tap is not a mistake. Not {@code @Transactional}, for the reason {@link #driverDay} gives.
+	 * With a {@code clientRequestId} (SCRUM-263, "Offline replay" in the contract) a key this driver already used
+	 * for the same run, student and status is answered 200 right after the 404 check, writing nothing, even after
+	 * the run ended; a key used for anything else is {@link ConfirmationKeyReusedException}. The key is saved on
+	 * every path that answers 200, before the confirmation row, so a refusal stores none.
 	 */
-	public RunResponse confirm(User driver, UUID runId, UUID studentId, ConfirmationStatus status) {
+	public RunResponse confirm(User driver, UUID runId, UUID studentId, ConfirmationStatus status,
+			UUID clientRequestId) {
 		UUID schoolId = driver.getSchoolId();
 		LocalDate today = LocalDate.now(clock);
 		DayType dayType = dayTypeOf(schoolId, today);
 		DriverRouteResponse route = routeOf(driver, dayType).orElseThrow(RunService::runNotFound);
 		Run run = transactionTemplate.execute(tx -> {
-			Run locked = runRepository.findLockedBySchoolIdAndId(schoolId, runId)
-					.filter(found -> found.getRouteId().equals(route.id()) && found.getRunDate().equals(today))
-					.orElseThrow(RunService::runNotFound);
+			Run locked = lockOwnedRun(schoolId, today, route, runId);
+			if (clientRequestId != null) {
+				Optional<ConfirmationKey> used = confirmationKeyRepository
+						.findBySchoolIdAndDriverUserIdAndClientRequestId(schoolId, driver.getId(), clientRequestId);
+				if (used.isPresent()) {
+					requireSameTap(used.get(), runId, studentId, status);
+					return locked;
+				}
+			}
 			List<ConfirmationStatus> had = confirmationRepository
 					.findBySchoolIdAndRunIdAndStudentId(schoolId, runId, studentId).stream()
 					.map(Confirmation::getStatus).toList();
@@ -190,6 +254,7 @@ public class RunService {
 				throw new RunStateConflictException("Run is " + locked.getState() + ", so it cannot be confirmed");
 			}
 			if (had.contains(status)) {
+				saveKey(driver, runId, studentId, status, clientRequestId);
 				return locked;
 			}
 			ConfirmationStatus current = had.stream().max(Comparator.naturalOrder()).orElse(null);
@@ -202,18 +267,461 @@ public class RunService {
 				throw new ConfirmationConflictException("Student " + (current == null ? "has no confirmation yet"
 						: "is " + current) + ", so they cannot be marked " + status);
 			}
+			saveKey(driver, runId, studentId, status, clientRequestId);
 			// The time is read after the lock, so rows are saved in the order the rule saw them.
-			confirmationRepository.insertIfMissing(schoolId, runId, studentId, status.name(), Instant.now(clock));
+			Instant now = Instant.now(clock);
+			// Only a status saved for the first time is an event; listeners run in this transaction (SCRUM-267).
+			if (confirmationRepository.insertIfMissing(schoolId, runId, studentId, status.name(), now) == 1) {
+				events.publishEvent(new ConfirmationRecordedEvent(schoolId, runId, studentId,
+						locked.getDirection().name(), status.name(), now));
+			}
 			return locked;
 		});
 		return driverAnswer(run, route, dayType);
+	}
+
+	/**
+	 * Locks the run, then checks it is still the driver's: today's run of the route they were found on, and that route
+	 * still theirs. The route was read before the lock, so a reassignment (SCRUM-264) that committed while this waited
+	 * must win: the old driver gets the same 404 as for any run that is not theirs. Every write a driver makes to a
+	 * run must take its lock here, before it writes: start, end and confirm do, and so must any later one (location
+	 * sharing, replaying queued confirmations), or a request in flight when a reassignment commits could still write.
+	 */
+	private Run lockOwnedRun(UUID schoolId, LocalDate today, DriverRouteResponse route, UUID runId) {
+		Run locked = runRepository.findLockedBySchoolIdAndId(schoolId, runId)
+				.filter(found -> found.getRouteId().equals(route.id()) && found.getRunDate().equals(today))
+				.orElseThrow(RunService::runNotFound);
+		routeService.findDriverIdOfRoute(schoolId, route.id()).filter(route.driver().id()::equals)
+				.orElseThrow(RunService::runNotFound);
+		return locked;
+	}
+
+	/** The answer to a reassignment: the run as the head's list shows it, and whether the driver changed. */
+	public record Reassigned(boolean changed, RunResponse run) {
+	}
+
+	/**
+	 * Gives today's run's route to another driver (SCRUM-264, docs/contracts/runs.md "Reassigning a run's driver"). The
+	 * route's driver changes from now on; the run, its state and its confirmations are not touched. In one
+	 * transaction: the route's runs for today are locked (id order), then the route (inside
+	 * {@link RouteService#reassignDriver}), and the audit row is written with the change or not at all. Not
+	 * {@code @Transactional}: the answer is built after the commit by {@link #runsDay}.
+	 */
+	public Reassigned reassign(User head, UUID runId, ReassignRunRequest request) {
+		UUID schoolId = head.getSchoolId();
+		LocalDate today = LocalDate.now(clock);
+		Run seen = runRepository.findBySchoolIdAndId(schoolId, runId).orElseThrow(RunService::runNotFound);
+		boolean changed = transactionTemplate
+				.execute(tx -> reassignLocked(head, seen.getRouteId(), runId, today, request));
+		// The answer is the day the change was made on, so a day that turns over right after the commit does not hide
+		// the run. A transaction of its own, because runsDay is called on this class and its annotation is not applied.
+		// shortcut: reads the whole day to answer with one run (one source of truth for RunSummary); narrow it if a school's day gets slow
+		RunsDayResponse day = transactionTemplate.execute(tx -> runsDay(schoolId, today));
+		RunResponse summary = day.runs().stream().filter(found -> found.id().equals(runId)).findAny()
+				.orElseThrow(RunService::runNotFound);
+		return new Reassigned(changed, summary);
+	}
+
+	/**
+	 * The checks and the change of {@link #reassign}, in the caller's transaction: lock the route's runs, check them,
+	 * change the driver, write the audit row. The state and the day's type are read after the locks, never from the
+	 * earlier read. A holiday added in the same instant is not locked against, which is harmless: the run is still
+	 * today's.
+	 */
+	private boolean reassignLocked(User head, UUID routeId, UUID runId, LocalDate today, ReassignRunRequest request) {
+		UUID schoolId = head.getSchoolId();
+		List<Run> routeRuns = runRepository.findLockedBySchoolIdAndRouteIdAndRunDateOrderByIdAsc(schoolId, routeId, today);
+		Optional<Run> locked = routeRuns.stream().filter(found -> found.getId().equals(runId)).findAny();
+		if (locked.isEmpty() || dayTypeOf(schoolId, today) == DayType.HOLIDAY) {
+			throw new RunStateConflictException("Only today's runs can be reassigned.");
+		}
+		Run run = locked.get();
+		if (run.getState() == RunState.FINISHED) {
+			throw new RunStateConflictException("Run is " + run.getState() + ", so it cannot be reassigned");
+		}
+		DriverReassignment result;
+		try {
+			result = routeService.reassignDriver(schoolId, routeId, request.fromDriverId(), request.driverId());
+		} catch (RouteNotFoundException deleted) {
+			// The route was deleted but its runs are still rows: the run is as gone as an unknown one.
+			throw runNotFound();
+		}
+		if (result.changed()) {
+			// The new driver has not consented: sharing is withdrawn on every run of the route today, in this transaction.
+			routeRuns.forEach(found -> runLocationRepository.stopSharing(schoolId, found.getId()));
+			// The time is read after the locks, so changes are listed in the order they were made.
+			reassignmentRepository.save(RunReassignment.builder().schoolId(schoolId).runId(runId).routeId(routeId)
+					.runDate(today).runState(run.getState()).fromDriverId(result.from().id())
+					.toDriverId(result.to().id()).changedByUserId(head.getId()).changedAt(Instant.now(clock))
+					.reason(request.reason()).build());
+		}
+		return result.changed();
+	}
+
+	/** Every reassignment of the run's route on the run's date, newest first (the contract's {@code Reassignment[]}). */
+	@Transactional(readOnly = true)
+	public List<ReassignmentResponse> reassignments(UUID schoolId, UUID runId) {
+		Run run = runRepository.findBySchoolIdAndId(schoolId, runId).orElseThrow(RunService::runNotFound);
+		Map<UUID, RouteDriverSummary> drivers = new HashMap<>();
+		Map<UUID, Run> runs = new HashMap<>();
+		Map<UUID, ReassignmentActorResponse> actors = new HashMap<>();
+		return reassignmentRepository.findBySchoolIdAndRouteIdAndRunDateOrderByChangedAtDescIdDesc(schoolId,
+				run.getRouteId(), run.getRunDate()).stream().map(row -> {
+					Run acted = runs.computeIfAbsent(row.getRunId(),
+							id -> runRepository.findBySchoolIdAndId(schoolId, id).orElseThrow(RunService::runNotFound));
+					return new ReassignmentResponse(row.getId(), row.getRunId(), acted.getDirection(), row.getRunState(),
+							driverOf(drivers, schoolId, row.getFromDriverId()), driverOf(drivers, schoolId, row.getToDriverId()),
+							actors.computeIfAbsent(row.getChangedByUserId(), id -> actorOf(schoolId, id)),
+							row.getChangedAt(), row.getReason());
+				}).toList();
+	}
+
+	/** The head who made a change: their email, or null when the account is gone. Only the school's own users are read. */
+	private ReassignmentActorResponse actorOf(UUID schoolId, UUID userId) {
+		return new ReassignmentActorResponse(userId,
+				userService.findInSchool(schoolId, userId).map(User::getEmail).orElse(null));
+	}
+
+	private RouteDriverSummary driverOf(Map<UUID, RouteDriverSummary> known, UUID schoolId, UUID driverId) {
+		return known.computeIfAbsent(driverId,
+				id -> RouteDriverSummary.of(driverService.getOwnedDriver(schoolId, id)));
+	}
+
+	/**
+	 * Remembers the key of a confirmation that is about to answer 200. Zero rows added means another request of this
+	 * driver, on another run (this run's are serialised by its lock), saved the key first and committed: fine when it was
+	 * the same tap, otherwise the key is reused and the whole transaction, with no confirmation row yet, rolls back.
+	 */
+	private void saveKey(User driver, UUID runId, UUID studentId, ConfirmationStatus status, UUID clientRequestId) {
+		if (clientRequestId == null) {
+			return;
+		}
+		UUID schoolId = driver.getSchoolId();
+		if (confirmationKeyRepository.insertIfMissing(schoolId, driver.getId(), clientRequestId, runId, studentId,
+				status.name(), Instant.now(clock)) == 0) {
+			requireSameTap(confirmationKeyRepository.findBySchoolIdAndDriverUserIdAndClientRequestId(
+					schoolId, driver.getId(), clientRequestId).orElseThrow(), runId, studentId, status);
+		}
+	}
+
+	private static void requireSameTap(ConfirmationKey key, UUID runId, UUID studentId, ConfirmationStatus status) {
+		if (!key.getRunId().equals(runId) || !key.getStudentId().equals(studentId)
+				|| key.getStatus() != status) {
+			throw new ConfirmationKeyReusedException(key.getClientRequestId());
+		}
+	}
+
+	/**
+	 * The driver's opt-in or withdrawal for a run (SCRUM-261, "Live location"). The 404 rule is {@link #confirm}'s, and
+	 * so is the lock on the run row: an opt-in and the run ending wait for each other, so sharing can never be left on
+	 * for a finished run. Opting in needs the run in progress; withdrawing works in any state. Answers with the run.
+	 */
+	public RunResponse setSharing(User driver, UUID runId, boolean enabled) {
+		UUID schoolId = driver.getSchoolId();
+		LocalDate today = LocalDate.now(clock);
+		DayType dayType = dayTypeOf(schoolId, today);
+		DriverRouteResponse route = routeOf(driver, dayType).orElseThrow(RunService::runNotFound);
+		Run run = transactionTemplate.execute(tx -> {
+			Run locked = lockOwnedRun(schoolId, today, route, runId);
+			if (!enabled) {
+				runLocationRepository.stopSharing(schoolId, runId);
+			} else if (locked.getState() != RunState.IN_PROGRESS) {
+				throw new RunStateConflictException("Run is " + locked.getState() + ", so it cannot share its location");
+			} else {
+				runLocationRepository.startSharing(schoolId, runId, route.driver().id());
+			}
+			return locked;
+		});
+		return driverAnswer(run, route, dayType);
+	}
+
+	/**
+	 * Stores the driver's latest position for their run. The 404 rule is {@link #move}'s, but the route is found by id
+	 * only: this is called every few seconds, and the stops and road times of {@code findRouteOfDriver} are not needed.
+	 * Then the run must be in progress (409), and the single conditional update must find this driver sharing it (409).
+	 */
+	public void recordLocation(User driver, UUID runId, LocationRequest request) {
+		UUID schoolId = driver.getSchoolId();
+		LocalDate today = LocalDate.now(clock);
+		if (dayTypeOf(schoolId, today) == DayType.HOLIDAY) {
+			throw runNotFound();
+		}
+		UUID driverId = driverService.findDriverIdForUser(schoolId, driver.getId()).orElseThrow(RunService::runNotFound);
+		UUID routeId = routeService.findRouteIdOfDriver(schoolId, driverId).orElseThrow(RunService::runNotFound);
+		Run run = todaysRun(schoolId, today, routeId, runId).orElseThrow(RunService::runNotFound);
+		if (run.getState() != RunState.IN_PROGRESS) {
+			throw new RunStateConflictException("Run is " + run.getState() + ", so it cannot take a position");
+		}
+		Instant now = Instant.now(clock);
+		int saved = transactionTemplate.execute(tx -> runLocationRepository.savePosition(schoolId, runId, driverId,
+				request.latitude(), request.longitude(), request.accuracyMeters(), now));
+		if (saved == 0) {
+			throw new RunStateConflictException("Location sharing is off for this run");
+		}
+	}
+
+	/**
+	 * Where the bus is for one child, for the {@code parent} module. The position is shown only while the child's
+	 * {@code stopsLeft} (SCRUM-237) is not null, so a child already picked up, dropped off, skipped or absent loses it
+	 * for the rest of the run. Everything else is {@code UNAVAILABLE}, without a reason. The caller has checked the child.
+	 */
+	public BusLocationResponse childBusLocation(UUID schoolId, UUID studentId, UUID routeId) {
+		ChildRunResponse today = todayRunStatus(schoolId, List.of(new ChildOnRoute(studentId, routeId))).get(studentId);
+		if (today == null || today.stopsLeft() == null) {
+			return BusLocationResponse.UNAVAILABLE;
+		}
+		LocalDate day = LocalDate.now(clock);
+		// Absent only if midnight passed since todayRunStatus read the date: nothing to show for the new day.
+		Run run = runsOf(schoolId, day, List.of(routeId)).getOrDefault(routeId, Map.of()).get(today.direction());
+		if (run == null) {
+			return BusLocationResponse.UNAVAILABLE;
+		}
+		Instant now = Instant.now(clock);
+		BusLocationResponse bus = locate(runLocationRepository.findBySchoolIdAndRunId(schoolId, run.getId()).orElse(null),
+				now);
+		// The planned time and the stops with their pins come from one read of the route (SCRUM-262). A route deleted
+		// since todayRunStatus read it has nothing to show, like a child with no route.
+		List<StopResponse> stops = routeService.findStops(schoolId, routeId).orElse(null);
+		if (stops == null) {
+			return BusLocationResponse.UNAVAILABLE;
+		}
+		Set<UUID> absent = absenceService.absentStudentIds(schoolId, stops.stream().map(StopResponse::studentId).toList(),
+				day);
+		List<StopResponse> toDo = toDo(run.getDirection(), stops, confirmationsOf(schoolId, List.of(run))
+				.getOrDefault(run.getId(), List.of()), absent);
+		int own = toDo.stream().map(StopResponse::studentId).toList().indexOf(studentId);
+		// own < 0 only if the child was confirmed or moved between the two reads: no estimate, the next poll catches up.
+		EstimateResponse estimate = own < 0 ? null : estimateIfLive(bus, toDo.subList(0, own + 1), now);
+		LocalTime planned = stops.stream().filter(stop -> stop.studentId().equals(studentId)).findFirst()
+				.map(stop -> plannedTime(run.getDirection(), stop)).orElse(null);
+		return bus.withProgress(today.stopsLeft(), planned, estimate);
+	}
+
+	/**
+	 * For the {@code attendance} module (SCRUM-265): the students' recorded statuses on the school's runs dated
+	 * {@code from} to {@code to}, one record per student and run, newest date first, with the {@code total} over all
+	 * pages. A null {@code studentId} or {@code routeId} means no filter. Reads only; the caller has checked the
+	 * filters belong to the school. One snapshot ({@code REPEATABLE_READ}) serves the page and its count, so a tap
+	 * recorded in between cannot make {@code total} differ from what the pages add up to.
+	 */
+	@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+	public RecordPage<AttendanceRecord> attendance(UUID schoolId, LocalDate from, LocalDate to, UUID studentId,
+			UUID routeId, long offset, int limit) {
+		return new RecordPage<>(attendanceRecords(schoolId, from, to, studentId, routeId, offset, limit),
+				confirmationRepository.countAttendanceRows(schoolId, from, to, studentId, routeId));
+	}
+
+	/**
+	 * Every record of one student in the range, newest first, with no count: for a parent, whose range is at most 62
+	 * days. The caller has checked the student is theirs.
+	 */
+	@Transactional(readOnly = true)
+	public List<AttendanceRecord> attendanceOf(UUID schoolId, LocalDate from, LocalDate to, UUID studentId) {
+		return attendanceRecords(schoolId, from, to, studentId, null, 0, Integer.MAX_VALUE);
+	}
+
+	/** The audit twin of {@link #attendance}: one record per stored confirmation, newest first. */
+	@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+	public RecordPage<AuditRecord> audit(UUID schoolId, LocalDate from, LocalDate to, UUID studentId, UUID routeId,
+			long offset, int limit) {
+		List<AuditRecord> items = confirmationRepository.auditRows(schoolId, from, to, studentId, routeId, limit, offset)
+				.stream().map(RunService::toAuditRecord).toList();
+		return new RecordPage<>(items, confirmationRepository.countAuditRows(schoolId, from, to, studentId, routeId));
+	}
+
+	private List<AttendanceRecord> attendanceRecords(UUID schoolId, LocalDate from, LocalDate to, UUID studentId,
+			UUID routeId, long offset, int limit) {
+		return confirmationRepository.attendanceRows(schoolId, from, to, studentId, routeId, limit, offset).stream()
+				.map(RunService::toAttendanceRecord).toList();
+	}
+
+	/** One row of {@code ConfirmationRepository.attendanceRows}, columns in the order its SELECT lists them. */
+	private static AttendanceRecord toAttendanceRecord(Object[] row) {
+		return new AttendanceRecord((UUID) row[0], (UUID) row[1], (LocalDate) row[2],
+				RunDirection.valueOf((String) row[3]), (UUID) row[4], (Instant) row[5], (Instant) row[6],
+				(Instant) row[7]);
+	}
+
+	/** One row of {@code ConfirmationRepository.auditRows}, columns in the order its SELECT lists them. */
+	private static AuditRecord toAuditRecord(Object[] row) {
+		return new AuditRecord((UUID) row[0], (Instant) row[1], ConfirmationStatus.valueOf((String) row[2]),
+				(UUID) row[3], (UUID) row[4], (LocalDate) row[5], RunDirection.valueOf((String) row[6]), (UUID) row[7]);
+	}
+
+	/**
+	 * Every run of the school in progress today with where its bus is and how far it has got: the stops still to do and
+	 * the first of them with its planned time and live estimate (SCRUM-262). Empty on a holiday. A run of a route that
+	 * has been deleted is not listed, as in every other view of the runs.
+	 */
+	public List<RunLocationResponse> locationsToday(UUID schoolId) {
+		LocalDate today = LocalDate.now(clock);
+		if (dayTypeOf(schoolId, today) == DayType.HOLIDAY) {
+			return List.of();
+		}
+		Instant now = Instant.now(clock);
+		return progressOf(schoolId, today,
+				runRepository.findBySchoolIdAndRunDateAndState(schoolId, today, RunState.IN_PROGRESS), now).stream()
+				.map(progress -> {
+					Run run = progress.run();
+					NextStopResponse next = null;
+					if (!progress.toDo().isEmpty()) {
+						StopResponse stop = progress.toDo().getFirst();
+						next = new NextStopResponse(stop.studentId(), stop.firstName(), stop.lastName(),
+								plannedTime(run.getDirection(), stop), estimateIfLive(progress.bus(), List.of(stop), now));
+					}
+					return new RunLocationResponse(run.getId(), progress.bus().status(), progress.bus().position(),
+							progress.toDo().size(), next);
+				}).toList();
+	}
+
+	/**
+	 * For the inbox's late alerts (SCRUM-268): every child still waiting on a morning run that is in progress today and
+	 * whose stop has a planned time, with that time and the live estimate. It reads every school, which no other read
+	 * here does, so it is a job's call and works through the schools one at a time: a school whose read fails is logged
+	 * and left out, and the next call tries it again. A holiday has no runs to show, as in {@link #locationsToday}; an
+	 * afternoon run has no planned times, so nothing is asked of it.
+	 */
+	public List<WaitingStop> waitingStopsToday() {
+		LocalDate today = LocalDate.now(clock);
+		Map<UUID, List<Run>> bySchool = runRepository
+				.findByRunDateAndStateAndDirection(today, RunState.IN_PROGRESS, RunDirection.MORNING).stream()
+				.collect(Collectors.groupingBy(Run::getSchoolId));
+		List<WaitingStop> waiting = new ArrayList<>();
+		bySchool.forEach((schoolId, runs) -> {
+			try {
+				waiting.addAll(waitingStopsOf(schoolId, today, runs));
+			}
+			catch (RuntimeException e) {
+				log.error("Could not read the waiting stops of school {}; the next call tries again", schoolId, e);
+			}
+		});
+		return waiting;
+	}
+
+	private List<WaitingStop> waitingStopsOf(UUID schoolId, LocalDate today, List<Run> runs) {
+		if (dayTypeOf(schoolId, today) == DayType.HOLIDAY) {
+			return List.of();
+		}
+		Instant now = Instant.now(clock);
+		List<WaitingStop> waiting = new ArrayList<>();
+		for (RunProgress progress : progressOf(schoolId, today, runs, now)) {
+			List<StopResponse> toDo = progress.toDo();
+			// The only place a live estimate is made for every stop: one chain, from a LIVE fix only.
+			List<Instant> arrivals = progress.bus().status() == LocationStatus.LIVE
+					? LiveEta.arrivals(straightLine, progress.bus().position(), toDo, now) : null;
+			for (int i = 0; i < toDo.size(); i++) {
+				LocalTime planned = plannedTime(progress.run().getDirection(), toDo.get(i));
+				if (planned != null) {
+					waiting.add(new WaitingStop(schoolId, progress.run().getId(), toDo.get(i).studentId(),
+							today.atTime(planned).atZone(clock.getZone()).toInstant(),
+							arrivals == null ? null : arrivals.get(i)));
+				}
+			}
+		}
+		return waiting;
+	}
+
+	/** A run in progress with where its bus is and the stops still to do. */
+	private record RunProgress(Run run, BusLocationResponse bus, List<StopResponse> toDo) {
+	}
+
+	/**
+	 * What {@link #locationsToday} and {@link #waitingStopsOf} both need for runs of one school in progress: the bus's
+	 * position and the stops still to do. One read per route; a run of a deleted route is left out (its read is empty).
+	 */
+	private List<RunProgress> progressOf(UUID schoolId, LocalDate today, List<Run> found, Instant now) {
+		Map<UUID, List<StopResponse>> stopsOf = new HashMap<>();
+		found.stream().map(Run::getRouteId).distinct().forEach(routeId ->
+				routeService.findStops(schoolId, routeId).ifPresent(stops -> stopsOf.put(routeId, stops)));
+		List<Run> inProgress = found.stream().filter(run -> stopsOf.containsKey(run.getRouteId())).toList();
+		if (inProgress.isEmpty()) {
+			return List.of();
+		}
+		Map<UUID, RunLocation> byRun = runLocationRepository
+				.findBySchoolIdAndRunIdIn(schoolId, inProgress.stream().map(Run::getId).toList()).stream()
+				.collect(Collectors.toMap(RunLocation::getRunId, Function.identity()));
+		Map<UUID, List<Confirmation>> confirmed = confirmationsOf(schoolId, inProgress);
+		Set<UUID> absent = absenceService.absentStudentIds(schoolId, stopsOf.values().stream().flatMap(List::stream)
+				.map(StopResponse::studentId).collect(Collectors.toSet()), today);
+		return inProgress.stream().map(run -> new RunProgress(run, locate(byRun.get(run.getId()), now),
+				toDo(run.getDirection(), stopsOf.get(run.getRouteId()), confirmed.getOrDefault(run.getId(), List.of()),
+						absent))).toList();
+	}
+
+	/**
+	 * The route's stops that are still to do (neither done nor skippable, {@link #pending}) in the run's order: the
+	 * route's for the morning, reversed for the afternoon. A student confirmed on the run who has left the route is not
+	 * one of the route's stops, so they are never counted, as in {@link #todayRunStatus}.
+	 */
+	private static List<StopResponse> toDo(RunDirection direction, List<StopResponse> morning,
+			Collection<Confirmation> confirmed, Set<UUID> absent) {
+		Map<UUID, Confirmation> latest = latestOf(confirmed);
+		return (direction == RunDirection.MORNING ? morning : morning.reversed()).stream()
+				.filter(stop -> pending(direction, stop.studentId(), latest, absent)).toList();
+	}
+
+	/** The one place the "only from a LIVE fix" rule is applied: no estimate is ever made from a stale position. */
+	private EstimateResponse estimateIfLive(BusLocationResponse bus, List<StopResponse> toTarget, Instant now) {
+		return bus.status() == LocationStatus.LIVE ? LiveEta.estimate(straightLine, bus.position(), toTarget, now) : null;
+	}
+
+	/** The schedule's time: the routing arrival time on a morning run; an afternoon run has none. */
+	private static LocalTime plannedTime(RunDirection direction, StopResponse stop) {
+		return direction == RunDirection.MORNING ? stop.arrivalTime() : null;
+	}
+
+	/** LIVE, STALE or UNAVAILABLE from the age of the stored position (null for no row), measured by the server. */
+	private static BusLocationResponse locate(RunLocation location, Instant now) {
+		if (location == null || !location.isSharing() || location.getReceivedAt() == null) {
+			return BusLocationResponse.UNAVAILABLE;
+		}
+		Duration age = Duration.between(location.getReceivedAt(), now);
+		if (age.compareTo(RunLocation.SHOWN_FOR) > 0) {
+			return BusLocationResponse.UNAVAILABLE;
+		}
+		LocationStatus status = age.compareTo(RunLocation.LIVE_FOR) > 0 ? LocationStatus.STALE : LocationStatus.LIVE;
+		return new BusLocationResponse(status, new BusPositionResponse(location.getLatitude(),
+				location.getLongitude(), location.getAccuracyMeters(), location.getReceivedAt(),
+				Math.max(0, age.toSeconds())), null, null, null);
+	}
+
+	/** The ids of these runs whose driver is sharing now. */
+	private Set<UUID> sharingOf(UUID schoolId, Collection<Run> runs) {
+		if (runs.isEmpty()) {
+			return Set.of();
+		}
+		return runLocationRepository.findBySchoolIdAndRunIdIn(schoolId, runs.stream().map(Run::getId).toList()).stream()
+				.filter(RunLocation::isSharing).map(RunLocation::getRunId).collect(Collectors.toSet());
+	}
+
+	/**
+	 * For the {@code reports} module (SCRUM-271): the run figures of each date in the range that has a run or a
+	 * confirmation, from two grouped queries and nothing else (no road time, no roster). A date with neither is not
+	 * in the list; the caller fills it with zeros.
+	 */
+	@Transactional(readOnly = true)
+	public List<DailyRunTotals> dailyTotals(UUID schoolId, LocalDate from, LocalDate to) {
+		Map<LocalDate, long[]> byDate = new TreeMap<>();
+		for (Object[] row : runRepository.countByDate(schoolId, from, to)) {
+			long[] figures = byDate.computeIfAbsent((LocalDate) row[0], date -> new long[5]);
+			figures[0] = ((Number) row[1]).longValue();
+			figures[1] = ((Number) row[2]).longValue();
+		}
+		for (Object[] row : confirmationRepository.riderCountsByDate(schoolId, from, to)) {
+			long[] figures = byDate.computeIfAbsent(LocalDate.parse(row[0].toString()), date -> new long[5]);
+			figures[2] = ((Number) row[1]).longValue();
+			figures[3] = ((Number) row[2]).longValue();
+			figures[4] = ((Number) row[3]).longValue();
+		}
+		return byDate.entrySet().stream().map(entry -> new DailyRunTotals(entry.getKey(), entry.getValue()[0],
+				entry.getValue()[1], entry.getValue()[2], entry.getValue()[3], entry.getValue()[4])).toList();
 	}
 
 	/** One run as the driver sees it, with the confirmations as stored now. */
 	private RunResponse driverAnswer(Run run, DriverRouteResponse route, DayType dayType) {
 		UUID schoolId = run.getSchoolId();
 		return driverRun(run, route, morningStops(schoolId, route, run.getRunDate()), dayType, schoolSettingsService.getTimes(schoolId),
-				confirmationsOf(schoolId, List.of(run)));
+				confirmationsOf(schoolId, List.of(run)), sharingOf(schoolId, List.of(run)));
 	}
 
 	private Map<UUID, List<Confirmation>> confirmationsOf(UUID schoolId, Collection<Run> runs) {
@@ -281,14 +789,14 @@ public class RunService {
 	 * student confirmed on the run who has left the route is added last, so a child on the bus never disappears.
 	 */
 	private RunResponse driverRun(Run run, DriverRouteResponse route, List<RunStopResponse> morning, DayType dayType,
-			SchoolTimesResponse times, Map<UUID, List<Confirmation>> confirmed) {
+			SchoolTimesResponse times, Map<UUID, List<Confirmation>> confirmed, Set<UUID> sharing) {
 		Map<UUID, Confirmation> latest = latestOf(confirmed.getOrDefault(run.getId(), List.of()));
 		List<RunStopResponse> stops = (run.getDirection() == RunDirection.MORNING ? morning : afternoonStops(morning))
 				.stream().map(stop -> stop.withConfirmation(responseOf(latest.get(stop.studentId()))))
 				.collect(Collectors.toCollection(ArrayList::new));
 		appendRemoved(stops, run.getSchoolId(), latest);
 		return toResponse(run, new RunRouteResponse(route.id(), route.name()), route.vehicle(), route.driver(),
-				schoolTimeOf(run.getDirection(), dayType, times), stops, countsOf(stops.size(),
+				schoolTimeOf(run.getDirection(), dayType, times), stops, sharing.contains(run.getId()), countsOf(stops.size(),
 						(int) stops.stream().filter(stop -> stop.absent() && stop.confirmation() == null).count(),
 						latest.values()));
 	}
@@ -341,6 +849,7 @@ public class RunService {
 		Set<UUID> absentToday = absenceService.absentStudentIds(schoolId,
 				rosters.values().stream().flatMap(List::stream).collect(Collectors.toSet()), day);
 		SchoolTimesResponse times = schoolSettingsService.getTimes(schoolId);
+		Set<UUID> sharing = sharingOf(schoolId, runs.values().stream().flatMap(ofRoute -> ofRoute.values().stream()).toList());
 		List<RunResponse> result = new ArrayList<>();
 		for (RouteSummaryResponse route : routes) {
 			Map<RunDirection, Run> ofRoute = runs.getOrDefault(route.id(), Map.of());
@@ -353,7 +862,7 @@ public class RunService {
 					int absent = (int) roster.stream()
 							.filter(id -> absentToday.contains(id) && !latest.containsKey(id)).count();
 					result.add(toResponse(run, new RunRouteResponse(route.id(), route.name()), route.vehicle(),
-							route.driver(), schoolTimeOf(direction, dayType, times), null,
+							route.driver(), schoolTimeOf(direction, dayType, times), null, sharing.contains(run.getId()),
 							countsOf(route.studentCount() + (int) left, absent, latest.values())));
 				}
 			}
@@ -490,8 +999,9 @@ public class RunService {
 	}
 
 	private RunResponse toResponse(Run run, RunRouteResponse route, RouteVehicleSummary vehicle,
-			RouteDriverSummary driver, LocalTime schoolTime, List<RunStopResponse> stops, RunCountsResponse counts) {
+			RouteDriverSummary driver, LocalTime schoolTime, List<RunStopResponse> stops, boolean sharing,
+			RunCountsResponse counts) {
 		return new RunResponse(run.getId(), run.getRunDate(), run.getDirection(), run.getState(), schoolTime,
-				run.getStartedAt(), run.getEndedAt(), route, vehicle, driver, counts, stops);
+				run.getStartedAt(), run.getEndedAt(), route, vehicle, driver, counts, sharing, stops);
 	}
 }
