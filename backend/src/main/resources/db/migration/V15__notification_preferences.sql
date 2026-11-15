@@ -2,8 +2,8 @@
 -- parent, made the first time they save their choices; a parent with no row has the defaults (everything on, ten
 -- minutes), which the code supplies, so the table never needs a row for a parent who never changed anything. Plain
 -- ids with no foreign keys, as in runs and inbox_events.
--- V15 is provisional: renamed to the next free number when it merges, because V13 (SCRUM-263) and V14 (SCRUM-264) are
--- still open (docs/contracts/inbox.md, Notification preferences).
+-- Follows V13 (confirmation keys, SCRUM-263) and V14 (run reassignments, SCRUM-264)
+-- (docs/contracts/inbox.md, Notification preferences).
 
 CREATE TABLE notification_preferences (
     parent_user_id uuid NOT NULL,

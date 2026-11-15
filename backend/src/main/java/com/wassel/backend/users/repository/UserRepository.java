@@ -19,6 +19,8 @@ import java.util.UUID;
  */
 public interface UserRepository extends JpaRepository<User, UUID> {
 
+	Optional<User> findBySchoolIdAndId(UUID schoolId, UUID id);
+
 	Optional<User> findBySchoolIdAndIdAndRole(UUID schoolId, UUID id, Role role);
 
 	List<User> findBySchoolIdAndRoleOrderByCreatedAtAsc(UUID schoolId, Role role);
