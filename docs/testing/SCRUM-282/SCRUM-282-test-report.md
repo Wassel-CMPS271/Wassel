@@ -1,5 +1,18 @@
 # SCRUM-282 â€” Independent operations UI tests
 
+## Fresh readiness audit — 15 November 2026
+
+Develop remains `3798b40`, already in this branch. #144's Ready flag changed, but its source is still `e3ec66670324a77edfe014dec7a00f18ee39ac3c`. #142 remains draft at `d81b06859a36f7807272c4f81d2f03f0a7a9a7b9`; SCRUM-274 remains To Do with no control UI available. No source was copied or modified to make acceptance pass.
+
+Re-executed all independent operations cases on the exact candidate pair: **28 passed / 2 genuine failures** (30 cases). The failures remain `confirmationReplayApi = null` and `addressRequestsApi = null`. The original timeout, durable cross-tab queue and delayed-409 draft-preservation regressions still pass on these candidates. All assertions and all earlier failure evidence are retained. Fresh ignored log: `tmp/SCRUM-282-20261115-review/candidates.log`. The accepted-source current-head CI before this report update still reports 769 passed / 23 missing-feature gates, plus the existing expected failure and skips; it is not represented as candidate success. The previously observed unchanged route-focus risk and its successful isolated reruns remain in the historical report below.
+
+The new #149 independent browser test verifies the actual #144 driver UI feeding the production Parent UI through the accepted backend (GPS, ETA, consent and withdrawal). It improves online tracking evidence, not offline replay, address decisions or Head control acceptance. Its candidate source remains tracked-clean, with a live SHA guard in CI.
+
+**Exact owner work:** Majd must wire the accepted idempotent replay API in #144 and verify reconnect, 401 pause/auth expiry, transient retry, 404/409 drop/refetch, 422 rejection and durable reload/cross-tab behavior. In #142, retain the canonical accepted address contract to resolve the add/add conflict, wire actual list/approve/reject and verify ownership, persisted approval-only address/pin mutation, errors and mobile. For SCRUM-274, build the authorized active/late/stale/unavailable Head control UI and atomic reassignment with confirmation-history preservation and full error/mobile/role coverage. Agree the Head lateness rule/API with the backend owners: #158's parent late alerts do not by themselves supply a Head not-started/late control screen.
+
+#158 remains conflicted and unapproved: Moustafa must reconcile backend documentation and current integrated preferences/late/strict-scalar tests; Hashem must independently review the final head. None of those teammate changes is made by this independent test PR. Keep #151 Draft and preserve its red gates. No Jira status, teammate branch, Ready flag or PR merge was changed.
+
+
 ## Accepted dependency refresh and explicit replay delivery gate — 15 November 2026
 
 Normally merged accepted develop `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c` into the existing branch without conflicts/history rewriting. All existing 29 independent operations cases, failing regressions, reports and dated evidence remain. No teammate feature source, branch, assertions, skips or Jira status was changed; no PR was merged.
