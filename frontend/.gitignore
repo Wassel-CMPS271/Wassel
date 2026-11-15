@@ -48,3 +48,6 @@ next-env.d.ts
 
 # Versioned generated tracking launchers preserve prior review runs
 /e2e/.parent-tracking-review-run-*.mjs
+
+# Isolated dual-UI review launchers
+/e2e/.parent-driver-review-run-*.mjs
