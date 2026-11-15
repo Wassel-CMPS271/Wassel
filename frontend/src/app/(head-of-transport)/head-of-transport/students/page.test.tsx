@@ -558,6 +558,21 @@ it("keeps showing the roster and gives a toast notice if the background refresh 
   expect(toast.closest('[role="status"]')).toBeInTheDocument();
 });
 
+it("clears an earlier roster load error once the background refresh after an approval succeeds", async () => {
+  vi.mocked(getStudents)
+    .mockRejectedValueOnce(new Error("down"))
+    .mockResolvedValueOnce([LINA, HADI]);
+  render(<StudentsPage />);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load students. Please try again.");
+
+  fireEvent.click(screen.getByRole("button", { name: "Simulate address approval" }));
+
+  await waitFor(() => expect(getStudents).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  expect(screen.getByText("Lina Daher")).toBeInTheDocument();
+});
+
 it("says 'Linked' when the linked parent isn't in the parents list", async () => {
   vi.mocked(getStudents).mockResolvedValue([{ ...LINA, parentUserId: "p-unknown" }, HADI]);
   await renderLoaded();

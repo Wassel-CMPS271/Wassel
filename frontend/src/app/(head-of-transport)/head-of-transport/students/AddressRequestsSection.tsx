@@ -9,9 +9,8 @@ import type { AddressRequest, AddressRequestsApi } from "@/lib/api/addressReques
 import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
 
 interface AddressRequestsSectionProps {
-  /** null while SCRUM-269 is unmerged: renders the "coming soon" placeholder. */
-  api: AddressRequestsApi | null;
-  /** Called after an approval, with the student it was for, so the roster can refresh that row. */
+  api: AddressRequestsApi;
+  /** Called after an approval, with the student it was for, so the roster can refresh. */
   onApproved: (studentId: string) => void;
 }
 
@@ -27,6 +26,14 @@ function decisionErrorMessage(err: unknown): string {
     if (err.status < 500) return err.message || "The request could not be completed.";
   }
   return "Something went wrong. Please try again.";
+}
+
+// decide() rethrows an ApiValidationError unchanged (see below) so the row
+// can tell a field error from a row error; anything else arrives already
+// wrapped in a plain Error carrying decisionErrorMessage's text.
+function fallbackErrorMessage(err: unknown): string {
+  if (err instanceof ApiValidationError) return decisionErrorMessage(err);
+  return err instanceof Error ? err.message : "Something went wrong. Please try again.";
 }
 
 function SkeletonRow({ delay }: { delay: number }) {
@@ -68,6 +75,7 @@ function AddressRequestRow({ request, isDeciding, onApprove, onReject }: RowProp
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState("");
   const [rowError, setRowError] = useState("");
+  const approveTriggerRef = useRef<HTMLButtonElement>(null);
   const rejectTriggerRef = useRef<HTMLButtonElement>(null);
   const confirmRejectRef = useRef<HTMLButtonElement>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
@@ -85,6 +93,21 @@ function AddressRequestRow({ request, isDeciding, onApprove, onReject }: RowProp
       rejectTriggerRef.current?.focus();
     }
   }, [isConfirmingReject]);
+
+  useEffect(() => {
+    if (reasonError) reasonRef.current?.focus();
+  }, [reasonError]);
+
+  // The row's buttons are disabled while the request is in flight, so a
+  // failure (inactive student, 401, 403, 5xx, network) drops focus to
+  // <body> once they re-enable. Restore it to whichever control triggered
+  // the request: Approve, or Confirm when the reject box is open.
+  useEffect(() => {
+    if (!isDeciding && rowError) {
+      if (isConfirmingReject) confirmRejectRef.current?.focus();
+      else approveTriggerRef.current?.focus();
+    }
+  }, [rowError, isDeciding, isConfirmingReject]);
 
   function openReject() {
     setReason("");
@@ -110,7 +133,11 @@ function AddressRequestRow({ request, isDeciding, onApprove, onReject }: RowProp
     try {
       await onApprove();
     } catch (err) {
-      setRowError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      if (err instanceof ApiValidationError && err.errors.studentId) {
+        setRowError("This student is inactive, so the new address can't be saved. Reject the request instead.");
+        return;
+      }
+      setRowError(fallbackErrorMessage(err));
     }
   }
 
@@ -118,7 +145,6 @@ function AddressRequestRow({ request, isDeciding, onApprove, onReject }: RowProp
     const trimmed = reason.trim();
     if (trimmed.length > REASON_MAX_LENGTH) {
       setReasonError(`Reason must be ${REASON_MAX_LENGTH} characters or fewer.`);
-      reasonRef.current?.focus();
       return;
     }
     setReasonError("");
@@ -128,7 +154,11 @@ function AddressRequestRow({ request, isDeciding, onApprove, onReject }: RowProp
       // On success the request leaves the list and this row unmounts; no
       // local state to reset.
     } catch (err) {
-      setRowError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      if (err instanceof ApiValidationError && err.errors.reason) {
+        setReasonError(err.errors.reason);
+        return;
+      }
+      setRowError(fallbackErrorMessage(err));
     }
   }
 
@@ -151,7 +181,7 @@ function AddressRequestRow({ request, isDeciding, onApprove, onReject }: RowProp
     >
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between" style={{ gap: spacing.md }}>
         <div className="flex flex-col min-w-0" style={{ gap: spacing.xs }}>
-          <span className="text-base font-medium" style={{ color: darkTheme.text.primary }}>
+          <span className="text-base font-medium break-words" style={{ color: darkTheme.text.primary }}>
             {request.studentName}
           </span>
           <span className="text-sm break-words" style={{ color: darkTheme.text.secondary }}>
@@ -168,6 +198,7 @@ function AddressRequestRow({ request, isDeciding, onApprove, onReject }: RowProp
         {!isConfirmingReject && (
           <div className="flex flex-wrap flex-shrink-0" style={{ gap: spacing.sm }}>
             <Button
+              ref={approveTriggerRef}
               variant="primary"
               onClick={handleApprove}
               disabled={isDeciding}
@@ -272,7 +303,6 @@ export function AddressRequestsSection({ api, onApproved }: AddressRequestsSecti
   // like a typed rejection reason — stay mounted and keep their state
   // instead of being torn down and rebuilt.
   const load = useCallback(async (opts?: { background?: boolean }) => {
-    if (!api) return;
     if (!opts?.background) setIsLoading(true);
     setLoadError("");
     try {
@@ -303,7 +333,6 @@ export function AddressRequestsSection({ api, onApproved }: AddressRequestsSecti
     call: () => Promise<AddressRequest>,
     successNotice: (studentName: string) => string,
   ): Promise<AddressRequest | undefined> {
-    if (!api) return undefined;
     const request = requests.find((item) => item.id === id);
     if (!request) return undefined;
     setNotice("");
@@ -325,6 +354,7 @@ export function AddressRequestsSection({ api, onApproved }: AddressRequestsSecti
         headingRef.current?.focus();
         return undefined;
       }
+      if (err instanceof ApiValidationError) throw err;
       throw new Error(decisionErrorMessage(err));
     } finally {
       setDecidingIds((prev) => {
@@ -336,13 +366,11 @@ export function AddressRequestsSection({ api, onApproved }: AddressRequestsSecti
   }
 
   async function handleApprove(id: string) {
-    if (!api) return;
     const decided = await decide(id, () => api.approve(id), (name) => `Address approved for ${name}.`);
     if (decided) onApproved(decided.studentId);
   }
 
   async function handleReject(id: string, reason?: string) {
-    if (!api) return;
     await decide(id, () => api.reject(id, reason), (name) => `Address request rejected for ${name}.`);
   }
 
@@ -378,102 +406,69 @@ export function AddressRequestsSection({ api, onApproved }: AddressRequestsSecti
         }}
       />
 
-      {!api && (
-        <div
-          aria-disabled="true"
-          className="flex items-center flex-wrap"
-          style={{
-            gap: spacing.sm,
-            padding: spacing.md,
-            border: `1px dashed ${darkTheme.surface.cardBorder}`,
-            borderRadius: radius.lg,
-            backgroundColor: darkTheme.surface.recede,
-          }}
-        >
-          <span className="text-sm flex-1" style={{ color: darkTheme.text.muted }}>
-            Address change requests from parents will appear here (SCRUM-269).
+      {isLoading && (
+        <>
+          <span className="sr-only" role="status">
+            Loading address requests…
           </span>
-          <span
-            className="text-xs font-medium flex-shrink-0"
-            style={{
-              padding: `2px ${spacing.sm}`,
-              borderRadius: radius.full,
-              backgroundColor: "rgba(255, 255, 255, 0.06)",
-              color: darkTheme.text.muted,
-            }}
-          >
-            Soon
-          </span>
+          <ul aria-hidden="true" className="flex flex-col" style={{ gap: spacing.sm, padding: 0, margin: 0 }}>
+            <SkeletonRow delay={0} />
+            <SkeletonRow delay={0.15} />
+          </ul>
+        </>
+      )}
+
+      {!isLoading && loadError && (
+        <div className="flex flex-col items-start" style={{ gap: spacing.sm }}>
+          <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>
+            {loadError}
+          </p>
+          <Button variant="secondary" onClick={() => load()}>
+            Try again
+          </Button>
         </div>
       )}
 
-      {api && (
-        <>
-          {isLoading && (
-            <>
-              <span className="sr-only" role="status">
-                Loading address requests…
-              </span>
-              <ul aria-hidden="true" className="flex flex-col" style={{ gap: spacing.sm, padding: 0, margin: 0 }}>
-                <SkeletonRow delay={0} />
-                <SkeletonRow delay={0.15} />
-              </ul>
-            </>
-          )}
+      <p
+        role="status"
+        className="text-sm"
+        style={{ color: darkTheme.text.secondary, marginBottom: notice ? spacing.sm : 0 }}
+      >
+        {notice}
+      </p>
 
-          {!isLoading && loadError && (
-            <div className="flex flex-col items-start" style={{ gap: spacing.sm }}>
-              <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>
-                {loadError}
+      {!isLoading && !loadError && (
+        <>
+          {requests.length === 0 && (
+            <div
+              className="flex flex-col items-center text-center"
+              style={{
+                padding: spacing.xl,
+                border: `1px dashed ${darkTheme.surface.cardBorder}`,
+                borderRadius: radius.lg,
+                backgroundColor: darkTheme.surface.emptyState,
+              }}
+            >
+              <p className="text-sm font-medium" style={{ color: darkTheme.text.primary }}>
+                No pending address requests.
               </p>
-              <Button variant="secondary" onClick={() => load()}>
-                Try again
-              </Button>
             </div>
           )}
 
-          <p
-            role="status"
-            className="text-sm"
-            style={{ color: darkTheme.text.secondary, marginBottom: notice ? spacing.sm : 0 }}
-          >
-            {notice}
-          </p>
-
-          {!isLoading && !loadError && (
-            <>
-              {requests.length === 0 && (
-                <div
-                  className="flex flex-col items-center text-center"
-                  style={{
-                    padding: spacing.xl,
-                    border: `1px dashed ${darkTheme.surface.cardBorder}`,
-                    borderRadius: radius.lg,
-                    backgroundColor: darkTheme.surface.emptyState,
-                  }}
-                >
-                  <p className="text-sm font-medium" style={{ color: darkTheme.text.primary }}>
-                    No pending address requests.
-                  </p>
-                </div>
-              )}
-
-              {requests.length > 0 && (
-                <ul role="list" className="flex flex-col" style={{ gap: spacing.sm, padding: 0, margin: 0 }}>
-                  <AnimatePresence initial={false}>
-                    {requests.map((request) => (
-                      <AddressRequestRow
-                        key={request.id}
-                        request={request}
-                        isDeciding={decidingIds.has(request.id)}
-                        onApprove={() => handleApprove(request.id)}
-                        onReject={(reason) => handleReject(request.id, reason)}
-                      />
-                    ))}
-                  </AnimatePresence>
-                </ul>
-              )}
-            </>
+          {requests.length > 0 && (
+            <ul role="list" className="flex flex-col" style={{ gap: spacing.sm, padding: 0, margin: 0 }}>
+              <AnimatePresence initial={false}>
+                {requests.map((request) => (
+                  <AddressRequestRow
+                    key={request.id}
+                    request={request}
+                    isDeciding={decidingIds.has(request.id)}
+                    onApprove={() => handleApprove(request.id)}
+                    onReject={(reason) => handleReject(request.id, reason)}
+                  />
+                ))}
+              </AnimatePresence>
+            </ul>
           )}
         </>
       )}

@@ -1,16 +1,7 @@
-// Address change requests (SCRUM-269, not merged yet). Draft contract:
-// docs/contracts/address-requests.md. The roster's "Address requests" section
-// (SCRUM-275) is built against the AddressRequestsApi interface below, so the
-// real request()-based client can be dropped in with no UI changes once
-// SCRUM-269 lands: replace `addressRequestsApi`'s value with a real
-// implementation (the model is lib/api/parents.ts: a few `request()` calls
-// plus an error-mapping helper) and delete this comment.
-//
-// There is no sample client here, unlike the Sprint 3 runs screen
-// (frontend/CLAUDE.md "API calls"): that exception is for an endpoint whose
-// contract is merged and only waiting on the PR; this one has no contract
-// yet, so the section renders its "coming soon" placeholder instead of fake
-// data.
+// Address change requests (SCRUM-269): docs/contracts/address-requests.md. The head of
+// transportation's side only; the parent's submit/list endpoints have no screen yet.
+
+import { request } from "./client";
 
 export interface AddressRequest {
   /** The request's own id, not the student's. */
@@ -20,7 +11,7 @@ export interface AddressRequest {
   studentName: string;
   /** The student's saved address when the request was made. Null if none was set. */
   currentAddress: string | null;
-  /** The new address text the parent is asking for. Never the saved address. */
+  /** The new address text the parent is asking for, trimmed, at most 255 characters. Never the saved address. */
   requestedAddress: string;
   /** Set only when the parent placed a pin for the requested address; otherwise both null. */
   requestedLat: number | null;
@@ -37,11 +28,28 @@ export interface AddressRequest {
 export interface AddressRequestsApi {
   /** The school's pending requests: GET /api/head-of-transport/address-requests (status defaults to pending). */
   list(): Promise<AddressRequest[]>;
+  /** Approval saves the requested address (and pin, if any) on the student in the same transaction. */
   approve(id: string): Promise<AddressRequest>;
   reject(id: string, reason?: string): Promise<AddressRequest>;
 }
 
-// null until SCRUM-269 merges. AddressRequestsSection renders its "coming
-// soon" placeholder whenever this is null, so the roster page never needs
-// its own null check.
-export const addressRequestsApi: AddressRequestsApi | null = null;
+const PATH = "/api/head-of-transport/address-requests";
+
+// No ?status=: the backend's default is pending, which is all the roster shows.
+export const listAddressRequests = () => request<AddressRequest[]>(PATH);
+
+export const approveAddressRequest = (id: string) =>
+  request<AddressRequest>(`${PATH}/${encodeURIComponent(id)}/approve`, { method: "POST" });
+
+// No reason means no body: the backend reads a missing body, or a blank reason, as none.
+export const rejectAddressRequest = (id: string, reason?: string) =>
+  request<AddressRequest>(`${PATH}/${encodeURIComponent(id)}/reject`, {
+    method: "POST",
+    body: reason?.trim() ? { reason: reason.trim() } : undefined,
+  });
+
+export const addressRequestsApi: AddressRequestsApi = {
+  list: listAddressRequests,
+  approve: approveAddressRequest,
+  reject: rejectAddressRequest,
+};

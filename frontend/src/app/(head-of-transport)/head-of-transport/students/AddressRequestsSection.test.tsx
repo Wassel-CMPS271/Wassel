@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import type { AddressRequest, AddressRequestsApi } from "@/lib/api/addressRequests";
 import { AddressRequestsSection } from "./AddressRequestsSection";
 
@@ -47,16 +47,6 @@ function fakeApi() {
 function row(name: string) {
   return screen.getByText(name).closest("li")!;
 }
-
-it("shows the 'coming soon' placeholder when there is no API yet (SCRUM-269 unmerged)", () => {
-  render(<AddressRequestsSection api={null} onApproved={vi.fn()} />);
-
-  const notice = screen.getByText("Address change requests from parents will appear here (SCRUM-269).");
-  expect(notice).toBeInTheDocument();
-  expect(notice.closest('[aria-disabled="true"]')).toBeInTheDocument();
-  expect(screen.getByText("Soon")).toBeInTheDocument();
-  expect(screen.queryByRole("list")).not.toBeInTheDocument();
-});
 
 it("shows a loading status while the requests load", () => {
   const api = fakeApi();
@@ -320,4 +310,90 @@ it("moves focus to Confirm when rejecting, and Escape cancels and returns focus 
   const trigger = await screen.findByRole("button", { name: "Reject address change for Lina Daher" });
   await waitFor(() => expect(trigger).toHaveFocus());
   expect(api.reject).not.toHaveBeenCalled();
+});
+
+it("keeps the request pending and shows a clear row message when approving an inactive student", async () => {
+  const api = fakeApi();
+  api.list.mockResolvedValue([LINA_REQUEST]);
+  api.approve.mockRejectedValue(
+    new ApiValidationError({ studentId: "Only active students can have an address request." }),
+  );
+  render(<AddressRequestsSection api={api} onApproved={vi.fn()} />);
+
+  await screen.findByText("Lina Daher");
+  fireEvent.click(within(row("Lina Daher")).getByRole("button", { name: "Approve address change for Lina Daher" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "This student is inactive, so the new address can't be saved. Reject the request instead.",
+  );
+  expect(screen.getByText("Lina Daher")).toBeInTheDocument();
+  expect(api.list).toHaveBeenCalledTimes(1);
+});
+
+it("shows a server-side reason error next to the reason field and keeps the reject box open", async () => {
+  const api = fakeApi();
+  api.list.mockResolvedValue([LINA_REQUEST]);
+  api.reject.mockRejectedValue(
+    new ApiValidationError({ reason: "Reason must be 255 characters or fewer" }),
+  );
+  render(<AddressRequestsSection api={api} onApproved={vi.fn()} />);
+
+  await screen.findByText("Lina Daher");
+  fireEvent.click(within(row("Lina Daher")).getByRole("button", { name: "Reject address change for Lina Daher" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Confirm reject address change for Lina Daher" }));
+
+  const reasonError = await screen.findByText("Reason must be 255 characters or fewer");
+  expect(reasonError).toHaveAttribute("role", "alert");
+  const textarea = screen.getByLabelText("Reason (optional)");
+  expect(textarea).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByRole("button", { name: "Confirm reject address change for Lina Daher" })).toBeInTheDocument();
+  await waitFor(() => expect(textarea).toHaveFocus());
+});
+
+it("handles a 404 on approve by refreshing the list without leaving the row stuck", async () => {
+  const api = fakeApi();
+  api.list.mockResolvedValueOnce([LINA_REQUEST]).mockResolvedValueOnce([LINA_REQUEST]);
+  api.approve.mockRejectedValue(new ApiError(404, "Not found"));
+  render(<AddressRequestsSection api={api} onApproved={vi.fn()} />);
+
+  await screen.findByText("Lina Daher");
+  fireEvent.click(within(row("Lina Daher")).getByRole("button", { name: "Approve address change for Lina Daher" }));
+
+  expect(await screen.findByText("This request is no longer available. Refreshed the list.")).toBeInTheDocument();
+  await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
+  const approveButton = await screen.findByRole("button", { name: "Approve address change for Lina Daher" });
+  expect(approveButton).not.toBeDisabled();
+  expect(approveButton).toHaveTextContent("Approve");
+});
+
+it("keeps the row usable and returns focus to Approve after a 401 on approve", async () => {
+  const api = fakeApi();
+  api.list.mockResolvedValue([LINA_REQUEST]);
+  api.approve.mockRejectedValue(new ApiError(401, "Unauthorized"));
+  render(<AddressRequestsSection api={api} onApproved={vi.fn()} />);
+
+  await screen.findByText("Lina Daher");
+  const approveButton = within(row("Lina Daher")).getByRole("button", { name: "Approve address change for Lina Daher" });
+  fireEvent.click(approveButton);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Your session has expired. Please sign in again.");
+  expect(approveButton).not.toBeDisabled();
+  expect(approveButton).toHaveTextContent("Approve");
+  await waitFor(() => expect(approveButton).toHaveFocus());
+});
+
+it("keeps the row usable after a network failure on approve", async () => {
+  const api = fakeApi();
+  api.list.mockResolvedValue([LINA_REQUEST]);
+  api.approve.mockRejectedValue(new TypeError("Failed to fetch"));
+  render(<AddressRequestsSection api={api} onApproved={vi.fn()} />);
+
+  await screen.findByText("Lina Daher");
+  const approveButton = within(row("Lina Daher")).getByRole("button", { name: "Approve address change for Lina Daher" });
+  fireEvent.click(approveButton);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong. Please try again.");
+  expect(approveButton).not.toBeDisabled();
+  expect(approveButton).toHaveTextContent("Approve");
+  await waitFor(() => expect(approveButton).toHaveFocus());
 });

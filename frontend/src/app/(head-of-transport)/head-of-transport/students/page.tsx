@@ -107,15 +107,17 @@ export default function StudentsPage() {
     }
   }, []);
 
-  // After an address-request approval: an approval may change the student's
-  // saved address or pin (SCRUM-269's decision, not this screen's), so
-  // refresh the roster. Runs without the loading skeleton so the roster
-  // (and anything open on its rows) stays visible, and a failure here never
-  // replaces the roster with the error state, just a toast.
+  // After an address-request approval: approval writes the requested address
+  // (and, if it carried a pin, the student's pin) on the student in the same
+  // backend transaction, so the roster must refresh to show it. Runs without
+  // the loading skeleton so the roster (and anything open on its rows) stays
+  // visible, and a failure here never replaces the roster with the error
+  // state, just a toast.
   const reloadStudentsInBackground = useCallback(async () => {
     try {
       const data = await getStudents();
       setStudents(data);
+      setLoadError(undefined);
     } catch {
       pushToast("Couldn't refresh the roster after the approval. Please reload the page.");
     }
