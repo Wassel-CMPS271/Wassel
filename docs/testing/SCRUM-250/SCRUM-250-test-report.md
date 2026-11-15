@@ -1,5 +1,27 @@
 # SCRUM-250 — Independent driver frontend tests
 
+## Latest develop and preserved driver acceptance — 15 November 2026
+
+Normally merged accepted develop `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c` into the existing test branch without conflicts/history rewriting. All original 65 assertions are byte-for-byte unchanged relative to preserved `a09c3bd`; no feature implementation was copied or edited. All prior reports and evidence remain. The accepted backend now includes GPS, ETA, idempotent replay and reassignment (Flyway V1–V14).
+
+| Executed check | Result |
+| --- | --- |
+| Original 65 acceptance tests on current branch / accepted feature source | **64 passed / 1 genuine failure**: Driver Today does not call GET `/api/driver/runs/today` |
+| Same 65 on exact unchanged #144 head `e3ec66670324a77edfe014dec7a00f18ee39ac3c` | **65 passed / 0 failed** |
+| Full frontend regression on current test branch | **826 passed / 1 genuine failure**, 1 existing expected failure, 6 existing skips (834 tests; 60 files) |
+| ESLint / production build / git diff --check | Passed |
+| Standalone TypeScript | Exit 2: same **13 develop baseline diagnostics**, zero introduced |
+| Real browser: exact #144 frontend + accepted `3798b40` backend | **1 passed**, launcher exit 0, fresh PostgreSQL/Flyway |
+
+The real browser used actual password/2FA, authenticated GET Today, start/pickup/drop-off/not-present/end, reload persistence, browser-simulated GPS with real consent/location APIs and Parent LIVE/withdrawal, role denial, 360px/no overflow and no page crashes. The original candidate source remains tracked-clean; a generated test-only launcher selects the accepted backend, while test overlays and the ticking weekday clock remain isolated. This verifies a candidate implementation, not the production sample client, physical phone GPS or the still-null replay adapter. The generated candidate build again emits the previously documented Windows standalone/junction EPERM tracing warning; it exits 0 and the production Next server/browser scenario passes, so a standalone deployment is not certified by this run.
+
+The one normal branch failure is preserved at `real-endpoint.independent.test.tsx:23`: accepted Driver Today still imports sample-run data instead of invoking the real endpoint. It is neither skipped nor converted to an expected failure. #144 has that real wiring but remains an unfinished draft with `confirmationReplayApi = null` and outstanding auth-expiry/phone/reconnect acceptance. Its backend dependencies are now merged; Majd must finish and independently verify the feature in his own branch. The tester does not hide the delivery failure or extract/modify that feature to turn tests green.
+
+Evidence: ignored `tmp/SCRUM-250-20261115/` (candidate-65, current focused/full regression, lint/build/typecheck/baseline comparison, real-browser log and exit). Historical evidence and unchanged tests remain. Hosted frontend CI should continue to fail the genuine endpoint gate until the production feature is accepted; check the updated head directly rather than infer success from candidate results.
+
+**Readiness: keep #148 a draft.** Finish/review/accept #144, update this test branch normally, rerun all 65 on actual HEAD plus full regression/lint/build/browser/CI, then obtain independent review. No teammate source or branch, Jira status, assertions or skips were changed; no PR was merged.
+
+
 ## Accepted Inbox/backend refresh and independent retest — 14 November 2026
 
 Merged accepted develop `5da9d2c2f9b829747c47571dfb541d32a1f6aa64` into the existing #148 branch. All **65 original independent acceptance tests and assertions remain unchanged**. Latest #144 is still a draft at `e3ec66670324a77edfe014dec7a00f18ee39ac3c`.
