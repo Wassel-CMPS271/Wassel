@@ -503,12 +503,20 @@ class RunLocationTests extends RunCriteriaSupport {
 		assertEquals(keys(sample, "$[0]"), keys(list, "$[?(@.runId == '" + live.run() + "')]"));
 		assertEquals(keys(sample, "$[0].position"), keys(list, "$[?(@.runId == '" + live.run() + "')].position"));
 		assertEquals(keys(sample, "$[1]"), keys(list, "$[?(@.runId == '" + silent.run() + "')]"));
+		// SCRUM-262: the next stop with its estimate (live run), and with a planned time but no estimate (silent run).
+		assertEquals(keys(sample, "$[0].nextStop"), keys(list, "$[?(@.runId == '" + live.run() + "')].nextStop"));
+		assertEquals(keys(sample, "$[0].nextStop.estimate"),
+				keys(list, "$[?(@.runId == '" + live.run() + "')].nextStop.estimate"));
+		assertEquals(keys(sample, "$[2].nextStop"), keys(list, "$[?(@.runId == '" + silent.run() + "')].nextStop"));
+		assertEquals(keys(sample, "$[2].nextStop.estimate"),
+				keys(list, "$[?(@.runId == '" + silent.run() + "')].nextStop.estimate"));
 	}
 
 	private void assertSameFields(String sampleFile, String actual) throws Exception {
 		String sample = Files.readString(Path.of(SAMPLES + sampleFile));
 		assertEquals(keys(sample, "$"), keys(actual, "$"), sampleFile);
 		assertEquals(keys(sample, "$.position"), keys(actual, "$.position"), sampleFile);
+		assertEquals(keys(sample, "$.estimate"), keys(actual, "$.estimate"), sampleFile);
 	}
 
 	/** The field names of the object at the path (a filter's single match counts), or {@code [null]} for a null. */

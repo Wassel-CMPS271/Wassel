@@ -1,0 +1,13 @@
+[
+  {
+    "id": "80000000-0000-4000-8000-000000000001",
+    "runId": "50000000-0000-4000-8000-000000000001",
+    "direction": "MORNING",
+    "runState": "IN_PROGRESS",
+    "fromDriver": { "id": "30000000-0000-4000-8000-000000000001", "firstName": "Karim", "lastName": "Haddad" },
+    "toDriver": { "id": "30000000-0000-4000-8000-000000000007", "firstName": "Nadim", "lastName": "Khoury" },
+    "changedBy": { "id": "70000000-0000-4000-8000-000000000001", "email": "head@wassel.test" },
+    "changedAt": "2026-10-21T04:20:00Z",
+    "reason": "Karim is unwell"
+  }
+]
