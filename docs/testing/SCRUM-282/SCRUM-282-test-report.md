@@ -1,5 +1,34 @@
 # SCRUM-282 â€” Independent operations UI tests
 
+## Accepted dependency refresh and explicit replay delivery gate — 15 November 2026
+
+Normally merged accepted develop `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c` into the existing branch without conflicts/history rewriting. All existing 29 independent operations cases, failing regressions, reports and dated evidence remain. No teammate feature source, branch, assertions, skips or Jira status was changed; no PR was merged.
+
+GPS #143, ETA #153, address #145, replay #155 and reassignment #156 are now accepted backend dependencies. Frontend #144 remains draft at `e3ec66670324a77edfe014dec7a00f18ee39ac3c`; #142 remains draft at `d81b06859a36f7807272c4f81d2f03f0a7a9a7b9`. SCRUM-274 is still To Do, with no available control-screen implementation in develop.
+
+Added one independent contract-derived **production replay delivery** case: require a non-null adapter, encoded real confirmation endpoint, cookie credentials, PUT, and precisely the status/clientRequestId JSON fields (JSON key order is immaterial). This pins a previously documented completion blocker rather than pretending that a queue tested only with an injected fake is wired in production. The default HEAD integration gate and candidate CI both execute it as an ordinary failing test; no xfail/skip/continue-on-error was added.
+
+| Executed check | Result |
+| --- | --- |
+| All independent candidate cases, exact #144 + #142 heads | **28 passed / 2 genuine failures** (30 cases, 4 files), including authorized Admin navigation |
+| Current-branch full frontend regression | **768 passed / 24 failures**, 1 existing expected failure, 6 existing skips (799 cases; 59 files); breakdown below |
+| ESLint / production build / git diff --check | Passed |
+| Standalone TypeScript | Exit 2: same **13 develop baseline diagnostics**, zero introduced |
+| Extra route-focus investigation on current source / clean develop baseline | **50/50 passed on each** isolated unchanged suite |
+
+Candidate failures are exact, independent delivery gates:
+1. #144 `frontend/src/lib/api/confirmationReplay.ts` exports `confirmationReplayApi = null`; the queued confirmation cannot reach the accepted SCRUM-263 endpoint. The new case fails before making a fake success request. Majd must wire the real client and verify reconnect, stable keys, timeout/retry, 401 pause, 404/409 drop/refetch, 422 rejection, reload/cross-tab recovery and sign-in expiry against the real backend.
+2. #142 `frontend/src/lib/api/addressRequests.ts` exports `addressRequestsApi = null`; list/approve/reject remain disconnected from accepted SCRUM-269. Majd must reconcile the final address contract and verify authenticated ownership/roles, persistence, approval-only address/pin mutation, failures and 360px.
+
+The same deadline, cross-tab durable queue and delayed-409 rejection-draft preservation cases pass on these candidates; the three previous defects remain fixed. The original fourth defect is the null address client; the new replay case makes the other already-known integration gap executable. Historical old-head reproduction remains in the earlier report, not represented as a new execution today.
+
+**Full-run failure accounting:** 23 failures are normal delivery gates against HEAD, where the GPS hook/state, offline queue, replay adapter and address approvals module are still absent (and the old client lacks the request deadline). The 24th was `routes/[routeId]/page.test.tsx`, “shows an error with Try again, and focuses the route's heading once it loads”: expected heading focus, observed body. Both production and test files are byte-identical to develop (Git blobs `2b390c256f5d29a1241b9086ecb8b25cb0dcf59c` and `8410b0dbc99ee997c4948d1fde6e3f6473e28bc0`). Isolated reruns pass all 50 tests on this branch and on clean develop. This suggests an intermittent timing issue; its root cause is unresolved and the original full-run failure is preserved. It is not silently dropped from the reported result or fixed by changing teammate code.
+
+Evidence: ignored `tmp/SCRUM-282-20261115/` includes both candidate runs, full regression JSON/log, lint/build/typecheck/baseline comparison and route-focus investigation; clean-baseline investigation remains in its separate ignored directory. No new real offline replay/address/control-screen browser success is claimed because the production dependencies are incomplete. The independent driver real-browser evidence is separately refreshed in SCRUM-250, not represented as control/address acceptance here.
+
+**Readiness: keep #151 a draft.** Finish and accept #144 and #142, implement/accept SCRUM-274, complete real backend/mobile/control/reassignment acceptance and coverage, investigate the unchanged route-focus risk with its owner, then rerun the same assertions/full regression/CI and obtain independent review. Candidate CI is expected to retain the two real null-client failures; normal frontend CI retains missing-feature delivery failures. No production fix is made by this test PR.
+
+
 ## Accepted backend refresh and independent retest — 14 November 2026
 
 Merged accepted develop `5da9d2c2f9b829747c47571dfb541d32a1f6aa64` into the existing test branch. **Address #145 and Inbox #146 are now merged.** The latest Majd heads are unchanged: driver #144 `e3ec66670324a77edfe014dec7a00f18ee39ac3c`, roster #142 `d81b06859a36f7807272c4f81d2f03f0a7a9a7b9`; both remain drafts. No acceptance test, assertion, feature implementation or teammate branch was changed.

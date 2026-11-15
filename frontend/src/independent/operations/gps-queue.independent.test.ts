@@ -54,3 +54,16 @@ describe("SCRUM-273 independent queue/replay criteria", () => {
     try { await vi.advanceTimersByTimeAsync(26); expect(signal.aborted).toBe(true); expect(await pending).toBe("AbortError"); } finally { if (!signal.aborted) { controller.enqueue(new TextEncoder().encode("{}")); controller.close(); } await pending; }
   });
 });
+
+// SCRUM-263 is accepted: a queue tested with an injected fake is insufficient
+// evidence that production can replay a driver's saved tap.
+it("wires replay to the authenticated idempotent confirmation endpoint", async () => {
+  const { confirmationReplayApi } = candidate<{ confirmationReplayApi: { confirm(input: { runId: string; studentId: string; status: string; clientRequestId: string }): Promise<unknown> } | null }>("lib/api/confirmationReplay.ts");
+  expect(confirmationReplayApi, "SCRUM-263 is merged; the production replay adapter must be wired").not.toBeNull();
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ id: "run/a" })); vi.stubGlobal("fetch", fetcher);
+  const body = { status: "PICKED_UP", clientRequestId: "6f1c2a4e-8b3d-4e5f-9a7b-1c2d3e4f5a6b" };
+  await confirmationReplayApi!.confirm({ runId: "run/a", studentId: "student/b", ...body });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/api/driver/runs/run%2Fa/students/student%2Fb/confirmation"), expect.objectContaining({ method: "PUT", credentials: "include" }));
+  expect(JSON.parse(String(fetcher.mock.calls[0][1].body))).toEqual(body);
+});
