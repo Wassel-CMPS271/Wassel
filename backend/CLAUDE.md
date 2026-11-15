@@ -764,6 +764,14 @@ When #158 merges, delete `Scrum268Gate`, `Scrum268GateTests` and the `@EnabledIf
 `-Dknown-bug.SCRUM-268-coercion=true` (wrong-typed preference values are accepted) and `-Dknown-bug.SCRUM-271-empty-date=true` (an
 empty `?from=` counts as omitted). Run one with `sh ./mvnw test -Dtest=<Class>`. Report and bugs: `docs/testing/SCRUM-266/`.
 
+**Independent tests of Hashem's Sprint 4 work (SCRUM-272, by Moustafa)**, written from the tickets and `docs/contracts/runs.md`, not
+from the authors' own suites: `LiveLocationCriteriaTests` (261), `LiveEtaCriteriaTests` (262), `OfflineReplayCriteriaTests` (263) and
+`DriverReassignmentCriteriaTests` (264), all in `runs/controller`, on `common/LiveRunCriteriaSupport` (a started three-stop trip, the
+location calls, what a parent and the head read, `together` to release requests at the same instant) over `RunCriteriaSupport`. The
+features they test (SCRUM-261 to 264) are all on `develop`, so every suite runs. `LocationRetentionCriteriaTests` (in `runs/config`) reads the
+stored position, the one place that is not an HTTP answer, because an old position is simply not shown. One finding is kept behind `-Dknown-bug.SCRUM-261-coercion=true` (a text for a number,
+or `"true"` and `1` for consent, are converted). Report and bugs: `docs/testing/SCRUM-272/`.
+
 Tests mirror the main package structure: a test for
 `main/java/com/wassel/backend/schools/controller/SchoolSettingsController.java`
 lives at `test/java/com/wassel/backend/schools/controller/SchoolSettingsControllerTests.java`.

@@ -59,7 +59,7 @@ Agreed by Moustafa (SCRUM-269, owner of the endpoints). It replaces the draft th
 
 - Approve and reject are each a one-way move from `pending`. A request that is not pending is 409 and nothing changes, including the same decision again. There is no undo.
 - **The student's address and pin do not change while a request is pending or after it is rejected.**
-- **Approve saves the address in the same transaction**, the way the head's own address edit does (`PATCH .../students/{id}/address`): it is geocoded unless the student has a manual pin. If the request has a pin, the pin is saved too and becomes a manual pin. If anything fails, the request stays pending.
+- **Approve saves the address in the same transaction**, the way the head's own address edit does (`PATCH .../students/{id}/address`): it is geocoded unless the student has a manual pin. If the request has a pin, the pin is saved too and becomes a manual pin. If saving fails, the request stays pending. A geocoder that finds nothing for the address, or cannot be reached, is **not** a failure, as with the head's own edit: the address is saved, the request is approved, and a pin that is not manual is cleared, because it would otherwise point at the old address. The head then places the pin by hand. Send a pin with the request if the parent can give one.
 - Approving a request whose child has become inactive is 409 and the request stays pending (reject it). Rejecting needs no check.
 - `reason` is optional free text, at most 255 characters. Blank means none.
 - Only the head of transportation of the request's school. Another school's request is a 404, never a 403.
