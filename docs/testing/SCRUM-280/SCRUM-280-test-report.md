@@ -1,5 +1,34 @@
 # SCRUM-280 — Parent inbox and notification preferences
 
+## Combined GPS/ETA and Inbox composition — 15 November 2026
+
+Live re-audit found develop unchanged at `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c`. All four own branches already contained that head and were clean. No redundant develop merge or empty commit was made. Exact unchanged #148/#149/#151 heads retain their earlier same-source local/browser evidence and current-head hosted checks; repeated execution on unchanged source was unnecessary.
+
+The unblocked integration gap was between our own Parent PRs: each production page supplied a different feature. Normally merged verified #149 `f9fb7cb9399127032e4a112ae0b104bf22e025d8` into existing #150 `0e91ee8791f4d738212c44202252d79bddcdcb3b`, retaining both histories and keeping develop as the target. Resolve/merge **#149 before #150**; #150's develop comparison temporarily includes that explicit upstream dependency. The incremental Inbox comparison is against the SCRUM-279 branch. No teammate branch was copied, edited, rebased or merged by this work.
+
+Five conflicts were resolved by composition: `.gitignore` retains both launcher exclusions; `parent-features.review.mjs` retains tracking ETA/stale checks and Inbox preference fixtures; `parent-navigation.review.mjs` requires both accepted destinations; `ParentHome.navigation.test.tsx` retains the shared cases and real GPS/ETA regressions while replacing the obsolete mutually-exclusive production assumption with positive coverage of both; `page.tsx` supplies both real clients. No failure assertion, xfail or skip was removed to obtain green tests. ParentInboxHome now accepts the existing tracking adapter alongside Inbox, with account-scoped mounting and lazy requests. Preferences/LATE remain disabled until #158 is accepted.
+
+| Executed check | Result |
+| --- | --- |
+| Focused combined clients/components/navigation/authentication | **164 passed** (14 files) |
+| Full frontend regression | **930 passed**, zero unexpected failures; 1 existing expected failure, 6 existing skips (937 cases; 70 files) |
+| Final new integration cases after test-helper type correction | **8 passed** |
+| ESLint / production build / diff check | Passed |
+| Standalone TypeScript, final baseline comparison | Same **13 develop diagnostics**, zero introduced |
+| Fixture-only tracking and Inbox Chromium | Both passed at 360px; actual components/Leaflet, 44px controls, account reset, read identity, error/retry, planned/ETA/stale/missing coverage retained |
+| Fixture-only production Home/Absences Chromium | Passed: both destinations, long names, keyboard/44px controls, no overflow/crashes and lazy requests |
+| Real combined Inbox/GPS Chromium + fresh PostgreSQL/Flyway | **1 passed**, exit 0; actual password/2FA, real Leaflet/ETA/child switch followed by Inbox counts/receipts/isolation/retry/account reset/revocation/360px |
+| Real full GPS/ETA Chromium on the combined production build | **1 passed**, exit 0; server STALE boundary, withdrawal/null ETA, confirmation privacy, afternoon/null plan, 401/403/404 and cleanup |
+
+The real tests use accepted production APIs, fresh empty loopback PostgreSQL with all 14 migrations through V14, isolated demo/auth accounts and the existing test-only ticking school clock. No production response is mocked. The second real test reused the same unchanged production build only after the launcher's build/config guards passed. Physical-phone GPS, unfinished #144 driver UI and unmerged preferences/late APIs are not certified. The initial TypeScript run caught one new helper typing issue (Playwright's `exact` option passed to Testing Library). Removing the unsupported option retains Testing Library's default exact string matching; all eight new cases and the standalone type check were rerun, returning to the baseline. Initial logs remain preserved.
+
+Evidence: ignored `tmp/SCRUM-280-20261115-composition/`, timestamped fixture directories and archived Playwright histories. The existing GPS workflow is retained and also runs for pushes to this composed branch. Current-head hosted full regression, backend and both real-browser jobs must be checked after push; local pass is not hosted CI success.
+
+**Owner completion requirements, verified live:** Majd's #144 is draft with real Today/GPS wiring but null confirmationReplayApi, outstanding auth-expiry/reconnect/phone acceptance and no formal approval; finish the accepted per-tap idempotent client and verify 401 pause, 404/409 drop/refetch, 422 rejection, transient retry and durable cross-tab recovery. Majd's #142 is draft with null addressRequestsApi and an add/add conflict in `docs/contracts/address-requests.md`; retain the accepted contract, wire real authenticated decisions and verify ownership/approval-only mutation/persistence/errors/mobile. Moustafa's #158 remains open at `7baf727`, with `backend/CLAUDE.md` conflict and Hashem's formal approval pending; reconcile develop, retain V15 after V13/V14, and rerun real preferences/late/strict-scalar/independent tests. SCRUM-274 remains To Do and blocks full operations testing. #160/#161 also lack Hashem approval; #161 needs its documentation conflict and obsolete dependency gates reconciled.
+
+**Readiness:** #150 stays draft; complete/accept #149's driver-UI dependency and #158, then enable and verify real preferences/late behavior, obtain independent approval and verify current-head CI. None of the 17 audited open PRs had a formal independent APPROVED review, so no PR was eligible for merging. Jira statuses and all teammate branches were unchanged.
+
+
 ## Latest develop and real Inbox re-verification — 15 November 2026
 
 Normally merged accepted develop `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c` into the existing branch without conflicts or history rewriting. All prior implementation, tests, reports and ignored evidence remain. GPS/ETA/replay/reassignment/attendance backend changes and the #129 POST-form security guard are now accepted. The only new UI code change is `method="post"` on our prepared preferences form, making it comply with that guard without changing hydrated submit behavior.

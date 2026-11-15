@@ -47,3 +47,7 @@ next-env.d.ts
 /e2e/.parent-inbox-review-run.mjs
 
 /e2e/.parent-inbox-review-run-*.mjs
+
+# Tracking launchers retained alongside Inbox launchers
+/e2e/.parent-tracking-review-run.mjs
+/e2e/.parent-tracking-review-run-*.mjs

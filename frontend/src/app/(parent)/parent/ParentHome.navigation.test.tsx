@@ -6,6 +6,7 @@ import type { Child } from "@/lib/api/myChildren";
 import { ParentHome } from "./ParentHome";
 import ParentPage from "./page";
 
+vi.mock("@/components/map/MapView", () => ({ MapView: (p: { label: string }) => <div role="region" aria-label={p.label} /> }));
 const fetcher = vi.fn();
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_PARENT_HOME_PREVIEW", "false");
@@ -18,15 +19,11 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
-it("enables the accepted Inbox lazily while unmerged tracking stays unavailable", async () => {
+it("enables both accepted parent features lazily without requesting data before navigation", async () => {
   render(<ParentPage />); await screen.findByText("Lina Navigation");
-  const nav = screen.getByRole("navigation", { name: "Family views" });
-  expect(nav).toBeVisible();
+  expect(screen.getByRole("navigation", { name: "Family views" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Bus tracking" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "Inbox" })).toBeEnabled();
-  for (const label of ["Bus tracking"]) {
-    expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
-    expect(screen.getByText(label).closest('[aria-disabled="true"]')).toHaveTextContent("Soon");
-  }
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
 it("navigates absences and switches only among the authenticated linked children", async () => {
@@ -96,4 +93,27 @@ it.each(["tracking", "inbox"])("removes private content and explains unavailable
   expect(screen.getByText("Private prepared feature")).toBeVisible(); view.rerender(<ParentHome />);
   expect(screen.queryByText("Private prepared feature")).not.toBeInTheDocument();
   expect(screen.getByText(kind === "tracking" ? "Live tracking is not available yet." : "Inbox is not available yet.")).toBeVisible();
+});
+
+it("production requests the real cookie-authenticated GPS endpoint for the selected linked child", async () => {
+  fetcher.mockImplementation(async (url: string) => url.endsWith("/api/parent/children") ? Response.json(family) : url.endsWith("/bus-location") ? Response.json({ status: "LIVE", position: { latitude: 33.9, longitude: 35.5, accuracyMeters: 12, receivedAt: "2026-11-12T07:00:00Z", ageSeconds: 0 } }) : Promise.reject(new Error(url)));
+  render(<ParentPage />); await screen.findByText("Lina Navigation"); fireEvent.click(screen.getByRole("button", { name: "Bus tracking" }));
+  await screen.findByText("Live bus location");
+  expect(fetcher).toHaveBeenLastCalledWith(expect.stringContaining(`/children/${family[0].studentId}/bus-location`), expect.objectContaining({ credentials: "include", method: "GET" }));
+  expect(screen.queryByRole("timer")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByRole("combobox"), { target: { value: family[1].studentId } }); await screen.findByRole("region", { name: /Omar/ });
+  expect(fetcher).toHaveBeenLastCalledWith(expect.stringContaining(`/children/${family[1].studentId}/bus-location`), expect.objectContaining({ credentials: "include" }));
+});
+
+it("production displays the accepted live ETA separately from its planned time", async () => {
+  fetcher.mockImplementation(async (url: string) => url.endsWith("/children") ? Response.json(family) : Response.json({
+    status: "LIVE", position: { latitude: 33.9, longitude: 35.5, accuracyMeters: 12, receivedAt: "2026-11-15T07:00:00Z", ageSeconds: 0 },
+    stopsLeft: 0, plannedTime: "07:20", estimate: { arrivesAt: "2026-11-15T05:25:00Z", secondsAway: 300 },
+  }));
+  render(<ParentPage />); await screen.findByText("Lina Navigation"); fireEvent.click(screen.getByRole("button", { name: "Bus tracking" }));
+  expect(await screen.findByRole("timer")).toHaveTextContent("Estimated arrival in 5m 0s");
+  expect(screen.getByText("Stops remaining: 0")).toBeVisible();
+  expect(screen.getByText(/Planned pickup: 07:20/)).toHaveTextContent("not a live estimate");
+  expect(screen.getByText(/Estimated arrival:/)).toHaveTextContent("07:25");
+  expect(fetcher).toHaveBeenLastCalledWith(expect.stringContaining(`/children/${family[0].studentId}/bus-location`), expect.objectContaining({ credentials: "include" }));
 });

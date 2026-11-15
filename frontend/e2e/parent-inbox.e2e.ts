@@ -49,6 +49,15 @@ test("real Parent Inbox: confirmations, receipts, ownership, retry, account rese
     for (const id of [...children.map(c => c.studentId), foreign.id]) await json(await head.request.post(`${routes}/${routeId}/students`, { data: { studentId: id } }));
     await signIn(driver, "DRIVER"); const day = await json<{ date: string; runs: { id: string; route: { id: string }; direction: string }[] }>(await driver.request.get("/api/driver/runs/today")); expect(day.date).toBe("2026-11-02");
     const run = day.runs.find(r => r.route.id === routeId && r.direction === "MORNING")!; expect(run).toBeTruthy(); const runPath = `/api/driver/runs/${run.id}`; await json(await driver.request.post(`${runPath}/start`));
+    // The composed production page preserves accepted tracking alongside Inbox.
+    await json(await driver.request.put(`${runPath}/location-sharing`, { data: { enabled: true } }));
+    expect((await driver.request.put(`${runPath}/location`, { data: { latitude: 33.8800, longitude: 35.5200, accuracyMeters: 12.5 } })).status()).toBe(204);
+    await parent.reload(); await parent.getByRole("button", { name: "Bus tracking", exact: true }).click();
+    await expect(parent.getByRole("timer")).toBeVisible(); await expect(parent.locator(".leaflet-marker-icon")).toHaveCount(1);
+    await parent.getByRole("combobox", { name: "Choose child for bus tracking" }).selectOption(children[1].studentId);
+    await expect(parent.getByRole("heading", { name: `Bus tracking for ${children[1].firstName} ${children[1].lastName}` })).toBeVisible();
+    await open(); await expect(parent.getByRole("timer")).toHaveCount(0); await expect(parent.locator(".leaflet-marker-icon")).toHaveCount(0);
+    await expect(parent.getByText("0 unread updates")).toBeVisible();
     const confirm = async (id: string, status: string) => json(await driver.request.put(`${runPath}/students/${id}/confirmation`, { data: { status } }));
     await confirm(children[0].studentId, "PICKED_UP"); await confirm(children[0].studentId, "DROPPED_OFF"); await confirm(children[1].studentId, "NOT_PRESENT"); await confirm(foreign.id, "PICKED_UP"); await confirm(children[1].studentId, "NOT_PRESENT");
     const entries = await json<InboxEvent[]>(await parent.request.get(inbox)); expect(entries).toHaveLength(3); expect(new Set(entries.map(e => e.type))).toEqual(new Set(["PICKED_UP", "DROPPED_OFF", "NOT_PRESENT"]));
@@ -79,7 +88,7 @@ test("real Parent Inbox: confirmations, receipts, ownership, retry, account rese
     expect(preferenceCalls).toEqual([]); expect(crashes).toEqual([]);
     // Restore the isolated demo links through real APIs; no production data is touched.
     for (const child of children) await json(await head.request.patch(`/api/head-of-transport/students/${child.studentId}/parent`, { data: { parentUserId: original.id } }));
-    console.log("PASS real Inbox: PostgreSQL/Flyway, ticking test Monday, real password+2FA, three confirmation types/deduplication, accurate counts, read/read-all/reload, foreign-parent 404, role 401/403, historical ownership, offline retry, logout/account reset, revocation and 360px. No preference or late API enabled.");
+    console.log("PASS real combined GPS/ETA and Inbox navigation: PostgreSQL/Flyway, ticking test Monday, real password+2FA, three confirmation types/deduplication, accurate counts, read/read-all/reload, foreign-parent 404, role 401/403, historical ownership, offline retry, logout/account reset, revocation and 360px. No preference or late API enabled.");
   } finally {
     await parent.context().setOffline(false);
     if (otherId) expect((await head.request.patch(`/api/head-of-transport/parents/${otherId}/restore`)).status()).toBe(200);

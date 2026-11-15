@@ -1,5 +1,6 @@
 "use client";
 import { parentInboxApi } from "@/lib/api/parentInbox";
+import { getBusLocation } from "@/lib/api/parentTracking";
 import { ParentInboxHome } from "./ParentInboxHome";
-// SCRUM-267 is accepted. SCRUM-268 preferences/late alerts stay explicitly gated.
-export default function ParentPage() { return <ParentInboxHome api={parentInboxApi} />; }
+// Accepted GPS/ETA and Inbox coexist. Unmerged preferences/LATE remain gated.
+export default function ParentPage() { return <ParentInboxHome api={parentInboxApi} trackingApi={getBusLocation} etaEnabled />; }

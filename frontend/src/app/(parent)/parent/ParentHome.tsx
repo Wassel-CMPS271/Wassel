@@ -31,7 +31,7 @@ export interface ParentHomeProps {
 }
 
 // Optional compositions are supplied only after their real integrations are ready.
-// The production page supplies neither; unavailable destinations stay non-interactive.
+// Production supplies accepted clients; omitted destinations remain non-interactive.
 export function ParentHome({ accountKey = "current-parent", ...features }: ParentHomeProps) {
   return <ParentHomeContent key={accountKey} {...features} />;
 }
