@@ -42,6 +42,9 @@ services:
       DEMO_EMAIL_BASE: ${DEMO_EMAIL_BASE:-demo@wassel.local}
       DEMO_DATA_FORCE: ${DEMO_DATA_FORCE:-false}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
+      # Email for inbox entries (SCRUM-283): off unless true. The cap counts against the same mail account as sign-in codes.
+      NOTIFICATION_EMAIL_ENABLED: ${NOTIFICATION_EMAIL_ENABLED:-false}
+      NOTIFICATION_EMAIL_DAILY_CAP: ${NOTIFICATION_EMAIL_DAILY_CAP:-150}
       # Real email (SmtpMailer). Compose refuses to start without the account, because the backend
       # would otherwise start and fail on the first login.
       MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
