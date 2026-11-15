@@ -2,12 +2,14 @@ package com.wassel.backend.parent.controller;
 
 import com.wassel.backend.parent.dto.ChildResponse;
 import com.wassel.backend.parent.service.ParentService;
+import com.wassel.backend.runs.dto.BusLocationResponse;
 import com.wassel.backend.users.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,6 +33,11 @@ public class ParentChildrenController {
 	@GetMapping
 	public List<ChildResponse> listChildren(@AuthenticationPrincipal User parent) {
 		return parentService.listChildren(schoolIdOf(parent), parent.getId());
+	}
+
+	@GetMapping("/{studentId}/bus-location")
+	public BusLocationResponse busLocation(@AuthenticationPrincipal User parent, @PathVariable UUID studentId) {
+		return parentService.busLocation(schoolIdOf(parent), parent.getId(), studentId);
 	}
 
 	// Same principal assumption as SchoolSettingsController (see its SCRUM-168 TODO): change

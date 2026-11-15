@@ -156,7 +156,12 @@ class RoleAccessMatrixTests {
 		TABLE.put("POST /api/driver/runs/{runId}/start", Access.DRIVER_ONLY);
 		TABLE.put("POST /api/driver/runs/{runId}/end", Access.DRIVER_ONLY);
 		TABLE.put("PUT /api/driver/runs/{runId}/students/{studentId}/confirmation", Access.DRIVER_ONLY);
+		TABLE.put("PUT /api/driver/runs/{runId}/location-sharing", Access.DRIVER_ONLY);
+		TABLE.put("PUT /api/driver/runs/{runId}/location", Access.DRIVER_ONLY);
+		TABLE.put("GET /api/head-of-transport/runs/locations", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("GET /api/head-of-transport/runs", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("POST /api/head-of-transport/runs/{runId}/reassignments", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("GET /api/head-of-transport/runs/{runId}/reassignments", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("GET /api/head-of-transport/absences", Access.HEAD_OF_TRANSPORT_ONLY);
 
 		// parent (SCRUM-238)
@@ -166,6 +171,31 @@ class RoleAccessMatrixTests {
 
 		// parent (SCRUM-240)
 		TABLE.put("GET /api/parent/children", Access.PARENT_ONLY);
+		TABLE.put("GET /api/parent/children/{studentId}/bus-location", Access.PARENT_ONLY);
+
+		// attendance history and audit (SCRUM-265)
+		TABLE.put("GET /api/parent/children/{studentId}/attendance", Access.PARENT_ONLY);
+		TABLE.put("GET /api/head-of-transport/attendance", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("GET /api/head-of-transport/attendance/audit", Access.HEAD_OF_TRANSPORT_ONLY);
+
+		// address requests (SCRUM-269)
+		TABLE.put("POST /api/parent/children/{studentId}/address-requests", Access.PARENT_ONLY);
+		TABLE.put("GET /api/parent/children/{studentId}/address-requests", Access.PARENT_ONLY);
+		TABLE.put("GET /api/head-of-transport/address-requests", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("POST /api/head-of-transport/address-requests/{id}/approve", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("POST /api/head-of-transport/address-requests/{id}/reject", Access.HEAD_OF_TRANSPORT_ONLY);
+		// parent inbox (SCRUM-267)
+		TABLE.put("GET /api/parent/inbox", Access.PARENT_ONLY);
+		TABLE.put("GET /api/parent/inbox/unread-count", Access.PARENT_ONLY);
+		TABLE.put("POST /api/parent/inbox/{id}/read", Access.PARENT_ONLY);
+		TABLE.put("POST /api/parent/inbox/read-all", Access.PARENT_ONLY);
+
+		// notification preferences (SCRUM-268)
+		TABLE.put("GET /api/parent/notification-preferences", Access.PARENT_ONLY);
+		TABLE.put("PUT /api/parent/notification-preferences", Access.PARENT_ONLY);
+		// transport totals (SCRUM-271)
+		TABLE.put("GET /api/head-of-transport/transport-totals", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("GET /api/head-of-transport/transport-totals/export", Access.HEAD_OF_TRANSPORT_ONLY);
 	}
 
 	// Path variables are all ids, so one UUID fits every {name}; the service then answers 404 or 400.
@@ -190,6 +220,11 @@ class RoleAccessMatrixTests {
 				+ "\"phone\":\"+961 3 123 456\",\"email\":\"driver@wassel.test\"}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/drivers/{id}/vehicle", "{\"vehicleId\":\"" + SOME_ID + "\"}");
 		VALID_BODIES.put("PUT /api/driver/runs/{runId}/students/{studentId}/confirmation", "{\"status\":\"PICKED_UP\"}");
+		VALID_BODIES.put("POST /api/head-of-transport/runs/{runId}/reassignments",
+				"{\"driverId\":\"" + SOME_ID + "\",\"fromDriverId\":\"" + SOME_ID + "\"}");
+		VALID_BODIES.put("PUT /api/driver/runs/{runId}/location-sharing", "{\"enabled\":true}");
+		VALID_BODIES.put("PUT /api/driver/runs/{runId}/location",
+				"{\"latitude\":33.9,\"longitude\":35.5,\"accuracyMeters\":10}");
 		VALID_BODIES.put("POST /api/head-of-transport/vehicles", "{\"plateNumber\":\"A 123\",\"capacity\":10}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/vehicles/{id}/capacity", "{\"capacity\":10}");
 		VALID_BODIES.put("POST /api/head-of-transport/students", "{\"firstName\":\"Test\",\"lastName\":\"Student\","
@@ -203,6 +238,22 @@ class RoleAccessMatrixTests {
 		VALID_BODIES.put("POST /api/head-of-transport/routes/{id}/students", "{\"studentId\":\"" + SOME_ID + "\"}");
 		VALID_BODIES.put("PUT /api/head-of-transport/routes/{id}/stops", "{\"studentIds\":[]}");
 		VALID_BODIES.put("POST /api/parent/children/{studentId}/absences", "{\"fromDate\":\"2030-01-04\"}");
+		VALID_BODIES.put("POST /api/parent/children/{studentId}/address-requests", "{\"address\":\"Hamra Street, Beirut\"}");
+		VALID_BODIES.put("PUT /api/parent/notification-preferences", "{\"pickedUp\":true,\"droppedOff\":true,\"notPresent\":true,\"late\":true,\"lateAfterMinutes\":10}");
+	}
+
+	/**
+	 * The query string for each endpoint with required query parameters (SCRUM-265). Spring resolves them before the
+	 * role check, so without them a caller who is not allowed would get 400 instead of 403. Sent to every caller; the
+	 * endpoints are reads, so nothing is written.
+	 */
+	private static final Map<String, String> VALID_QUERIES = new LinkedHashMap<>();
+
+	static {
+		String range = "from=2030-01-01&to=2030-01-31";
+		VALID_QUERIES.put("GET /api/parent/children/{studentId}/attendance", range);
+		VALID_QUERIES.put("GET /api/head-of-transport/attendance", range);
+		VALID_QUERIES.put("GET /api/head-of-transport/attendance/audit", range);
 	}
 
 	@Autowired
@@ -297,6 +348,10 @@ class RoleAccessMatrixTests {
 	private MockHttpServletResponse call(String endpoint, Caller caller, boolean allowed) throws Exception {
 		String[] parts = endpoint.split(" ", 2);
 		String path = parts[1].replaceAll("\\{[^}]+}", SOME_ID);
+		String query = VALID_QUERIES.get(endpoint);
+		if (query != null) {
+			path += "?" + query;
+		}
 		String body = allowed ? "{}" : VALID_BODIES.getOrDefault(endpoint, "{}");
 		MockHttpServletRequestBuilder request = request(org.springframework.http.HttpMethod.valueOf(parts[0]), path)
 				.contentType(MediaType.APPLICATION_JSON)
