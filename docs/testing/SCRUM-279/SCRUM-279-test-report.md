@@ -1,5 +1,39 @@
 # SCRUM-279 — Parent live bus map and countdown
 
+## Independent frontend review packet and actual driver UI slice — 15 November 2026
+
+Latest live audit: develop remains `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c`. #144 is now marked Ready, but its source is still exact `e3ec66670324a77edfe014dec7a00f18ee39ac3c`, with null replay adapter and no formal approval. Its readiness flag is not accepted as completion. No teammate branch, Jira status, PR merge or Ready flag was changed.
+
+Closed the remaining independently executable review-evidence gap: **two actual production frontends now run against the same accepted backend**. The immutable, tracked-clean #144 checkout serves the driver UI on loopback 4192; this branch serves the Parent UI on 4180. Actual password/2FA, the driver's Start/Share/Stop buttons, canonical consent/location requests and the Parent's real Leaflet/countdown are exercised together. Browser GPS is deliberately simulated, but no business response is mocked. Both screens are checked at 360px with role boundaries and selected-child isolation. Existing server STALE/afternoon/privacy tests remain unchanged.
+
+`review-parent-driver.mjs` creates a content-addressed test launcher without changing the shared runner. It guards the exact candidate SHA, clean tracked source, matching dependency lock, empty loopback PostgreSQL and occupied ports; configures only the two local frontend origins; and tears down both owned frontends through the existing runner. The candidate is built independently and checked tracked-clean again after execution. The new PostgreSQL CI workflow checks that live #144 still matches the reviewed SHA, checks out that immutable source separately, installs dependencies separately and runs this same test. A future candidate change fails the guard until independently reviewed, rather than silently presenting old evidence as current. No sensitive logs/traces/database files are uploaded.
+
+| Executed check | Result |
+| --- | --- |
+| New actual driver UI → Parent UI / accepted backend browser | **1 passed**, exit 0; fresh PostgreSQL/Flyway and real password/2FA |
+| Full frontend regression | **840 passed**, zero unexpected failures; 1 existing expected failure, 6 existing skips (847; 63 files) |
+| ESLint / both production frontend builds / diff check | Passed |
+| Standalone TypeScript | Same **13 develop baseline diagnostics**, zero introduced |
+| Original 65 driver acceptance cases on unchanged #144 | Fresh run **65/65 passed** (evidence remains with SCRUM-250) |
+| Independent operations candidates #144/#142 | Fresh run **28 passed / 2 genuine failures**: null replay and address clients (evidence remains with SCRUM-282) |
+
+### Acceptance-criteria review map
+
+| SCRUM-279 criterion | Review evidence |
+| --- | --- |
+| Authenticated live map/countdown for linked child's authorized bus | New actual driver/Parent UI browser; real GPS/ETA client and strict parser; role/foreign-child tests |
+| Live estimate distinct from planned school-local pickup | Existing real server ETA scenario and production navigation/ETA tests, retained unchanged |
+| Stale/missing GPS or ETA never fabricated as live | Existing real server STALE/withdrawal/afternoon/null scenario; monotonic aging, null parsing and zero handling regressions |
+| Multiple children, no active run, loading/error/retry, authorization/navigation | Tracking/Home/session/client suites and the new sibling/withdrawal/role browser slice |
+| Real driver-to-parent slice and 360px usability | New two-production-UI scenario, both 360px/no overflow; retained 44px Parent Leaflet/navigation checks |
+
+**Independent review can proceed now on the Parent frontend**, against the accepted GPS/ETA backend and the exact observed driver candidate. This is a review recommendation, not a claim that SCRUM-273 or deployment integration is complete. Keep #149 a draft until Wassim explicitly approves changing the Ready flag. Merge/completion still require independent approval, current-head checks and team acceptance of the unfinished #144 dependency (replay, auth-expiry/reconnect and phone acceptance). Physical GPS is not certified by browser-device emulation.
+
+#150 already preserves the GPS and Inbox composition and retains develop as target. Propagate this review verification through a normal own-branch merge into #150; merge order remains #149 then #150, with #150's full preferences/late work blocked by #158. Do not trade away either feature to simplify the page conflict.
+
+Evidence: ignored `tmp/SCRUM-279-20261115-review/`, preserved browser histories and the exact candidate checkout. Source changes are isolated test/CI tooling and this dated report; Parent production behavior and existing failure assertions are unchanged. Hosted checks must be verified on the new commit after push.
+
+
 ## Accepted ETA integration and branch refresh — 15 November 2026
 
 Normally merged latest accepted develop `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c` into the existing branch, preserving all prior commits, tests and dated evidence. All four own-branch develop merges were clean; no conflict resolution or teammate feature edit was needed. #153/SCRUM-262 is now merged, as are GPS #143, replay #155, reassignment #156 and attendance #157. This section supersedes the older ETA-unavailable status below.

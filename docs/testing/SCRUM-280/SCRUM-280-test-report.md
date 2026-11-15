@@ -1,5 +1,30 @@
 # SCRUM-280 — Parent inbox and notification preferences
 
+## Independent review preparation with actual driver UI — 15 November 2026
+
+Normally propagated verified #149 `c9c569cc39511a6a133dddadb92e2e381c669bdd` into existing combined Parent branch `88f9c1a`, preserving both histories and the real GPS/ETA + Inbox production composition. The merge was clean. Develop remains `3798b40` and is already included. No teammate code/branch, Jira status, Ready flag or PR merge was changed.
+
+The new isolated review now runs the actual immutable #144 driver frontend and this combined production Parent frontend against the same accepted PostgreSQL backend. Real password/2FA, Start/Share/Stop, consent/location requests, Parent Leaflet/countdown, selected-child switching, withdrawal, wrong-role denial and both 360px layouts pass together. Browser GPS is simulated; this is online application integration, not physical GPS or unfinished offline replay certification. CI refuses a stale #144 head before accepting this evidence. The wrong-SHA guard was separately verified to reject before starting a stack, and the normal success run uses the correct immutable SHA.
+
+| Executed check | Result |
+| --- | --- |
+| Actual candidate driver UI → combined production Parent UI | **1 passed**, exit 0, fresh PostgreSQL/Flyway, both production frontend builds succeeded |
+| Full combined frontend regression | **930 passed**, zero unexpected failures; 1 existing expected failure and 6 existing skips (937; 70 files) |
+| ESLint / diff check | Passed |
+| Standalone TypeScript | Same **13 develop baseline diagnostics**, zero introduced |
+| Preserved GPS/Inbox-specific real browsers | Retained, unchanged; current-head hosted workflows rerun these as well as the new dual-UI scenario |
+
+Evidence: ignored `tmp/SCRUM-280-20261115-review/`, including unit JSON/log, lint, type comparison and dual-UI log/exit. #149's corresponding 840-test regression and new dual-UI CI are already green on `c9c569c`; #150's updated head must have its own checks inspected after push. Existing reports, tests and failure evidence are preserved.
+
+### Can this be reviewed independently?
+
+**Delivered Inbox and composition code can be reviewed now**, using the incremental diff against the SCRUM-279 branch rather than treating its preserved GPS dependency as unrelated work. Review `parentInbox.ts`/`InboxPanel` for parent-wide authoritative counts and receipts, `ParentInboxHome`/page/session/navigation for coexistence and account resets, and the real Inbox/browser evidence for ownership, reload, retry and revocation. The prepared preference client/panel/tests can be reviewed against the agreed five-field contract, explicitly as gated code.
+
+**The whole SCRUM-280 ticket is not complete or Ready.** #158 is still unmerged, conflicted and awaiting Hashem's approval. Production preferences/LATE remain disabled; real preference persistence and preference-respecting late events have not been accepted. Do not relabel unit/fixture evidence as real preference integration. After #158 is accepted, enable the actual adapter, verify save/reload/muting/late thresholds/privacy/retry through real APIs and rerun regression/CI. Merge order remains #149 then #150. No Ready flag is changed without Wassim's explicit approval.
+
+Latest #144 has been marked Ready without changing its `e3ec666` source; null replay/auth-expiry/reconnect/phone requirements remain. #142 remains draft/conflicted with a null address client. SCRUM-274 is still To Do; its active/late/stale Head control, atomic reassignment and history-preservation acceptance remain unavailable. These are owner work, not failures to hide or fix in this Parent PR.
+
+
 ## Combined GPS/ETA and Inbox composition — 15 November 2026
 
 Live re-audit found develop unchanged at `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c`. All four own branches already contained that head and were clean. No redundant develop merge or empty commit was made. Exact unchanged #148/#149/#151 heads retain their earlier same-source local/browser evidence and current-head hosted checks; repeated execution on unchanged source was unnecessary.
