@@ -1,5 +1,23 @@
 # SCRUM-282 â€” Independent operations UI tests
 
+## 16 November 2026 — latest address/replay candidates, original failures preserved
+
+- Merged accepted develop **cc6783f96bcea48c42c06c3afff6084e1121eee1** normally. No teammate source or branch changed; candidate code is loaded read-only from exact Git objects.
+- PR #142 is now **b17ee08714149532e2c87929b77c539173d8c545**: its canonical authenticated `addressRequestsApi` is implemented. PR #144 advanced during this session to **d1ad8229318b77562472fe4b698143180c24ac0a**, including real replay delivery. Both remain unmerged Drafts.
+- Original 30 independent operations cases on the two latest heads: **30/30 passed**. For traceability, the earlier run on e3ec666 + b17ee08 was **29 passed / 1 failed** (replay adapter null). Prior 28/30 and original 25/29 failure evidence is retained with its original dates. The previously reported timeout/body deadline, cross-tab persistence, stale-decision draft preservation, address delivery and replay delivery cases are now green on the latest candidate heads.
+- Added **9** independent address-client contract cases: authenticated GET of pending requests, encoded POST approve and authoritative receipt, trimmed optional rejection reason, blank-body omission, and exact HTTP 401/403/404/409/500 propagation. No parent/school identity is invented or supplied by the client. Original assertions were retained. The candidate workflow explicitly includes the new file, with normal nonzero failure behavior.
+- Extended latest-candidate slice: **39/39 passed**. This is candidate/unit integration evidence, not a claim of deployed address-browser acceptance.
+- Full frontend against the accepted/default branch gate: **769 passed / 32 failed**, plus 1 pre-existing expected failure and 6 pre-existing skips (808 total). All 32 failures require the unmerged driver/roster modules (12 queue, 4 GPS, 7 address screen, 9 new address client); Admin authorization's 7 cases pass. They are deliberately retained as normal failures, not skipped or expected-failed.
+- ESLint, production build, `git diff --check`: passed. Standalone TypeScript reports the 13 established baseline diagnostics, with no introduced diagnostic. Local Windows junction standalone-copy warning remains disclosed.
+- New evidence is ignored under `tmp/SCRUM-282-20261116/`; no generated logs/artifacts/secrets are committed. Current-head hosted candidate and regular CI results must be checked on the existing #151 PR.
+
+### Remaining completion work
+
+Majd must finish independent review and integration of #144/#142 into develop, then these same default-HEAD gates must pass without candidate overrides. SCRUM-274 is still **To Do** and has no delivered live-control screen: active/late authorized run data, GPS/ETA freshness separate from lateness, atomic reassignment success/failure/history preservation, loading/empty/error/retry/mobile/wrong-role cases remain unavailable for independent UI acceptance. Its backend dependencies #153/#156/#158 are now merged. The parent-only morning LATE inbox does not define Head-of-Transportation not-started/late-run alerts; that contract still needs agreement, not invented frontend fields.
+
+Keep #151 Draft and blocked; no Jira status was changed. The two driver pending/retry acceptance differences in SCRUM-250 are separate from this 39-case operations slice and are not hidden by its green result.
+
+
 ## Fresh readiness audit — 15 November 2026
 
 Develop remains `3798b40`, already in this branch. #144's Ready flag changed, but its source is still `e3ec66670324a77edfe014dec7a00f18ee39ac3c`. #142 remains draft at `d81b06859a36f7807272c4f81d2f03f0a7a9a7b9`; SCRUM-274 remains To Do with no control UI available. No source was copied or modified to make acceptance pass.

@@ -30,7 +30,7 @@ jobs:
       - run: npm ci
         working-directory: frontend
       - name: Independent candidate acceptance
-        run: npm test -- gps-queue.independent.test.ts gps-permission.independent.test.tsx roster.independent.test.tsx operations-auth.independent.test.tsx --maxWorkers=2
+        run: npm test -- gps-queue.independent.test.ts gps-permission.independent.test.tsx roster.independent.test.tsx address-client.independent.test.ts operations-auth.independent.test.tsx --maxWorkers=2
         working-directory: frontend
         env:
           WASSEL_OPERATIONS_CANDIDATE: origin/operations-driver-review
