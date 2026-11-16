@@ -2,7 +2,7 @@
 
 What a parent is told about their child on a run: picked up, dropped off, not at the stop, or late. An entry is made when the driver's confirmation is saved, or when a child is still waiting past the planned time. Each parent chooses which entries they receive. Build against this page, not against each other's code. One school.
 
-Owner: Moustafa (SCRUM-267, SCRUM-268). Consumers: the parent inbox and notification preferences screen (S4-20) and the notification delivery (SCRUM-283).
+Owner: Moustafa (SCRUM-267, SCRUM-268). Consumers: the parent inbox and notification preferences screen (S4-20) and the notification delivery ([`notification-delivery.md`](notification-delivery.md), SCRUM-283).
 
 ## Conventions
 
@@ -68,6 +68,7 @@ A parent who never saved anything has `true, true, true, true` and `10`.
 
 - `PUT` replaces all five choices at once: every field is required, so the answer never depends on what was saved before. Saving the same choices again changes nothing. A refused request (a missing field, `lateAfterMinutes` under 5 or over 60, a value of the wrong type) saves nothing.
 - A choice applies to entries made **after** it is saved. Nothing already in the inbox is removed or added: turning a type off does not delete its entries, and turning it back on does not make the ones that were skipped. A type that is off makes no entry at all, so it is not counted as unread. The driver's confirmation is never affected.
+- The email re-checks the choice when it is sent: a type turned off before then is not emailed (the entry stays). See [`notification-delivery.md`](notification-delivery.md).
 - The choices are the signed-in parent's own, for all their children. Another parent and another school never see or change them, and every other role gets a 403.
 
 ### Late alerts
@@ -103,7 +104,7 @@ A client does not decide lateness itself: it shows the `LATE` entries the server
 ## Known limits
 
 - **No history beyond 50.** There is no paging and no clean-up of old entries yet.
-- **No push or email.** This is the stored inbox only; delivering entries outside it is SCRUM-283.
+- **Email.** Each entry is also emailed to the parent when delivery is on (one delivery per entry; a provider timeout can rarely cause a second send); see [`notification-delivery.md`](notification-delivery.md). There is no push.
 - **Late alerts are morning only.** An afternoon run has no planned times. A run that was never started, or whose run row does not exist yet (a run is created the first time its day is asked for), is not watched: telling the head of transportation that a run has not started is not part of this.
 - **The estimate runs early.** It is straight lines with no time at stops ([`runs.md`](runs.md#live-eta-and-stop-progress)), so a bus can be later than the alert says, never the reverse by design. A stop the driver passed but did not confirm still counts as waiting.
 - **About a minute of delay.** The job runs a minute after its last run finished, so an alert is made within about a minute of the moment a child becomes late.

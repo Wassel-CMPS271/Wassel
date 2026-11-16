@@ -28,6 +28,13 @@ spring:
       mail.smtp.timeout: 5000
       mail.smtp.writetimeout: 5000
 
+  # The scheduled jobs (late alerts, location purge, notification email) would share Spring's default of one thread, so a
+  # slow mail provider (each send can wait for its timeout) would hold up the late alerts. One thread per job.
+  task:
+    scheduling:
+      pool:
+        size: 3
+
   jpa:
     open-in-view: false
     hibernate:
@@ -75,6 +82,13 @@ wassel:
       api-key: ${BREVO_API_KEY:}
       sender-email: ${BREVO_SENDER_EMAIL:}
       sender-name: ${BREVO_SENDER_NAME:Wassel}
+  # Email for inbox entries (SCRUM-283, docs/contracts/notification-delivery.md): off unless NOTIFICATION_EMAIL_ENABLED=true.
+  # It sends through the same mail provider as the sign-in codes, so the daily cap must stay well under that provider's
+  # daily limit (about half; Brevo's free plan is thought to be 300 a day, read the real figure off the account).
+  notifications:
+    email:
+      enabled: ${NOTIFICATION_EMAIL_ENABLED:false}
+      daily-cap: ${NOTIFICATION_EMAIL_DAILY_CAP:150}
   seed-admin:
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
