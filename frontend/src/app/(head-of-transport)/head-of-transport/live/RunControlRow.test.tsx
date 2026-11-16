@@ -53,13 +53,47 @@ function view(overrides: Partial<ActiveRunView> = {}): ActiveRunView {
 }
 
 describe("RunControlRow", () => {
-  it("shows the route, direction, driver, remaining stops and next stop's student", () => {
+  it("shows the route with its direction, the driver, remaining stops and next stop's student", () => {
     render(<RunControlRow view={view()} onReassign={vi.fn()} />);
-    expect(screen.getByText("Hamra")).toBeInTheDocument();
-    expect(screen.getByText(/Morning/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hamra (morning)" })).toBeInTheDocument();
     expect(screen.getByText(/Karim Haddad/)).toBeInTheDocument();
     expect(screen.getByText("3 stops left")).toBeInTheDocument();
     expect(screen.getByText(/Hadi Rizk/)).toBeInTheDocument();
+  });
+
+  it("the direction is part of the heading, not only readable elsewhere, so two runs of one route differ", () => {
+    render(<RunControlRow view={view({ run: run({ direction: "AFTERNOON" }) })} onReassign={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: "Hamra (afternoon)" })).toBeInTheDocument();
+  });
+
+  it("shows the run's progress: morning counts pickedUp of students (absent included)", () => {
+    render(
+      <RunControlRow
+        view={view({ run: run({ counts: { students: 5, absent: 1, pickedUp: 3, droppedOff: 0, notPresent: 0 } }) })}
+        onReassign={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Picked up 3 of 5/)).toBeInTheDocument();
+  });
+
+  it("shows the run's progress: afternoon counts droppedOff of students minus absent", () => {
+    render(
+      <RunControlRow
+        view={view({
+          run: run({
+            direction: "AFTERNOON",
+            counts: { students: 5, absent: 1, pickedUp: 4, droppedOff: 2, notPresent: 0 },
+          }),
+        })}
+        onReassign={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Dropped off 2 of 4/)).toBeInTheDocument();
+  });
+
+  it("the Reassign button's accessible name includes the direction", () => {
+    render(<RunControlRow view={view()} onReassign={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Reassign driver for Hamra (morning)" })).toBeInTheDocument();
   });
 
   it("shows planned and the live estimate as two separate labelled items (06:22 Beirut time)", () => {
@@ -91,7 +125,7 @@ describe("RunControlRow", () => {
   it.each([
     ["STALE", null, "position too old"],
     ["UNAVAILABLE", "NOT_SHARING", "driver not sharing"],
-    ["UNAVAILABLE", "NO_RECENT_POSITION", "no position yet"],
+    ["UNAVAILABLE", "NO_RECENT_POSITION", "no recent position"],
   ] as const)("a null estimate under %s/%s says why in plain words: %s", (freshness, reason, expected) => {
     render(
       <RunControlRow
@@ -105,6 +139,38 @@ describe("RunControlRow", () => {
       />,
     );
     expect(screen.getByText(`No live estimate: ${expected}.`)).toBeInTheDocument();
+  });
+
+  it("LIVE with no estimate means the next stop has no map pin, not \"no position yet\" (S1)", () => {
+    render(
+      <RunControlRow
+        view={view({
+          freshness: "LIVE",
+          nextStop: { studentId: "s-1", firstName: "Hadi", lastName: "Rizk", plannedTime: "07:18", liveEstimate: null },
+        })}
+        onReassign={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("No live estimate: next stop has no map pin.")).toBeInTheDocument();
+    // Still genuinely live: the badge and the missing-estimate reason must never contradict each other.
+    expect(screen.getByText("Live")).toBeInTheDocument();
+  });
+
+  it("a Live badge next to \"no position yet\" is impossible: that reason only occurs with no location row, which FreshnessStatus reads as unknown, not live", () => {
+    render(
+      <RunControlRow
+        view={view({
+          freshness: null,
+          unavailableReason: null,
+          position: null,
+          nextStop: { studentId: "s-1", firstName: "Hadi", lastName: "Rizk", plannedTime: "07:18", liveEstimate: null },
+        })}
+        onReassign={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("No live estimate: no position yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
+    expect(screen.getByText("Position unknown")).toBeInTheDocument();
   });
 
   it("all stops done: no next-stop block", () => {

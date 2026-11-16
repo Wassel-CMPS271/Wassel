@@ -117,10 +117,18 @@ async function renderPanel(backend: Backend = defaultBackend(), run_ = run()) {
   stubBackend(backend);
   const onClose = vi.fn();
   const refreshRuns = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-  render(<ReassignDriverPanel run={run_} refreshRuns={refreshRuns} onClose={onClose} />);
+  const reportUnauthorized = vi.fn<() => void>();
+  render(
+    <ReassignDriverPanel
+      run={run_}
+      refreshRuns={refreshRuns}
+      reportUnauthorized={reportUnauthorized}
+      onClose={onClose}
+    />,
+  );
   await flush();
   const dialog = screen.getByRole("dialog");
-  return { dialog, onClose, refreshRuns };
+  return { dialog, onClose, refreshRuns, reportUnauthorized };
 }
 
 beforeEach(() => {
@@ -141,6 +149,11 @@ describe("ReassignDriverPanel: loading", () => {
     expect(within(select).queryByRole("option", { name: "d-invited x" })).not.toBeInTheDocument(); // not active
     expect(within(select).getByRole("option", { name: "d-nadim x" })).toBeInTheDocument();
     expect(select).toHaveFocus();
+  });
+
+  it("shows the current driver (S4)", async () => {
+    const { dialog } = await renderPanel();
+    expect(within(dialog).getByText("Current driver: Karim Haddad")).toBeInTheDocument();
   });
 
   it("says so and disables Submit when there are no eligible drivers", async () => {
@@ -195,6 +208,25 @@ describe("ReassignDriverPanel: accessibility", () => {
     fireEvent.change(reason, { target: { value: "Flat tyre" } });
     expect(within(dialog).getByText(`9/${REASON_MAX_LENGTH}`)).toBeInTheDocument();
   });
+
+  it("a submit failure moves focus to the alert that explains it, not back to the picker", async () => {
+    const backend = defaultBackend();
+    // A stale-driver 409 reloads the eligible list too (reloadDrivers), without a field error, so there's
+    // exactly one role="alert" here: the old once-per-change focus effect would have refocused the
+    // picker when that reload changed `candidates`, instead of the alert that names the problem.
+    backend.reassign = {
+      status: 409,
+      body: { detail: "The driver of this run is now Walid Saad. Reload and try again." },
+    };
+    const { dialog } = await renderPanel(backend);
+
+    fireEvent.change(within(dialog).getByRole("combobox", { name: "New driver" }), {
+      target: { value: "d-nadim" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+    await flush();
+    expect(within(dialog).getByRole("alert")).toHaveFocus();
+  });
 });
 
 describe("ReassignDriverPanel: submit", () => {
@@ -211,6 +243,7 @@ describe("ReassignDriverPanel: submit", () => {
     const backend = defaultBackend();
     const { dialog, refreshRuns } = await renderPanel(backend);
     backend.reassignments.body = [entry({ toDriver: { id: "d-nadim", firstName: "Nadim", lastName: "Khoury" } })];
+    backend.routes.body = [route("route-1", "d-nadim"), route("route-2", "d-busy")];
 
     await pickAndSubmit(dialog, "d-nadim", "Karim is sick");
 
@@ -219,6 +252,30 @@ describe("ReassignDriverPanel: submit", () => {
     );
     expect(refreshRuns).toHaveBeenCalledTimes(1);
     expect(within(dialog).getByText(/Nadim Khoury replaced Walid Saad/)).toBeInTheDocument();
+    expect(within(dialog).getByText("Current driver: Nadim Khoury")).toBeInTheDocument();
+  });
+
+  it("submit twice in one panel: the previous driver can be picked again and is replaced from the new one", async () => {
+    const backend = defaultBackend();
+    const { dialog } = await renderPanel(backend);
+    expect(within(dialog).queryByRole("option", { name: "d-karim x" })).not.toBeInTheDocument();
+    // After the first change Nadim is on Hamra and Karim is spare.
+    backend.routes.body = [route("route-1", "d-nadim"), route("route-2", "d-busy")];
+
+    await pickAndSubmit(dialog, "d-nadim");
+    expect(within(dialog).getByRole("option", { name: "d-karim x" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("option", { name: "d-nadim x" })).not.toBeInTheDocument();
+
+    backend.reassign = { status: 201, body: run() };
+    backend.routes.body = [route("route-1", "d-karim"), route("route-2", "d-busy")];
+    await pickAndSubmit(dialog, "d-karim");
+    const posts = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(posts.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([
+      { driverId: "d-nadim", fromDriverId: "d-karim" },
+      { driverId: "d-karim", fromDriverId: "d-nadim" },
+    ]);
+    expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Karim Haddad now drives Hamra");
   });
 
   it("guards against a double submit: the button disables and only one request is sent", async () => {
@@ -285,6 +342,44 @@ describe("ReassignDriverPanel: submit", () => {
       "This run no longer exists. The list has been refreshed.",
     );
     expect(refreshRuns).toHaveBeenCalledTimes(1);
+  });
+
+  it("404 with a detail it doesn't know shows the detail as sent, not \"run no longer exists\"", async () => {
+    const backend = defaultBackend();
+    backend.reassign = { status: 404, body: { detail: "Driver not found" } };
+    const { dialog } = await renderPanel(backend);
+
+    await pickAndSubmit(dialog);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(/^Driver not found$/);
+  });
+
+  it("400 errors.fromDriverId shows its message in the banner", async () => {
+    const backend = defaultBackend();
+    backend.reassign = { status: 400, body: { errors: { fromDriverId: "must not be null" } } };
+    const { dialog } = await renderPanel(backend);
+
+    await pickAndSubmit(dialog);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(/^must not be null$/);
+  });
+
+  it("a 401 on the POST reports it to the polling hook", async () => {
+    const backend = defaultBackend();
+    backend.reassign = { status: 401, body: undefined };
+    const { dialog, reportUnauthorized } = await renderPanel(backend);
+
+    await pickAndSubmit(dialog);
+    expect(reportUnauthorized).toHaveBeenCalledTimes(1);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Your session has expired. Please sign in again.");
+  });
+
+  it("a 403 on the POST shows the permission message and never reports a 401", async () => {
+    const backend = defaultBackend();
+    backend.reassign = { status: 403, body: { detail: "Access denied" } };
+    const { dialog, reportUnauthorized } = await renderPanel(backend);
+
+    await pickAndSubmit(dialog);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("You don't have permission to reassign drivers.");
+    expect(reportUnauthorized).not.toHaveBeenCalled();
   });
 
   it("409 stale driver shows a banner naming the current driver and reloads runs and drivers", async () => {

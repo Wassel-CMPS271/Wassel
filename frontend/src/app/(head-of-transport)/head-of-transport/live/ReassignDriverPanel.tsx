@@ -10,14 +10,18 @@ import type { FormEvent, KeyboardEvent } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { focusRingClass, focusRingStyle } from "@/components/ui/focusRing";
 import { Select } from "@/components/ui/Select";
 import type { RunSummary } from "@/lib/api/runs";
 import { colors, darkTheme, radius, sizing, spacing, typography } from "@/styles/tokens";
+import { runLabel } from "./liveRuns";
 import { REASON_MAX_LENGTH, reassignSuccessMessage, useReassign } from "./useReassign";
 
 export interface ReassignDriverPanelProps {
   run: RunSummary;
   refreshRuns: () => Promise<void>;
+  // useLivePolling's: a 401 on the POST goes through the same /me check and redirect.
+  reportUnauthorized: () => void;
   onClose: () => void;
 }
 
@@ -32,8 +36,8 @@ function formatWhen(iso: string): string {
   }).format(new Date(iso));
 }
 
-export function ReassignDriverPanel({ run, refreshRuns, onClose }: ReassignDriverPanelProps) {
-  const panel = useReassign(run, refreshRuns);
+export function ReassignDriverPanel({ run, refreshRuns, reportUnauthorized, onClose }: ReassignDriverPanelProps) {
+  const panel = useReassign(run, refreshRuns, reportUnauthorized);
   const [driverId, setDriverId] = useState("");
   const [reason, setReason] = useState("");
   const [justSucceeded, setJustSucceeded] = useState(false);
@@ -43,16 +47,28 @@ export function ReassignDriverPanel({ run, refreshRuns, onClose }: ReassignDrive
   const reasonCountId = `${headingId}-reason-count`;
   const panelRef = useRef<HTMLDivElement>(null);
   const driverSelectRef = useRef<HTMLSelectElement>(null);
+  const alertRef = useRef<HTMLParagraphElement>(null);
 
-  // Focus the driver picker once it exists; until then (loading, failed, or no candidates) focus the panel
-  // itself so focus still lands inside the dialog on open.
+  // Focuses the dialog once, the first moment there's something to focus: the driver picker once the
+  // candidates load, or the panel itself while loading or failed. Never again after that — a driverId 409
+  // reloading the eligible list must not steal focus back from the alert that explains what went wrong.
+  const focusedOnOpen = useRef(false);
   useEffect(() => {
+    if (focusedOnOpen.current) return;
+    if (panel.candidates === null && !panel.candidatesFailed) return; // still loading
+    focusedOnOpen.current = true;
     if (driverSelectRef.current) {
       driverSelectRef.current.focus();
     } else {
       panelRef.current?.focus();
     }
-  }, [panel.candidates]);
+  }, [panel.candidates, panel.candidatesFailed]);
+
+  // A submit failure moves focus to the banner that explains it, instead of leaving it on Submit or
+  // jumping back to the picker when the failure also reloads the eligible list.
+  useEffect(() => {
+    if (panel.failure) alertRef.current?.focus();
+  }, [panel.failure]);
 
   function handleOverlayKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
@@ -124,10 +140,13 @@ export function ReassignDriverPanel({ run, refreshRuns, onClose }: ReassignDrive
               className="text-lg font-semibold"
               style={{ marginBottom: spacing.xs, color: darkTheme.text.primary }}
             >
-              Reassign driver — {run.route.name}
+              Reassign driver — {runLabel(run)}
             </h2>
-            <p className="text-sm" style={{ color: darkTheme.text.secondary, marginBottom: spacing.md }}>
+            <p className="text-sm" style={{ color: darkTheme.text.secondary, marginBottom: spacing.xs }}>
               The new driver takes over both of today&apos;s runs on this route, from now on.
+            </p>
+            <p className="text-sm" style={{ color: darkTheme.text.secondary, marginBottom: spacing.md }}>
+              Current driver: {panel.currentDriver.firstName} {panel.currentDriver.lastName}
             </p>
 
             <div className="flex flex-col" style={{ gap: spacing.md }}>
@@ -136,7 +155,8 @@ export function ReassignDriverPanel({ run, refreshRuns, onClose }: ReassignDrive
                   Couldn&apos;t load eligible drivers.{" "}
                   <button
                     type="button"
-                    className="underline font-medium"
+                    className={`underline font-medium inline-flex items-center ${focusRingClass}`}
+                    style={{ minHeight: sizing.tapTarget, ...focusRingStyle }}
                     onClick={() => void panel.reloadCandidates()}
                   >
                     Try again
@@ -210,8 +230,14 @@ export function ReassignDriverPanel({ run, refreshRuns, onClose }: ReassignDrive
               </div>
             </div>
 
-            {/* Stays mounted (never unmounted) so success and "Saving…" updates are reliably announced. */}
-            <div role="status" aria-live="polite" style={{ marginTop: spacing.md, minHeight: "20px" }}>
+            {/* Stays mounted (never unmounted) so success and "Saving…" updates are reliably announced.
+                minHeight matches text-sm's own line height (typography.fontSize.sm), so having nothing to
+                say here doesn't shift the layout below it. */}
+            <div
+              role="status"
+              aria-live="polite"
+              style={{ marginTop: spacing.md, minHeight: typography.fontSize.sm.lineHeight }}
+            >
               {panel.submitting && (
                 <p className="text-sm" style={{ color: darkTheme.text.secondary }}>
                   Saving…
@@ -225,7 +251,13 @@ export function ReassignDriverPanel({ run, refreshRuns, onClose }: ReassignDrive
             </div>
 
             {panel.failure && (
-              <p role="alert" className="text-sm" style={{ color: colors.error[500], marginTop: spacing.sm }}>
+              <p
+                ref={alertRef}
+                role="alert"
+                tabIndex={-1}
+                className="text-sm"
+                style={{ color: colors.error[500], marginTop: spacing.sm }}
+              >
                 {panel.failure.message}
               </p>
             )}

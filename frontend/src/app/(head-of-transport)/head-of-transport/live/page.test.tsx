@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Driver } from "@/lib/api/drivers";
 import type { RouteSummary } from "@/lib/api/routes";
 import type { RunLocation, RunsDay, RunSummary } from "@/lib/api/runs";
-import { LOCATIONS_POLL_MS } from "./useLivePolling";
+import { LOCATIONS_POLL_MS, RUNS_POLL_MS } from "./useLivePolling";
 import LiveRunsPage from "./page";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
@@ -115,6 +115,17 @@ function route(id: string, driverId: string): RouteSummary {
   };
 }
 
+// Matches liveRuns.ts's formatClockTime: HH:mm:ss in the school's zone, not the test machine's local zone.
+function clock(ms: number): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Beirut",
+  }).format(new Date(ms));
+}
+
 async function flush() {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
@@ -145,6 +156,14 @@ describe("Live runs page: loading and date", () => {
     await flush();
     expect(screen.getByText(/Monday 16 November 2026/)).toBeInTheDocument();
     expect(screen.queryByText("Loading live runs…")).not.toBeInTheDocument();
+  });
+
+  it("has a visually hidden heading for the run list, under the page's own h1", async () => {
+    stubBackend(defaultBackend());
+    render(<LiveRunsPage />);
+    await flush();
+    expect(screen.getByRole("heading", { level: 1, name: "Live runs" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Runs in progress" })).toBeInTheDocument();
   });
 });
 
@@ -202,6 +221,30 @@ describe("Live runs page: rows", () => {
 
     expect(screen.queryByText(/late/i)).not.toBeInTheDocument();
   });
+
+  it("the same route's morning and afternoon runs, both in progress, get distinct headings and reassign buttons (S3)", async () => {
+    const backend = defaultBackend();
+    backend.runsDay.body = {
+      date: "2026-11-16",
+      dayType: "SCHOOL_DAY",
+      runs: [
+        run({ id: "morning-run", direction: "MORNING" }),
+        run({ id: "afternoon-run", direction: "AFTERNOON" }),
+      ],
+    };
+    backend.locations.body = [
+      location({ runId: "morning-run" }),
+      location({ runId: "afternoon-run", nextStop: null }),
+    ];
+    stubBackend(backend);
+    render(<LiveRunsPage />);
+    await flush();
+
+    expect(screen.getByRole("heading", { name: "Hamra (morning)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hamra (afternoon)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reassign driver for Hamra (morning)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reassign driver for Hamra (afternoon)" })).toBeInTheDocument();
+  });
 });
 
 describe("Live runs page: errors", () => {
@@ -229,20 +272,101 @@ describe("Live runs page: errors", () => {
     const fetchMock = stubBackend(backend);
     render(<LiveRunsPage />);
     await flush();
-    expect(screen.getByText("Hamra")).toBeInTheDocument();
+    expect(screen.getByText("Hamra (morning)")).toBeInTheDocument();
 
     backend.locations.status = 503;
     backend.locations.body = {};
     await advance(LOCATIONS_POLL_MS);
-    expect(screen.getByRole("alert")).toHaveTextContent(/Couldn't refresh\. Showing data from/);
-    expect(screen.getByText("Hamra")).toBeInTheDocument();
+    // Data is already on screen, so this is informational (role="status"), not role="alert" (S2): it
+    // mustn't interrupt the way a first-load failure or a wrong-role message does.
+    expect(screen.getByRole("status")).toHaveTextContent("Couldn't refresh bus positions.");
+    expect(screen.getByText(/Showing positions from/)).toBeInTheDocument();
+    expect(screen.getByText("Hamra (morning)")).toBeInTheDocument();
 
     backend.locations.status = 200;
     backend.locations.body = [location()];
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await flush();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't refresh/)).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("only /runs/locations failing: names the positions and their time, and nothing reads as live", async () => {
+    const t0 = Date.UTC(2026, 10, 16, 5, 20, 0);
+    vi.setSystemTime(t0);
+    const backend = defaultBackend();
+    backend.runsDay.body = { date: "2026-11-16", dayType: "SCHOOL_DAY", runs: [run()] };
+    backend.locations.body = [location()];
+    stubBackend(backend);
+    const { container } = render(<LiveRunsPage />);
+    await flush();
+    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(screen.getByText(/Live estimate/)).toBeInTheDocument();
+
+    backend.locations.status = 503;
+    backend.locations.body = {};
+    // Two locations polls fail; /runs answers at 30 s, so the latest read overall is newer than the positions.
+    await advance(RUNS_POLL_MS);
+    // S2: role="status" (data is showing), and the headline text alone never embeds the timestamp — the
+    // timestamp is a separate, non-live sibling, so it can't cause the status region to re-announce.
+    expect(screen.getByRole("status")).toHaveTextContent("Couldn't refresh bus positions.");
+    expect(screen.getByText(`Showing positions from ${clock(t0)}.`)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`Last updated ${clock(t0 + RUNS_POLL_MS)}`))).toBeInTheDocument();
+
+    const row = screen.getByRole("listitem");
+    expect(within(row).getByText(`Position as of ${clock(t0)} (not refreshing)`)).toBeInTheDocument();
+    expect(within(row).queryByText("Live")).not.toBeInTheDocument();
+    expect(container.querySelector(".animate-ping")).toBeNull();
+    expect(within(row).queryByText(/Live estimate/)).not.toBeInTheDocument();
+    expect(within(row).getByText("No live estimate: positions not refreshing.")).toBeInTheDocument();
+    // The schedule doesn't depend on GPS, so the planned time stays.
+    expect(within(row).getByText("07:18")).toBeInTheDocument();
+
+    backend.locations.status = 200;
+    backend.locations.body = [location()];
+    await advance(LOCATIONS_POLL_MS);
+    expect(screen.queryByText(/Couldn't refresh/)).not.toBeInTheDocument();
+    expect(within(row).getByText("Live")).toBeInTheDocument();
+    expect(within(row).getByText(/Live estimate/)).toBeInTheDocument();
+  });
+
+  it("only /runs failing: names the runs and their time; positions still read as live", async () => {
+    const t0 = Date.UTC(2026, 10, 16, 5, 20, 0);
+    vi.setSystemTime(t0);
+    const backend = defaultBackend();
+    backend.runsDay.body = { date: "2026-11-16", dayType: "SCHOOL_DAY", runs: [run()] };
+    backend.locations.body = [location()];
+    stubBackend(backend);
+    render(<LiveRunsPage />);
+    await flush();
+
+    backend.runsDay.status = 503;
+    backend.runsDay.body = {};
+    await advance(RUNS_POLL_MS);
+    expect(screen.getByRole("status")).toHaveTextContent("Couldn't refresh the runs.");
+    expect(screen.getByText(`Showing runs from ${clock(t0)}.`)).toBeInTheDocument();
+    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(screen.getByText(/Live estimate/)).toBeInTheDocument();
+  });
+
+  it("both failing: names both times", async () => {
+    const t0 = Date.UTC(2026, 10, 16, 5, 20, 0);
+    vi.setSystemTime(t0);
+    const backend = defaultBackend();
+    backend.runsDay.body = { date: "2026-11-16", dayType: "SCHOOL_DAY", runs: [run()] };
+    backend.locations.body = [location()];
+    stubBackend(backend);
+    render(<LiveRunsPage />);
+    await flush();
+
+    backend.runsDay.status = 503;
+    backend.locations.status = 503;
+    await advance(RUNS_POLL_MS);
+    expect(screen.getByRole("status")).toHaveTextContent("Couldn't refresh.");
+    expect(
+      screen.getByText(`Showing runs from ${clock(t0)} and bus positions from ${clock(t0)}.`),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
   });
 
   it("a 403 mid-session shows the wrong-role message", async () => {
@@ -271,7 +395,7 @@ describe("Live runs page: opening the reassign panel", () => {
     render(<LiveRunsPage />);
     await flush();
 
-    const reassignButton = screen.getByRole("button", { name: "Reassign driver for Hamra" });
+    const reassignButton = screen.getByRole("button", { name: "Reassign driver for Hamra (morning)" });
     // A real click focuses the button before the click handler runs (so openReassign's
     // document.activeElement capture is the button); fireEvent.click alone doesn't move focus in jsdom.
     reassignButton.focus();
@@ -287,5 +411,32 @@ describe("Live runs page: opening the reassign panel", () => {
     expect(reassignButton).toHaveFocus();
     await advance(500); // lets the exit animation finish unmounting the dialog
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("if the run finishes while the panel is open, closing it restores focus to the page, not a removed button", async () => {
+    const backend = defaultBackend();
+    backend.runsDay.body = { date: "2026-11-16", dayType: "SCHOOL_DAY", runs: [run()] };
+    backend.locations.body = [location()];
+    stubBackend(backend);
+    render(<LiveRunsPage />);
+    await flush();
+
+    const reassignButton = screen.getByRole("button", { name: "Reassign driver for Hamra (morning)" });
+    reassignButton.focus();
+    fireEvent.click(reassignButton);
+    await flush();
+    const dialog = screen.getByRole("dialog");
+
+    // The run ends and drops out of /runs' IN_PROGRESS list while the dialog is still open: its row, and
+    // the button that opened the dialog, unmount underneath it.
+    backend.runsDay.body = { date: "2026-11-16", dayType: "SCHOOL_DAY", runs: [run({ state: "FINISHED" })] };
+    await advance(RUNS_POLL_MS);
+    expect(screen.queryByRole("button", { name: /Reassign driver/ })).not.toBeInTheDocument();
+
+    // Focus moves synchronously inside onClose, before the exit animation even starts, so this doesn't
+    // need to wait one out.
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await flush();
+    expect(document.activeElement).toBe(screen.getByRole("main"));
   });
 });

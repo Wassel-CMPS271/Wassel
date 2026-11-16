@@ -3,11 +3,14 @@
 // How fresh a run's position is (SCRUM-274). Shows exactly the server's status — LIVE / STALE /
 // UNAVAILABLE — never re-derived on the client. Color is never the only signal: each state also gets its
 // own shape (filled dot / hollow ring / a line through the dot) and its own wording.
+//
+// While /runs/locations is failing, the status is the last answer's and may no longer be true, so it gives
+// way to a neutral "Position as of HH:mm:ss (not refreshing)" (no pulse, no LIVE).
 
 import type { ReactNode } from "react";
 import { useReducedMotion } from "framer-motion";
 import type { LocationStatus } from "@/lib/api/runs";
-import type { UnavailableReason } from "./liveRuns";
+import { formatClockTime, type UnavailableReason } from "./liveRuns";
 import { colors, darkTheme, spacing } from "@/styles/tokens";
 
 export interface FreshnessStatusProps {
@@ -16,6 +19,8 @@ export interface FreshnessStatusProps {
   unavailableReason: UnavailableReason | null;
   // The server's position.ageSeconds; present for STALE.
   ageSeconds: number | null;
+  // When /runs/locations last answered, set only while it is failing; null when it is refreshing normally.
+  notRefreshingSince?: Date | null;
 }
 
 function formatAge(ageSeconds: number): string {
@@ -69,6 +74,14 @@ function UnavailableMark() {
   );
 }
 
+function PausedMark() {
+  return (
+    <Shape>
+      <path d="M4 2.5v7M8 2.5v7" stroke={darkTheme.text.secondary} strokeWidth="2" strokeLinecap="round" />
+    </Shape>
+  );
+}
+
 function UnknownDash() {
   return (
     <Shape>
@@ -77,8 +90,25 @@ function UnknownDash() {
   );
 }
 
-export function FreshnessStatus({ freshness, unavailableReason, ageSeconds }: FreshnessStatusProps) {
+export function FreshnessStatus({
+  freshness,
+  unavailableReason,
+  ageSeconds,
+  notRefreshingSince = null,
+}: FreshnessStatusProps) {
   const reduceMotion = useReducedMotion();
+
+  if (freshness !== null && notRefreshingSince !== null) {
+    return (
+      <span
+        className="inline-flex items-center text-sm font-medium"
+        style={{ gap: spacing.xs, color: darkTheme.text.secondary }}
+      >
+        <PausedMark />
+        Position as of {formatClockTime(notRefreshingSince)} (not refreshing)
+      </span>
+    );
+  }
 
   if (freshness === null) {
     return (
