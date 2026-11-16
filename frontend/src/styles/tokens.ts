@@ -187,6 +187,7 @@ export const darkTheme = {
     emptyState: "rgba(20, 22, 29, 0.5)", // dashed "nothing here yet" panel: surface.card at half strength
     emptyStateBadge: "rgba(255, 255, 255, 0.05)", // icon circle inside the empty state
     skeleton: "rgba(255, 255, 255, 0.08)", // pulsing blocks of a loading placeholder list
+    pendingBadge: "rgba(247, 144, 9, 0.14)", // tint of warning[500]: icon circle beside a heading for items awaiting a decision (address requests)
     overlay: "rgba(5, 6, 10, 0.72)", // modal dialog backdrop, a tint of background.base
   },
   interactive: {
