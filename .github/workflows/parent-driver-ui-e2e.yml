@@ -30,13 +30,13 @@ jobs:
         shell: bash
         run: |
           actual="$(git ls-remote https://github.com/Wassel-CMPS271/Wassel.git refs/pull/144/head | cut -f1)"
-          test "$actual" = "e3ec66670324a77edfe014dec7a00f18ee39ac3c" || { echo "PR 144 changed; independently review and verify its new head before updating the pin."; exit 1; }
+          test "$actual" = "d1ad8229318b77562472fe4b698143180c24ac0a" || { echo "PR 144 changed; independently review and verify its new head before updating the pin."; exit 1; }
       - uses: actions/checkout@v4
       # Immutable reviewed candidate; never copies source into the Parent branch.
       - uses: actions/checkout@v4
         with:
           repository: Wassel-CMPS271/Wassel
-          ref: e3ec66670324a77edfe014dec7a00f18ee39ac3c
+          ref: d1ad8229318b77562472fe4b698143180c24ac0a
           path: tmp/parent-driver-candidate
           persist-credentials: false
       - uses: actions/setup-java@v4
@@ -60,7 +60,7 @@ jobs:
         working-directory: frontend
         env:
           E2E_DRIVER_CHECKOUT: ${{ github.workspace }}/tmp/parent-driver-candidate
-          E2E_DRIVER_EXPECTED_HEAD: e3ec66670324a77edfe014dec7a00f18ee39ac3c
+          E2E_DRIVER_EXPECTED_HEAD: d1ad8229318b77562472fe4b698143180c24ac0a
           E2E_MAVEN_CMD: mvn
           E2E_DB_URL: jdbc:postgresql://127.0.0.1:5432/wassel_e2e
           E2E_DB_USERNAME: postgres

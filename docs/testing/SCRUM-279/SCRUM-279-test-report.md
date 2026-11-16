@@ -1,5 +1,15 @@
 # SCRUM-279 — Parent live bus map and countdown
 
+## 16 November 2026 — accepted develop and latest driver verification
+
+- Merged accepted `origin/develop` **cc6783f96bcea48c42c06c3afff6084e1121eee1** normally; preserved the existing GPS/ETA implementation, all earlier commits and browser evidence. No teammate source or branch was edited.
+- Focused: **74 passed**. Full frontend: **840 passed, 1 pre-existing expected failure, 6 pre-existing skips** (847 total). ESLint, production build and `git diff --check`: passed. Standalone TypeScript still reports the 13 established baseline diagnostics; no new diagnostic appeared.
+- Updated the isolated dual-frontend GPS workflow's immutable driver candidate from `e3ec666` to PR #144 **d1ad8229318b77562472fe4b698143180c24ac0a**, which arrived during this review. The live-head guard remains enforced. Existing real-browser results above/below are retained with their original dates; new-head browser/CI results will be recorded on the existing PR, not assumed from an older head.
+- The latest #144 and #142 heads passed the 30 existing independent operations cases; the extended address-client checks bring that candidate slice to **39/39**. This does not prove the entire driver acceptance suite: its pending-button and explicit 409 retry cases remain under independent review in SCRUM-250.
+- The real GPS/ETA APIs (#143/#153) are accepted. #144 remains an unmerged Draft and accepted develop still ships the sample Driver Today screen. The Parent map is suitable for independent review of its own implementation, with final driver integration and independent approval still required. Draft status is unchanged by user instruction.
+- Local Windows production build exits successfully with the previously documented node_modules-junction standalone-copy EPERM warning; this does not certify a Windows standalone deployment. Hosted CI uses fresh dependencies.
+
+
 ## Independent frontend review packet and actual driver UI slice — 15 November 2026
 
 Latest live audit: develop remains `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c`. #144 is now marked Ready, but its source is still exact `e3ec66670324a77edfe014dec7a00f18ee39ac3c`, with null replay adapter and no formal approval. Its readiness flag is not accepted as completion. No teammate branch, Jira status, PR merge or Ready flag was changed.
