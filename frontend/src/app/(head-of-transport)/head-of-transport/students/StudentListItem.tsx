@@ -1,11 +1,17 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import { Button } from "@/components/ui/Button";
 import type { Parent } from "@/lib/api/parents";
-import type { RouteAssignment } from "@/lib/api/routes";
-import type { Student } from "@/lib/api/students";
+import type { BestRoutePlacement } from "@/lib/api/roster";
+import type { Route, RouteAssignment } from "@/lib/api/routes";
+import { STUDENT_STATUS_LABELS, type Student } from "@/lib/api/students";
+import { BestRoutePanel } from "./BestRoutePanel";
 import { EditStudentAddressForm } from "./EditStudentAddressForm";
-import { colors, darkTheme, radius, spacing } from "@/styles/tokens";
+import { StudentStatusControl } from "./StudentStatusControl";
+import { colors, darkTheme, radius, sizing, spacing } from "@/styles/tokens";
 
 interface StudentListItemProps {
   onLinked?: (student: Student) => void;
@@ -19,15 +25,56 @@ interface StudentListItemProps {
   parent?: Parent;
   onUpdateAddress: (id: string, address: string) => Promise<void>;
   onUpdateLocation: (id: string, latitude: number, longitude: number) => Promise<void>;
+  // Called with the student the server sent back after a pause/resume/archive/restore.
+  onStatusChanged: (student: Student) => void;
+  // Called after a successful placement, with this student's id and the server's answer.
+  onPlaced: (studentId: string, route: Route, placement: BestRoutePlacement) => void;
 }
 
 const GLOW_REST = "0 0 0px 0px rgba(18, 183, 106, 0)";
 const GLOW_PEAK = "0 0 12px 4px rgba(18, 183, 106, 0.55)";
 const GLOW_STATIC = "0 0 8px 2px rgba(18, 183, 106, 0.45)";
 
-export function StudentListItem({ student, routeAssignment, parent, onUpdateAddress, onUpdateLocation, onLinked }: StudentListItemProps) {
+export function StudentListItem({
+  student,
+  routeAssignment,
+  parent,
+  onUpdateAddress,
+  onUpdateLocation,
+  onLinked,
+  onStatusChanged,
+  onPlaced,
+}: StudentListItemProps) {
   const prefersReducedMotion = useReducedMotion();
   const isActive = student.status === "active";
+  const isPaused = student.status === "paused";
+  const isPinned = student.latitude != null && student.longitude != null;
+  // Only an active student with no route can be placed; once they have one,
+  // or the routes haven't loaded, there is nothing to offer.
+  const canFindRoute = isActive && routeAssignment === null;
+
+  const [bestRoutePanelOpen, setBestRoutePanelOpen] = useState(false);
+  const bestRouteButtonRef = useRef<HTMLButtonElement>(null);
+  const wasPanelOpenRef = useRef(false);
+
+  // The trigger stays visible (as "Hide best route") once opened even if the
+  // student stops qualifying mid-flight (e.g. they just got placed), so there
+  // is always a way to close the panel.
+  const showBestRouteTrigger = (canFindRoute && isPinned) || bestRoutePanelOpen;
+
+  useEffect(() => {
+    if (wasPanelOpenRef.current && !bestRoutePanelOpen) {
+      bestRouteButtonRef.current?.focus();
+    }
+    wasPanelOpenRef.current = bestRoutePanelOpen;
+  }, [bestRoutePanelOpen]);
+
+  function handleBestRouteKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setBestRoutePanelOpen(false);
+    }
+  }
 
   return (
     <motion.li
@@ -74,44 +121,79 @@ export function StudentListItem({ student, routeAssignment, parent, onUpdateAddr
             Needs pin
           </span>
         )}
+        {canFindRoute && !isPinned && (
+          <span className="text-xs" style={{ color: darkTheme.text.muted }}>
+            Set a pin to find a route
+          </span>
+        )}
       </div>
 
-      <div className="flex items-center flex-wrap" style={{ gap: spacing.sm }}>
-        <div className="flex items-center" style={{ gap: spacing.xs }}>
-          <motion.span
-            aria-hidden="true"
-            className="inline-block rounded-full flex-shrink-0"
-            style={{ width: "10px", height: "10px" }}
-            animate={{
-              backgroundColor: isActive ? darkTheme.status.activeDot : darkTheme.status.inactiveDot,
-              scale: isActive && !prefersReducedMotion ? [1, 1.4, 1] : 1,
-              boxShadow: isActive
-                ? prefersReducedMotion
-                  ? GLOW_STATIC
-                  : [GLOW_REST, GLOW_PEAK, GLOW_REST]
-                : GLOW_REST,
-            }}
-            transition={
-              isActive && !prefersReducedMotion
-                ? {
-                    backgroundColor: { duration: 0.3 },
-                    scale: { duration: 1.6, repeat: Infinity, ease: "easeInOut" },
-                    boxShadow: { duration: 1.6, repeat: Infinity, ease: "easeInOut" },
-                  }
-                : { backgroundColor: { duration: 0.3 }, boxShadow: { duration: 0.3 } }
-            }
-          />
-          <span
-            className="text-xs font-medium"
-            style={{ color: isActive ? colors.success[500] : darkTheme.text.secondary }}
-          >
-            {isActive ? "Active" : "Inactive"}
-          </span>
+      <div className="flex flex-col items-start sm:items-end" style={{ gap: spacing.sm, minWidth: 0 }}>
+        <div className="flex items-center flex-wrap" style={{ gap: spacing.sm }}>
+          <div className="flex items-center" style={{ gap: spacing.xs }}>
+            <motion.span
+              aria-hidden="true"
+              className="inline-block rounded-full flex-shrink-0"
+              style={{ width: "10px", height: "10px" }}
+              animate={{
+                // Three distinct colors (green/amber/grey); the label text
+                // next to it is the primary, non-color signal.
+                backgroundColor: isActive
+                  ? darkTheme.status.activeDot
+                  : isPaused
+                    ? colors.warning[500]
+                    : darkTheme.status.inactiveDot,
+                scale: isActive && !prefersReducedMotion ? [1, 1.4, 1] : 1,
+                boxShadow: isActive
+                  ? prefersReducedMotion
+                    ? GLOW_STATIC
+                    : [GLOW_REST, GLOW_PEAK, GLOW_REST]
+                  : GLOW_REST,
+              }}
+              transition={
+                isActive && !prefersReducedMotion
+                  ? {
+                      backgroundColor: { duration: 0.3 },
+                      scale: { duration: 1.6, repeat: Infinity, ease: "easeInOut" },
+                      boxShadow: { duration: 1.6, repeat: Infinity, ease: "easeInOut" },
+                    }
+                  : { backgroundColor: { duration: 0.3 }, boxShadow: { duration: 0.3 } }
+              }
+            />
+            <span
+              className="text-xs font-medium"
+              style={{ color: isActive ? colors.success[500] : isPaused ? colors.warning[500] : darkTheme.text.secondary }}
+            >
+              {STUDENT_STATUS_LABELS[student.status]}
+            </span>
+          </div>
+
+          <EditStudentAddressForm student={student} onSave={onUpdateAddress} onSaveLocation={onUpdateLocation} onLinked={onLinked} />
+
+          {showBestRouteTrigger && (
+            <Button
+              ref={bestRouteButtonRef}
+              variant="secondary"
+              onClick={() => setBestRoutePanelOpen((open) => !open)}
+              aria-expanded={bestRoutePanelOpen}
+              style={{ minHeight: sizing.tapTarget }}
+            >
+              {bestRoutePanelOpen ? "Hide best route" : "Find a route"}
+            </Button>
+          )}
         </div>
 
-        <EditStudentAddressForm student={student} onSave={onUpdateAddress} onSaveLocation={onUpdateLocation} onLinked={onLinked} />
-        <span aria-disabled="true" className="text-xs" style={{ color: darkTheme.text.muted }}>Other edits and status changes coming soon</span>
+        <StudentStatusControl student={student} onChanged={onStatusChanged} />
       </div>
+
+      {bestRoutePanelOpen && (
+        <div className="w-full" onKeyDown={handleBestRouteKeyDown}>
+          <BestRoutePanel
+            student={student}
+            onPlaced={(route, placement) => onPlaced(student.id, route, placement)}
+          />
+        </div>
+      )}
     </motion.li>
   );
 }

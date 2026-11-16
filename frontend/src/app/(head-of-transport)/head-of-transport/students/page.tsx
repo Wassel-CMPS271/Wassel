@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, MotionConfig } from "framer-motion";
 import { addressRequestsApi } from "@/lib/api/addressRequests";
 import { getParents, type Parent } from "@/lib/api/parents";
-import { getRouteAssignments, type RouteAssignment, type RouteAssignments } from "@/lib/api/routes";
-import { addStudentWithAddress, getStudents, importStudents, matchesFilters, setStudentLocation, updateStudentAddress, type ImportRowResult, type NewStudent, type NewStudentWithAddress, type Student } from "@/lib/api/students";
+import type { BestRoutePlacement } from "@/lib/api/roster";
+import { getRouteAssignments, type Route, type RouteAssignment, type RouteAssignments } from "@/lib/api/routes";
+import { addStudentWithAddress, getStudents, importStudents, matchesFilters, setStudentLocation, updateStudentAddress, STUDENT_STATUS_LABELS, type ImportRowResult, type NewStudent, type NewStudentWithAddress, type Student } from "@/lib/api/students";
 import { AddStudentForm } from "./AddStudentForm";
 import { AddressRequestsSection } from "./AddressRequestsSection";
 import { ImportStudentsForm } from "./ImportStudentsForm";
@@ -47,6 +48,11 @@ export default function StudentsPage() {
 
   const [routeData, setRouteData] = useState<RouteAssignments>({ routes: [], byStudent: new Map() });
   const [routesStatus, setRoutesStatus] = useState<RoutesStatus>("loading");
+
+  // Announces a student leaving the filtered list after a status change, so
+  // a head of transport who just paused/archived someone isn't left
+  // wondering where the row went.
+  const [filterAnnouncement, setFilterAnnouncement] = useState("");
 
   // null until the parents load; stays null if they fail, so the rows keep
   // saying "Linked"/"Not assigned" instead of an email.
@@ -163,6 +169,42 @@ export default function StudentsPage() {
     pushToast(`Pickup location updated for ${updated.firstName} ${updated.lastName}.`);
   }
 
+  // Pause/archive/resume/restore: the server already applied the change, so
+  // this only reconciles local state, no reload. Pausing or archiving also
+  // takes the student off their route (in the same backend transaction), so
+  // their entry in routeData.byStudent is dropped right here, same as the
+  // route line updates after a removeStudent elsewhere in the app.
+  function handleStatusChanged(updated: Student) {
+    setStudents((prev) => prev.map((student) => (student.id === updated.id ? updated : student)));
+
+    let nextByStudent = routeData.byStudent;
+    if (updated.status !== "active" && routeData.byStudent.has(updated.id)) {
+      nextByStudent = new Map(routeData.byStudent);
+      nextByStudent.delete(updated.id);
+      setRouteData((prev) => ({ ...prev, byStudent: nextByStudent }));
+    }
+
+    const stillMatches =
+      matchesFilters(updated, { query: debouncedQuery, status: statusFilter, grade: gradeFilter }) &&
+      matchesRouteFilter(updated, routeFilter, nextByStudent);
+    setFilterAnnouncement(
+      stillMatches
+        ? ""
+        : `${updated.firstName} ${updated.lastName} is now ${STUDENT_STATUS_LABELS[updated.status]} and is hidden by the current filter.`,
+    );
+  }
+
+  // A best-route placement: update the row's route line in place and keep
+  // the route filter's assignments consistent, without refetching anything.
+  function handlePlaced(studentId: string, route: Route, placement: BestRoutePlacement) {
+    setRouteData((prev) => {
+      const byStudent = new Map(prev.byStudent);
+      byStudent.set(studentId, { routeId: route.id, routeName: route.name });
+      return { ...prev, byStudent };
+    });
+    pushToast(`Placed on ${route.name} as stop ${placement.position}, pickup ${placement.arrivalTime}.`);
+  }
+
   async function handleImport(rows: NewStudent[]): Promise<ImportRowResult[]> {
     const results = await importStudents(rows);
     const added = results
@@ -269,6 +311,10 @@ export default function StudentsPage() {
             />
           )}
 
+          <p role="status" className="text-sm" style={{ color: darkTheme.text.secondary }}>
+            {filterAnnouncement}
+          </p>
+
           {!isLoading && !loadError && students.length === 0 && (
             <div
               className="flex flex-col items-center text-center"
@@ -358,6 +404,8 @@ export default function StudentsPage() {
                     }}
                     onUpdateAddress={handleUpdateAddress}
                     onUpdateLocation={handleUpdateLocation}
+                    onStatusChanged={handleStatusChanged}
+                    onPlaced={handlePlaced}
                   />
                 ))}
               </AnimatePresence>
