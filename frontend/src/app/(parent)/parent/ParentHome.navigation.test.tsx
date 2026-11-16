@@ -17,7 +17,7 @@ beforeEach(() => {
   });
   vi.stubGlobal("fetch", fetcher);
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 it("enables accepted GPS navigation lazily while unmerged inbox stays unavailable", async () => {
   render(<ParentPage />); await screen.findByText("Lina Navigation");
@@ -120,4 +120,31 @@ it("production displays the accepted live ETA separately from its planned time",
   expect(screen.getByText(/Planned pickup: 07:20/)).toHaveTextContent("not a live estimate");
   expect(screen.getByText(/Estimated arrival:/)).toHaveTextContent("07:25");
   expect(fetcher).toHaveBeenLastCalledWith(expect.stringContaining(`/children/${family[0].studentId}/bus-location`), expect.objectContaining({ credentials: "include" }));
+});
+
+const notStarted = [{ ...family[0], todayRun: { ...family[0].todayRun!, state: "NOT_STARTED" as const, stopsLeft: null } }];
+it("refreshes run start and finish without remounting, and stops refreshing away from tracking", async () => {
+  const finished = [{ ...family[0], todayRun: { ...family[0].todayRun!, state: "FINISHED", stopsLeft: null } }];
+  fetcher.mockResolvedValueOnce(Response.json(notStarted)).mockResolvedValueOnce(Response.json(family)).mockResolvedValueOnce(Response.json(finished));
+  render(<ParentHome renderTracking={child => <p>{child.todayRun?.state}</p>} />); await screen.findByText("Lina Navigation"); vi.useFakeTimers();
+  fireEvent.click(screen.getByRole("button", { name: "Bus tracking" })); expect(screen.getByText("NOT_STARTED")).toBeVisible();
+  await act(async () => vi.advanceTimersByTimeAsync(60_000)); expect(screen.getByText("IN_PROGRESS")).toBeVisible();
+  await act(async () => vi.advanceTimersByTimeAsync(60_000)); expect(screen.getByText("FINISHED")).toBeVisible(); expect(fetcher).toHaveBeenCalledTimes(3);
+  fireEvent.click(screen.getByRole("button", { name: "My children" })); await act(async () => vi.advanceTimersByTimeAsync(180_000)); expect(fetcher).toHaveBeenCalledTimes(3);
+});
+it("discards an in-flight run-status refresh after leaving tracking", async () => {
+  fetcher.mockResolvedValueOnce(Response.json(notStarted));
+  render(<ParentHome renderTracking={child => <p>{child.todayRun?.state}</p>} />); await screen.findByText("Lina Navigation");
+  const pending = deferred<Response>(); fetcher.mockReturnValueOnce(pending.promise); vi.useFakeTimers();
+  fireEvent.click(screen.getByRole("button", { name: "Bus tracking" })); await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  fireEvent.click(screen.getByRole("button", { name: "My children" })); await act(async () => pending.resolve(Response.json([])));
+  expect(screen.getByText("Lina Navigation")).toBeVisible(); expect(screen.queryByText("No children linked yet")).not.toBeInTheDocument();
+  await act(async () => vi.advanceTimersByTimeAsync(120_000)); expect(fetcher).toHaveBeenCalledTimes(2);
+});
+it.each([401, 403])("clears child data and stops run-status refresh after HTTP %s", async status => {
+  fetcher.mockResolvedValueOnce(Response.json(notStarted)).mockResolvedValueOnce(new Response(null, { status }));
+  render(<ParentHome renderTracking={child => <p>{child.todayRun?.state}</p>} />); await screen.findByText("Lina Navigation"); vi.useFakeTimers();
+  fireEvent.click(screen.getByRole("button", { name: "Bus tracking" })); await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(screen.getByRole("alert")).toBeVisible(); expect(screen.queryByText("NOT_STARTED")).not.toBeInTheDocument();
+  await act(async () => vi.advanceTimersByTimeAsync(180_000)); expect(fetcher).toHaveBeenCalledTimes(2);
 });

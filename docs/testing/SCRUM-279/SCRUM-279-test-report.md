@@ -204,7 +204,7 @@ Evidence: `tmp/SCRUM-279-20261110/` (focused/full regression, lint/build/type co
 Earlier dated sections below are preserved historical evidence.
 
 
-## Status â€” 9 November 2026
+## Status — 9 November 2026
 
 PARTIALLY COMPLETE / integration BLOCKED. Jira In Progress. Branch feature/SCRUM-279-parent-live-map, based on develop 8a249e8. No backend source was copied or modified.
 
@@ -232,7 +232,7 @@ Tests use explicit test-only fixtures/injected API boundaries. Unit success is n
 
 ## Blocking dependencies and completion steps
 
-1. SCRUM-261 / #143 remains unmerged; preserve V10 â†’ V11 â†’ V12 migration order. Recheck its final contract and wire getBusLocation only after the accepted API is available.
+1. SCRUM-261 / #143 remains unmerged; preserve V10 → V11 → V12 migration order. Recheck its final contract and wire getBusLocation only after the accepted API is available.
 2. SCRUM-262 has no defined/merged ETA contract. Do not infer an ETA from the planned pickup time or add guessed fields; implement an adapter and validity rules only from that contract.
 3. SCRUM-273 / #144 remains a draft with GPS/replay APIs null and known defects. The real driver-to-parent slice is unavailable.
 4. Add Parent Home child selection/navigation and compose the components with authenticated real data after those gates. Verify both multiple-child isolation and server ownership with actual sessions, consent/end transitions, stale/missing GPS/ETA, persistence/error recovery and the actual 360px Leaflet UI.
