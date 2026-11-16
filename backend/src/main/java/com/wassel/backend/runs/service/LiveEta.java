@@ -29,23 +29,39 @@ final class LiveEta {
 	 */
 	static EstimateResponse estimate(StraightLineTravelTimes travelTimes, BusPositionResponse fix, List<StopResponse> toDo,
 			Instant now) {
-		if (toDo.isEmpty() || !hasPin(toDo.getLast())) {
+		if (toDo.isEmpty()) {
 			return null;
 		}
+		Instant arrival = arrivals(travelTimes, fix, toDo, now).getLast();
+		return arrival == null ? null : new EstimateResponse(arrival, Duration.between(now, arrival).toSeconds());
+	}
+
+	/**
+	 * The arrival at every stop of {@code toDo}, in its order (SCRUM-268 needs them all): the same chain as
+	 * {@link #estimate}, whose answer for a stop is this list's entry for it. Null for a stop without a pin; each other
+	 * arrival is the fix's receive time plus the legs up to it, never earlier than {@code now}.
+	 */
+	static List<Instant> arrivals(StraightLineTravelTimes travelTimes, BusPositionResponse fix, List<StopResponse> toDo,
+			Instant now) {
 		List<Coordinate> path = new ArrayList<>();
 		path.add(new Coordinate(fix.latitude(), fix.longitude()));
 		toDo.stream().filter(LiveEta::hasPin).forEach(stop -> path.add(
 				new Coordinate(stop.latitude().doubleValue(), stop.longitude().doubleValue())));
 		Duration[][] legs = travelTimes.matrix(path);
+		List<Instant> arrivals = new ArrayList<>();
 		Duration travel = Duration.ZERO;
-		for (int i = 0; i + 1 < path.size(); i++) {
-			travel = travel.plus(legs[i][i + 1]);
+		int at = 0;
+		for (StopResponse stop : toDo) {
+			if (!hasPin(stop)) {
+				arrivals.add(null);
+				continue;
+			}
+			travel = travel.plus(legs[at][at + 1]);
+			at++;
+			Instant arrival = fix.receivedAt().plus(travel);
+			arrivals.add(arrival.isBefore(now) ? now : arrival);
 		}
-		Instant arrival = fix.receivedAt().plus(travel);
-		if (arrival.isBefore(now)) {
-			arrival = now;
-		}
-		return new EstimateResponse(arrival, Duration.between(now, arrival).toSeconds());
+		return arrivals;
 	}
 
 	private static boolean hasPin(StopResponse stop) {

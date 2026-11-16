@@ -31,12 +31,14 @@ public class InboxService {
 
 	private final StudentService studentService;
 
+	private final NotificationPreferenceService preferenceService;
+
 	private final Clock clock;
 
 	/**
 	 * Makes the entry for a driver's confirmation. Runs in the transaction that saves the confirmation, so the two
 	 * exist together or not at all, and a repeated event makes no second entry (the unique key). A child with no
-	 * linked parent has nobody to tell.
+	 * linked parent has nobody to tell, and a parent who turned this type off (SCRUM-268) is not told.
 	 */
 	@EventListener
 	@Transactional
@@ -45,9 +47,25 @@ public class InboxService {
 		if (student.parentUserId() == null) {
 			return;
 		}
+		InboxEventType type = InboxEventType.valueOf(event.status());
+		if (!preferenceService.receives(event.schoolId(), student.parentUserId(), type)) {
+			return;
+		}
 		inboxEventRepository.insertIfMissing(event.schoolId(), student.parentUserId(), event.studentId(),
-				student.firstName() + " " + student.lastName(), event.runId(), event.direction(),
-				InboxEventType.valueOf(event.status()).name(), event.occurredAt());
+				student.firstName() + " " + student.lastName(), event.runId(), event.direction(), type.name(),
+				event.occurredAt());
+	}
+
+	/**
+	 * Makes the late alert for a child still waiting (SCRUM-268), unless this run already made one for the child
+	 * (the unique key, so every later call is a no-op). Answers whether an entry was made. The caller has checked the
+	 * parent's choices.
+	 */
+	@Transactional
+	public boolean recordLate(UUID schoolId, UUID parentUserId, UUID runId, StudentResponse student, String direction,
+			Instant at) {
+		return inboxEventRepository.insertIfMissing(schoolId, parentUserId, student.id(),
+				student.firstName() + " " + student.lastName(), runId, direction, InboxEventType.LATE.name(), at) == 1;
 	}
 
 	/** The newest 50 entries, newest first; only the unread ones when {@code unreadOnly}. */
