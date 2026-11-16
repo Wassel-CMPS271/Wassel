@@ -19,6 +19,10 @@ export interface GpsSharingCardProps {
   connectivity: Connectivity;
   onRunChange: (run: Run) => void;
   onRefreshRequested: () => void;
+  // A 401 on a GPS call (see useGpsSharing).
+  onAuthExpired?: () => void;
+  // The session is gone and the page is leaving for /login (see useGpsSharing).
+  signedOut?: boolean;
 }
 
 const cardStyle = {
@@ -67,13 +71,23 @@ function SoonCard() {
   );
 }
 
-export function GpsSharingCard({ run, api, connectivity, onRunChange, onRefreshRequested }: GpsSharingCardProps) {
+export function GpsSharingCard({
+  run,
+  api,
+  connectivity,
+  onRunChange,
+  onRefreshRequested,
+  onAuthExpired,
+  signedOut,
+}: GpsSharingCardProps) {
   const { state, optIn, optOut, retry } = useGpsSharing({
     run,
     api,
     connectivity,
     onRunChange,
     onRefreshRequested,
+    onAuthExpired,
+    signedOut,
   });
 
   if (api === null) return <SoonCard />;
@@ -143,50 +157,57 @@ export function GpsSharingCard({ run, api, connectivity, onRunChange, onRefreshR
       );
 
     case "paused": {
+      // The session expired: the page is sending the driver to sign in. Sharing is
+      // still wanted, so Try again (once signed in) asks for it again. This case
+      // deserves role="alert" (it's an interruption, like "denied"/"error" below),
+      // not the polite role="status" the other paused reasons use.
+      const signedOut = state.blockedReason === "signedOut";
       // The server said no: nothing resumes this on its own, so the driver gets a
       // tap to ask again.
-      if (state.blockedReason === "refused") {
-        return (
-          <Card style={cardStyle}>
-            <div role="status" className="flex items-center" style={{ gap: spacing.sm }}>
-              <Dot color={darkTheme.status.inactiveDot} />
-              <p className="text-sm" style={{ color: darkTheme.text.secondary }}>
-                Location sharing was stopped for this run.
-              </p>
-            </div>
-            <div className="flex flex-wrap" style={{ gap: spacing.sm }}>
-              <Button variant="secondary" onClick={retry} style={{ minHeight: sizing.tapTarget }}>
-                Try again
-              </Button>
-              <Button variant="ghost" onClick={optOut} style={{ minHeight: sizing.tapTarget }}>
-                Stop sharing
-              </Button>
-            </div>
-          </Card>
-        );
-      }
-      const reasonText =
-        state.blockedReason === "offline"
-          ? "Paused — you're offline. It resumes on its own once you're back online."
-          : state.blockedReason === "hidden"
-            ? "Paused while this screen is off or in the background. Location sharing only works while this screen is open."
-            : "Location sharing is only active while this run is in progress.";
+      const refused = state.blockedReason === "refused";
+      const reasonText = signedOut
+        ? "Paused — your session expired. Sign in again, then tap Try again."
+        : refused
+          ? "Location sharing was stopped for this run."
+          : state.blockedReason === "offline"
+            ? "Paused — you're offline. It resumes on its own once you're back online."
+            : state.blockedReason === "hidden"
+              ? "Paused while this screen is off or in the background. Location sharing only works while this screen is open."
+              : "Location sharing is only active while this run is in progress.";
+      // One wrapper for every paused reason (not a return per reason): keeping it
+      // mounted and only swapping its content is what makes the text change
+      // reliably announced (frontend/CLAUDE.md, screen-reader notices), rather than
+      // a brand new live region appearing already holding its final text.
       return (
         <Card style={cardStyle}>
-          <div role="status" className="flex items-center" style={{ gap: spacing.sm }}>
+          <div
+            role={signedOut ? "alert" : "status"}
+            className="flex items-center"
+            style={{ gap: spacing.sm }}
+          >
             <Dot color={darkTheme.status.inactiveDot} />
             <p className="text-sm" style={{ color: darkTheme.text.secondary }}>
               {reasonText}
             </p>
           </div>
-          <Button
-            variant="secondary"
-            onClick={optOut}
-            className="w-full sm:w-auto"
-            style={{ minHeight: sizing.tapTarget, alignSelf: "flex-start" }}
-          >
-            Stop sharing
-          </Button>
+          <div className="flex flex-wrap" style={{ gap: spacing.sm }}>
+            {(signedOut || refused) && (
+              <Button variant="secondary" onClick={retry} style={{ minHeight: sizing.tapTarget }}>
+                Try again
+              </Button>
+            )}
+            <Button
+              variant={signedOut || refused ? "ghost" : "secondary"}
+              onClick={optOut}
+              className={signedOut || refused ? undefined : "w-full sm:w-auto"}
+              style={{
+                minHeight: sizing.tapTarget,
+                alignSelf: signedOut || refused ? undefined : "flex-start",
+              }}
+            >
+              Stop sharing
+            </Button>
+          </div>
         </Card>
       );
     }

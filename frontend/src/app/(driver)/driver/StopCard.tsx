@@ -83,8 +83,8 @@ function actionVariant(state: StopState, position: number): ButtonVariant {
 }
 
 // This device's clock, labelled as such: it's the tap time, not the server's
-// (docs/contracts/driver-gps-offline.md — occurredAt is an open question there,
-// so the screen never implies the server recorded this exact moment).
+// (the server records its own time and never reads occurredAt, runs.md "Known
+// limits"), so the screen never implies the server recorded this exact moment.
 function formatLocalTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
@@ -116,10 +116,11 @@ function queuePillStyle(state: QueueItem["state"]): CSSProperties | undefined {
   }
 }
 
-// One queue item's status for this stop: a pill, the local tap time, and
-// (error/blocked) Try again or (conflict) Dismiss behind a confirm step — the
-// same inline pattern as RevokeAccessControl (Escape cancels, focus moves to
-// Confirm and back to the triggering button).
+// One queue item's status for this stop: a pill, the local tap time, and Try
+// again (a retryable failure, resent with the same key) or Dismiss (a refused
+// tap, which the same key can't fix, or an earlier day's) behind a confirm
+// step — the same inline pattern as RevokeAccessControl (Escape cancels, focus
+// moves to Confirm and back to the triggering button).
 function QueueStatus({
   item,
   name,
@@ -132,6 +133,9 @@ function QueueStatus({
   onDismiss: () => void;
 }) {
   const [confirmingDismiss, setConfirmingDismiss] = useState(false);
+  const retryable = item.state === "error" && item.lastError?.kind === "retryable";
+  const rejected = item.state === "error" && item.lastError?.kind === "rejected";
+  const dismissable = item.state === "conflict" || rejected;
   const dismissRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const restoreFocusRef = useRef(false);
@@ -186,7 +190,13 @@ function QueueStatus({
         </p>
       )}
 
-      {(item.state === "error" || item.state === "blocked") && (
+      {rejected && item.lastError && (
+        <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>
+          {item.lastError.message}
+        </p>
+      )}
+
+      {retryable && (
         <Button
           data-stop-retry
           ref={dismissRef}
@@ -198,7 +208,7 @@ function QueueStatus({
         </Button>
       )}
 
-      {item.state === "conflict" &&
+      {dismissable &&
         (confirmingDismiss ? (
           <div
             role="group"
@@ -248,18 +258,21 @@ export interface StopCardProps {
   // The confirmations still allowed for this stop (nextConfirmations in
   // today.ts); none hides the buttons.
   actions: ConfirmationStatus[];
-  // Online-only fallback (confirmationReplayApi is null): the status whose
+  // Online-only fallback (a tap the phone couldn't save): the status whose
   // request is in flight for this stop, or null.
   pendingStatus: ConfirmationStatus | null;
   // Online-only fallback: this stop's last failed confirmation, if any.
   error: string | null;
+  // The server's detail after it refused this stop's saved tap with a 404/409
+  // (the queue dropped it and the day was reloaded), or null.
+  notice?: string | null;
   onConfirm: (status: ConfirmationStatus) => void;
   onRetry: () => void;
   // Offline queue (SCRUM-273): the item representing this stop's confirmation
   // attempt right now (the earliest one still unsent, or a just-synced one
   // about to be pruned), or null/undefined when there's nothing to show —
-  // either confirmationReplayApi is null (online-only mode, above) or every
-  // past attempt has already synced and been pruned.
+  // every past attempt has synced and been pruned, or was dropped after a
+  // 404/409 (see notice), or the tap went through the online-only fallback.
   queueItem?: QueueItem | null;
   onRetryQueueItem?: () => void;
   onDismissQueueItem?: () => void;
@@ -272,6 +285,7 @@ export function StopCard({
   actions,
   pendingStatus,
   error,
+  notice,
   onConfirm,
   onRetry,
   queueItem,
@@ -422,7 +436,7 @@ export function StopCard({
             </div>
           )}
 
-          {(actions.length > 0 || error || queueItem) && (
+          {(actions.length > 0 || error || notice || queueItem) && (
             <div
               role="group"
               aria-label={`Confirm ${name}`}
@@ -461,6 +475,11 @@ export function StopCard({
                     Try again
                   </Button>
                 </div>
+              )}
+              {notice && (
+                <p role="alert" className="text-sm" style={{ color: darkTheme.runStop.absentText }}>
+                  {notice}
+                </p>
               )}
               {queueItem && (
                 <QueueStatus

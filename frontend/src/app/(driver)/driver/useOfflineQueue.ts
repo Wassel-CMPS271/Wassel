@@ -1,8 +1,8 @@
 "use client";
 
 // Binds the framework-free OfflineQueue (SCRUM-273) to this screen: one queue per
-// signed-in driver, in localStorage, drained through confirmationReplayApi (null
-// until SCRUM-263, in which case nothing is ever sent — see confirmationReplay.ts).
+// signed-in driver, in localStorage, drained through confirmationReplayApi
+// (lib/api/confirmationReplay.ts, the real PUT with each tap's clientRequestId).
 // useSyncExternalStore is what makes the queue's own subscribe/getSnapshot usable as
 // React state without copying it into a second source of truth.
 
@@ -13,21 +13,34 @@ import type { Run } from "@/lib/api/runs";
 import type { Connectivity } from "@/lib/offline/connectivity";
 import { newId } from "@/lib/offline/ids";
 import { createDrainLock } from "@/lib/offline/lock";
-import { OfflineQueue, type QueueEvent, type QueueSnapshot } from "@/lib/offline/queue";
+import {
+  OfflineQueue,
+  type QueueConflict,
+  type QueueEvent,
+  type QueueSnapshot,
+  type RefetchRun,
+} from "@/lib/offline/queue";
 import { localStorageStore, queueStorageKey } from "@/lib/offline/storage";
 
 export interface UseOfflineQueueOptions {
-  // Null until SCRUM-263 (see confirmationReplay.ts): the caller passes the module's
-  // `confirmationReplayApi` through, the same way useGpsSharing takes `driverGpsApi`
-  // — injected rather than imported here, so a test can swap in a fake directly.
-  api: ConfirmationReplayApi | null;
+  // The caller passes the module's `confirmationReplayApi` through, the same way
+  // useGpsSharing takes `driverGpsApi` — injected rather than imported here, so a
+  // test can swap in a fake directly.
+  api: ConfirmationReplayApi;
   // Null until the page has built its Connectivity (also in an effect).
   connectivity: Connectivity | null;
   // The server's answer to a synced item, for the screen to redraw that one stop.
   onSynced: (run: Run, studentId: string) => void;
-  // The server disagrees with what the screen showed (a 404/409 on replay, or an
-  // item left over from an earlier day): reload today's runs rather than guess.
-  onConflict: () => void;
+  // A 404/409 on replay: asked first, to reload today's runs and say what the run
+  // is now (the queue then decides whether the taps behind the refused one still go).
+  // Without it, a 409's later taps are kept.
+  refetchRun?: RefetchRun;
+  // ...then told what the queue dropped, with the reloaded run (see QueueConflict).
+  onConflict: (conflict: QueueConflict) => void;
+  // A 401 on replay: the queue has paused itself and kept every item. Only the page
+  // can tell a real sign-out from a stray 401 and send the driver to sign in; the
+  // queue is resumed by the page, or by a new queue once the driver is back.
+  onAuthExpired: () => void;
 }
 
 export interface UseOfflineQueueResult {
@@ -40,7 +53,6 @@ const EMPTY_SNAPSHOT: QueueSnapshot = {
   paused: false,
   draining: false,
   storageError: null,
-  replayAvailable: false,
 };
 const subscribeNothing = () => () => {};
 const emptySnapshot = () => EMPTY_SNAPSHOT;
@@ -49,7 +61,9 @@ export function useOfflineQueue({
   api,
   connectivity,
   onSynced,
+  refetchRun,
   onConflict,
+  onAuthExpired,
 }: UseOfflineQueueOptions): UseOfflineQueueResult {
   const userId = useCurrentUser().id;
 
@@ -57,8 +71,12 @@ export function useOfflineQueue({
   // without needing onSynced/onConflict to be stable across renders.
   const onSyncedRef = useRef(onSynced);
   onSyncedRef.current = onSynced;
+  const refetchRunRef = useRef(refetchRun);
+  refetchRunRef.current = refetchRun;
   const onConflictRef = useRef(onConflict);
   onConflictRef.current = onConflict;
+  const onAuthExpiredRef = useRef(onAuthExpired);
+  onAuthExpiredRef.current = onAuthExpired;
   const connectivityRef = useRef(connectivity);
   connectivityRef.current = connectivity;
 
@@ -78,11 +96,18 @@ export function useOfflineQueue({
           onSyncedRef.current(event.run, event.item.studentId);
           return;
         case "conflict":
-          onConflictRef.current();
+          onConflictRef.current({
+            item: event.item,
+            status: event.status,
+            message: event.message,
+            run: event.run,
+            dropped: event.dropped,
+          });
           return;
         case "auth":
-          // Already paused by the queue itself; resumed below once connectivity
-          // says it's worth another attempt.
+          // Already paused by the queue itself, with the item back to queued under
+          // its own key.
+          onAuthExpiredRef.current();
           return;
         case "network":
           if (event.reachable) connectivityRef.current?.reportSuccess();
@@ -96,20 +121,21 @@ export function useOfflineQueue({
       api,
       lock: createDrainLock({ name: `${key}.lock`, store, tabId: newId() }),
       onEvent,
+      refetch: async (item) => refetchRunRef.current?.(item),
     });
     setQueue(created);
     void created.drain(); // Whatever was left over from a previous visit.
     return () => created.dispose();
   }, [userId, api]);
 
-  // A 401 pauses the queue until something suggests it's worth trying again: the
-  // connection coming back, the tab becoming visible, or the periodic retry tick
-  // (the same signals the queue already drains on) — resume() both un-pauses and
-  // drains. With the session really gone this costs one 401 per tick, no more.
+  // The connection coming back, the tab becoming visible, or the periodic retry
+  // tick drains whatever is due. Never while paused: a 401 means the session is
+  // gone, and no tick brings it back. Only signing in again does (a new queue on
+  // /driver), or the page calling resume().
   useEffect(() => {
     if (!queue || !connectivity) return;
     return connectivity.onRetry(() => {
-      void (queue.getSnapshot().paused ? queue.resume() : queue.drain());
+      if (!queue.getSnapshot().paused) void queue.drain();
     });
   }, [queue, connectivity]);
 

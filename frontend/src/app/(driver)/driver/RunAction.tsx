@@ -14,6 +14,10 @@ const ACTIONS = {
   IN_PROGRESS: { label: "End run", pendingLabel: "Ending…", call: endRun },
 } as const;
 
+export function isUnauthorized(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
 export function actionError(error: unknown): string {
   return error instanceof ApiError && error.status < 500 ? error.message : GENERIC_ERROR;
 }
@@ -71,11 +75,14 @@ export function RunAction({
   onRunChange,
   offline = false,
   hasUnsentConfirmations = false,
+  onAuthExpired,
 }: {
   run: Run;
   onRunChange: (run: Run) => void;
   offline?: boolean;
   hasUnsentConfirmations?: boolean;
+  // A 401: the page checks the session and sends the driver to sign in.
+  onAuthExpired?: () => void;
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,6 +141,7 @@ export function RunAction({
       const updated = await action.call(run.id);
       onRunChange(updated);
     } catch (err) {
+      if (isUnauthorized(err)) onAuthExpired?.();
       setError(actionError(err));
     } finally {
       busy.current = false;

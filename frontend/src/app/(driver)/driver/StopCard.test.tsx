@@ -106,7 +106,7 @@ function card() {
   return screen.getByText("Dana Fares").closest("li")!;
 }
 
-it("shows nothing extra with no queue item (confirmationReplayApi is null, or fully synced and pruned)", () => {
+it("shows nothing extra with no queue item (fully synced and pruned, or dropped after a 404/409)", () => {
   renderCard({ actions: ["PICKED_UP", "NOT_PRESENT"], queueItem: null });
 
   expect(within(card()).queryByText(/Saved on phone|Sending|Sent|Conflict|Couldn't send/)).not
@@ -157,18 +157,42 @@ it("shows Couldn't send with Try again for an error item, and calls onRetryQueue
   expect(onRetryQueueItem).toHaveBeenCalledTimes(1);
 });
 
-it("shows Waiting to send with Try again for a blocked item", () => {
-  const onRetryQueueItem = vi.fn();
-  renderCard({ queueItem: queueItem({ state: "blocked" }), onRetryQueueItem });
+it("shows Waiting to send for a blocked item, with nothing to press", () => {
+  renderCard({ queueItem: queueItem({ state: "blocked" }) });
 
   expect(within(card()).getByText(/Waiting to send/)).toBeInTheDocument();
-  fireEvent.click(within(card()).getByRole("button", { name: "Try again" }));
-
-  expect(onRetryQueueItem).toHaveBeenCalledTimes(1);
+  expect(within(card()).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
 });
 
 const DISMISS_LABEL = "Dismiss saved tap for Dana Fares";
 const CONFIRM_DISMISS_LABEL = "Confirm dismiss saved tap for Dana Fares";
+
+it("offers only Dismiss, never Try again, for a refused tap (400/422), with the server's detail", () => {
+  const onDismissQueueItem = vi.fn();
+  renderCard({
+    queueItem: queueItem({
+      state: "error",
+      serverStatus: 422,
+      lastError: { kind: "rejected", message: "clientRequestId was already used" },
+    }),
+    onDismissQueueItem,
+  });
+
+  expect(within(card()).getByText(/Couldn't send/)).toBeInTheDocument();
+  expect(within(card()).getByRole("alert")).toHaveTextContent("clientRequestId was already used");
+  expect(within(card()).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  fireEvent.click(within(card()).getByRole("button", { name: DISMISS_LABEL }));
+  fireEvent.click(screen.getByRole("button", { name: CONFIRM_DISMISS_LABEL }));
+  expect(onDismissQueueItem).toHaveBeenCalledTimes(1);
+});
+
+it("shows the server's notice after a dropped 404/409, as an alert", () => {
+  renderCard({ notice: "Run is FINISHED, so it cannot be confirmed" });
+
+  expect(within(card()).getByRole("alert")).toHaveTextContent(
+    "Run is FINISHED, so it cannot be confirmed",
+  );
+});
 
 it("shows Conflict with the server's detail, and Dismiss behind a confirm step", () => {
   const onDismissQueueItem = vi.fn();

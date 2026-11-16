@@ -256,6 +256,47 @@ describe("GpsSharingCard", () => {
     expect(api.setSharing).toHaveBeenCalledTimes(2);
   });
 
+  it("pauses as signed out with role=alert (an interruption), offering Try again and Stop sharing", () => {
+    const api = fakeApi();
+    const connectivity = fakeConnectivity();
+    const onRunChange = vi.fn();
+    const onRefreshRequested = vi.fn();
+    geolocation = fakeGeolocation();
+    Object.defineProperty(navigator, "geolocation", { configurable: true, value: geolocation });
+    const { rerender } = render(
+      <GpsSharingCard
+        run={run()}
+        api={api}
+        connectivity={connectivity}
+        onRunChange={onRunChange}
+        onRefreshRequested={onRefreshRequested}
+      />,
+    );
+    act(() => screen.getByRole("button", { name: "Share my location" }).click());
+    act(() =>
+      geolocation!.watchers[0].success({
+        coords: { latitude: 33.9, longitude: 35.5, accuracy: 10 },
+        timestamp: 0,
+      } as GeolocationPosition),
+    );
+    expect(screen.getByText(/Sharing your location/)).toBeInTheDocument();
+
+    rerender(
+      <GpsSharingCard
+        run={run()}
+        api={api}
+        connectivity={connectivity}
+        onRunChange={onRunChange}
+        onRefreshRequested={onRefreshRequested}
+        signedOut
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("your session expired");
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop sharing" })).toBeInTheDocument();
+  });
+
   it("shows a connection error once turning sharing on keeps failing", async () => {
     const api = fakeApi();
     vi.mocked(api.setSharing).mockRejectedValue(new ApiError(503, "Unavailable"));

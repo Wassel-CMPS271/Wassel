@@ -464,3 +464,42 @@ describe("shouldSendFix", () => {
     expect(shouldSendFix(last, fix({ at: 1_000 }), THROTTLE)).toBe(false);
   });
 });
+
+describe("nextGpsState: authExpired (a 401)", () => {
+  const SIGNED_OUT: GpsState = {
+    status: "paused",
+    consent: true,
+    blocked: true,
+    blockedReason: "signedOut",
+    heldCondition: { blocked: false },
+  };
+
+  it("pauses as signedOut from any consented state, keeping consent", () => {
+    for (const state of [SHARING, REQUESTING, PAUSED_OFFLINE, REFUSED]) {
+      const next = nextGpsState(state, { type: "authExpired" });
+      expect(next).toMatchObject({ status: "paused", consent: true, blockedReason: "signedOut" });
+    }
+  });
+
+  it("is ignored without consent", () => {
+    expect(nextGpsState(OFF, { type: "authExpired" })).toBe(OFF);
+  });
+
+  it("is a hard pause: the watch is cleared", () => {
+    expect(isGpsActive(SIGNED_OUT)).toBe(false);
+  });
+
+  it("is sticky: no connectivity or visibility change resumes it", () => {
+    const next = nextGpsState(SIGNED_OUT, { type: "conditions", blocked: true, reason: "offline" });
+    expect(next).toMatchObject({ status: "paused", blockedReason: "signedOut" });
+    const cleared = nextGpsState(next, { type: "conditions", blocked: false });
+    expect(cleared).toMatchObject({ status: "paused", blockedReason: "signedOut" });
+    expect(nextGpsState(SIGNED_OUT, { type: "permissionDenied" })).toBe(SIGNED_OUT);
+  });
+
+  it("the driver tapping Try again after signing in asks again, landing on the held condition", () => {
+    expect(nextGpsState(SIGNED_OUT, { type: "retry" })).toMatchObject({ status: "requesting", consent: true });
+    const offline = { ...SIGNED_OUT, heldCondition: { blocked: true, reason: "offline" as const } };
+    expect(nextGpsState(offline, { type: "optIn" })).toMatchObject({ status: "paused", blockedReason: "offline" });
+  });
+});

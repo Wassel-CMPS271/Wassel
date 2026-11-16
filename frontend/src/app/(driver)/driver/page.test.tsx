@@ -21,9 +21,12 @@ vi.mock("@/lib/api/runs", () => ({
   confirmStudent: vi.fn(),
 }));
 
-// useOfflineQueue (SCRUM-273) needs a signed-in user; confirmationReplayApi stays
-// null in this file (SCRUM-263 not merged), so these tests exercise the same
-// online-only path they always did — see page.queue.test.tsx for the queue itself.
+// useOfflineQueue (SCRUM-273) needs a signed-in user. Every tap goes through the
+// offline queue now (page.queue.test.tsx); the confirmation tests in this file cover
+// the online-only fallback a tap takes when it can't be saved on the phone, so they
+// make storage refuse every write (refuseStorage).
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
+
 vi.mock("@/components/auth/RoleGuard", () => ({
   useCurrentUser: () => ({ id: "driver-1", email: "karim@wassel.local", role: "DRIVER", schoolId: "s-1" }),
 }));
@@ -39,7 +42,16 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
+  window.localStorage.clear();
 });
+
+// Storage full: the queue refuses the tap, so it goes straight to confirmStudent.
+function refuseStorage() {
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new DOMException("Full", "QuotaExceededError");
+  });
+}
 
 function card(name: string) {
   return screen.getByText(name).closest("li")!;
@@ -321,6 +333,7 @@ it("ends a run straight away when every stop is skippable and nobody is onboard"
 });
 
 it("closes the confirm step itself if a delayed confirmation brings the count to 0 while it's open", async () => {
+  refuseStorage();
   const [morning, afternoon] = DAY.runs;
   const rami = morning.stops.find((s) => s.firstName === "Rami")!;
   const stops = morning.stops.map((stop) => {
@@ -421,6 +434,7 @@ it("offers no confirmations before the run is started", async () => {
 });
 
 it("confirms a stop, locking only that stop while it saves", async () => {
+  refuseStorage();
   const [morning] = DAY.runs;
   vi.mocked(getDriverToday).mockResolvedValue(DAY);
   let resolveConfirm!: (run: Run) => void;
@@ -449,6 +463,7 @@ it("confirms a stop, locking only that stop while it saves", async () => {
 });
 
 it("activates the button that replaces a confirmed one with Enter or Space, not just a click", async () => {
+  refuseStorage();
   const user = userEvent.setup();
   vi.mocked(getDriverToday).mockResolvedValue(DAY);
   vi.mocked(confirmStudent)
@@ -489,6 +504,7 @@ it("activates the button that replaces a confirmed one with Enter or Space, not 
 });
 
 it("shows a failed confirmation on its own stop and retries the same status", async () => {
+  refuseStorage();
   vi.mocked(getDriverToday).mockResolvedValue(DAY);
   vi.mocked(confirmStudent)
     .mockRejectedValueOnce(new TypeError("Failed to fetch"))
@@ -518,6 +534,7 @@ it("shows a failed confirmation on its own stop and retries the same status", as
 });
 
 it("keeps a stop confirmed meanwhile when an older answer arrives later", async () => {
+  refuseStorage();
   vi.mocked(getDriverToday).mockResolvedValue(DAY);
   let resolveDana!: (run: Run) => void;
   vi.mocked(confirmStudent)

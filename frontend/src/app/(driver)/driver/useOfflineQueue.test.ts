@@ -1,8 +1,9 @@
 // useOfflineQueue (SCRUM-273) against the real OfflineQueue engine (already covered
 // end to end in lib/offline/queue.test.ts) with a fake ConfirmationReplayApi and a
 // fake Connectivity, so this file only has to prove the *wiring*: onEvent reaching
-// the right callback, mount draining leftovers, dispose on unmount, and auth-pause
-// resuming on a retry signal.
+// the right callback, mount draining leftovers, dispose on unmount, and a 401
+// pausing the queue for good (no retry signal resumes it; only the page or a new
+// queue after signing in does).
 
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -78,8 +79,11 @@ async function setUp(
   const api = overrides.api ?? fakeApi();
   const onSynced = vi.fn();
   const onConflict = vi.fn();
+  const onAuthExpired = vi.fn();
   const connectivity = fakeConnectivity();
-  const rendered = renderHook(() => useOfflineQueue({ api, connectivity, onSynced, onConflict }));
+  const rendered = renderHook(() =>
+    useOfflineQueue({ api, connectivity, onSynced, onConflict, onAuthExpired }),
+  );
   // The hook drains on mount; with nothing queued yet that settles almost at once,
   // but still across a few microtask hops. Letting it finish here means a test's
   // own enqueue()+drain() can't be handed that already-resolving (and by now
@@ -89,7 +93,7 @@ async function setUp(
   // itself, where there's something in storage for it to find.
   await flush();
   if (!overrides.keepMountCalls) api.confirm.mockClear();
-  return { ...rendered, api, onSynced, onConflict, connectivity };
+  return { ...rendered, api, onSynced, onConflict, onAuthExpired, connectivity };
 }
 
 beforeEach(() => {
@@ -127,7 +131,7 @@ describe("useOfflineQueue", () => {
         items: [
           {
             id: "i-1",
-            clientRequestId: "k-1",
+            clientRequestId: "6f1c2a4e-8b3d-4e5f-9a7b-1c2d3e4f5a6b",
             runId: RUN_ID,
             runDate: RUN_DATE,
             studentId: "dana",
@@ -145,7 +149,7 @@ describe("useOfflineQueue", () => {
 
     expect(api.confirm).toHaveBeenCalledTimes(1);
     expect(api.confirm).toHaveBeenCalledWith(
-      expect.objectContaining({ runId: RUN_ID, studentId: "dana", clientRequestId: "k-1" }),
+      expect.objectContaining({ runId: RUN_ID, studentId: "dana", clientRequestId: "6f1c2a4e-8b3d-4e5f-9a7b-1c2d3e4f5a6b" }),
       expect.anything(),
     );
   });
@@ -182,6 +186,9 @@ describe("useOfflineQueue", () => {
     await act(() => result.current.queue!.drain());
 
     expect(onConflict).toHaveBeenCalledTimes(1);
+    expect(onConflict).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 409, message: "Not in progress", run: undefined, dropped: 0 }),
+    );
     expect(onSynced).not.toHaveBeenCalled();
   });
 
@@ -208,10 +215,10 @@ describe("useOfflineQueue", () => {
     expect(connectivity.reportSuccess).toHaveBeenCalled();
   });
 
-  it("pauses on a 401 and resumes (sending with the same key) on the next retry signal", async () => {
+  it("pauses on a 401, keeps the item saved, calls onAuthExpired, and no retry tick resumes it", async () => {
     const api = fakeApi();
     api.failNext(new ApiError(401));
-    const { result, connectivity } = await setUp({ api });
+    const { result, connectivity, onAuthExpired } = await setUp({ api });
     act(() => {
       result.current.queue!.enqueue({
         runId: RUN_ID,
@@ -222,14 +229,67 @@ describe("useOfflineQueue", () => {
     });
     await act(() => result.current.queue!.drain());
     expect(result.current.queue!.getSnapshot().paused).toBe(true);
+    expect(onAuthExpired).toHaveBeenCalledTimes(1);
 
-    // resume() clears `paused` synchronously, before the resend it kicks off
-    // settles; waitFor's polling relies on real timers, which fake timers
-    // block, so the resend itself is awaited directly instead (drain() hands
-    // back whatever resume() already has in flight, or resolves at once).
+    // The 30 s tick, the connection coming back, the tab becoming visible: all the
+    // same retry signal, and none of them brings a session back.
     act(() => connectivity.retry());
-    expect(result.current.queue!.getSnapshot().paused).toBe(false);
+    await act(() => vi.advanceTimersByTimeAsync(120_000));
+    act(() => connectivity.retry());
+    await flush();
+
+    expect(result.current.queue!.getSnapshot().paused).toBe(true);
+    expect(api.calls).toHaveLength(1);
+    const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!).items;
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ state: "queued", clientRequestId: api.calls[0].clientRequestId });
+  });
+
+  it("after a 401, a new queue for the same driver (back from signing in) sends the item once, with the same key", async () => {
+    const api = fakeApi();
+    api.failNext(new ApiError(401));
+    const first = await setUp({ api });
+    act(() => {
+      first.result.current.queue!.enqueue({
+        runId: RUN_ID,
+        runDate: RUN_DATE,
+        studentId: "dana",
+        status: "PICKED_UP",
+      });
+    });
+    await act(() => first.result.current.queue!.drain());
+    const key = api.calls[0].clientRequestId;
+    first.unmount(); // The redirect to /login.
+
+    // Back on /driver: a fresh mount drains what was left, unpaused.
+    const second = await setUp({ api, keepMountCalls: true });
+    await act(() => second.result.current.queue!.drain());
+
+    expect(api.calls.map((call) => call.clientRequestId)).toEqual([key, key]);
+    expect(second.onSynced).toHaveBeenCalledTimes(1);
+    expect(second.result.current.queue!.getSnapshot().paused).toBe(false);
+
+    // Nothing left to send: another tick or reload sends nothing more.
+    act(() => second.connectivity.retry());
+    await flush();
+    expect(api.calls).toHaveLength(2);
+  });
+
+  it("resume() (the page, once /me says the session is fine) sends the paused item with the same key", async () => {
+    const api = fakeApi();
+    api.failNext(new ApiError(401));
+    const { result } = await setUp({ api });
+    act(() => {
+      result.current.queue!.enqueue({
+        runId: RUN_ID,
+        runDate: RUN_DATE,
+        studentId: "dana",
+        status: "PICKED_UP",
+      });
+    });
     await act(() => result.current.queue!.drain());
+
+    await act(() => result.current.queue!.resume());
 
     expect(api.calls).toHaveLength(2);
     expect(api.calls[1].clientRequestId).toBe(api.calls[0].clientRequestId);

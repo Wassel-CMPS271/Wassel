@@ -3,8 +3,8 @@
 // navigator.geolocation, navigator.permissions and the run prop.
 //
 // States:
-//   unavailable  no DriverGpsApi (SCRUM-261 / PR #143 not yet merged), no navigator.geolocation, or
-//                not a secure context. Permanent for the hook's lifetime.
+//   unavailable  no DriverGpsApi, no navigator.geolocation, or not a secure context.
+//                Permanent for the hook's lifetime.
 //   off          available, but the driver hasn't opted in (or opted back out).
 //   requesting   opted in, waiting for the browser's permission prompt and first fix.
 //   sharing      a fix has arrived and positions are being sent.
@@ -13,20 +13,23 @@
 //                (POSITION_UNAVAILABLE = 2, TIMEOUT = 3), or the server never confirmed
 //                the opt-in after several tries (errorCode "server").
 //   paused       consent is on, but blocked right now: offline, the tab is hidden, the
-//                run isn't IN_PROGRESS, or the server refused sharing (a 409 or 404).
+//                run isn't IN_PROGRESS, the server refused sharing (a 409 or 404), or
+//                the session expired (a 401).
 //                See isGpsActive for what each reason means for the hook (soft pause
 //                vs. a real stop).
 //
-// "paused" with blockedReason "runNotInProgress" or "refused" is a real stop: the hook
-// clears the watch and tells the server. "refused" is also sticky: no "conditions"
-// event clears it, only a run change (reset) or the driver tapping (optIn/retry),
-// because the server, not this phone, said no. "offline" and "hidden" are soft: the
+// "paused" with blockedReason "runNotInProgress", "refused" or "signedOut" is a real
+// stop: the hook clears the watch (and tells the server, except for "signedOut", where
+// there is no session to tell and the run's sharing must stay as the driver set it).
+// "refused" and "signedOut" are also sticky: no "conditions" event clears them, only a
+// run change (reset) or the driver tapping (optIn/retry), because the server, not this
+// phone, said no. Consent stays on through both. "offline" and "hidden" are soft: the
 // watch stays up (so there's a fresh fix ready) but nothing is sent until they clear,
 // and only that one latest fix is sent then — never a backlog.
 
 export type GpsStatus = "unavailable" | "off" | "requesting" | "sharing" | "denied" | "error" | "paused";
 
-export type GpsBlockReason = "offline" | "hidden" | "runNotInProgress" | "refused";
+export type GpsBlockReason = "offline" | "hidden" | "runNotInProgress" | "refused" | "signedOut";
 
 // GeolocationPositionError's codes: PERMISSION_DENIED, POSITION_UNAVAILABLE, TIMEOUT,
 // plus "server": setSharing(true) kept failing (network or 5xx), so sharing never
@@ -50,7 +53,7 @@ export interface GpsState {
   blocked: boolean;
   blockedReason?: GpsBlockReason;
   errorCode?: GpsErrorCode;
-  // Only while paused as "refused": the conditions that blocked/blockedReason would
+  // Only while paused as "refused" or "signedOut": the conditions that blocked/blockedReason would
   // otherwise hold, kept up to date so a tap can land on the right state.
   heldCondition?: GpsCondition;
 }
@@ -75,6 +78,9 @@ export type GpsEvent =
   // run is shareable right now (docs/contracts/driver-gps-offline.md). Pauses as
   // "refused", which nothing but a reset or a driver tap clears.
   | { type: "sendConflict" }
+  // A 401 from setSharing(true) or sendPosition: the session is gone. Pauses as
+  // "signedOut", keeping consent, until the driver taps again after signing in.
+  | { type: "authExpired" }
   // After a refused send, setSharing(false)'s answer says the run is still
   // IN_PROGRESS: sharing itself was withdrawn — by the driver elsewhere, by another
   // driver's consent, or by a reassignment. This drops consent: the driver gave it,
@@ -91,9 +97,14 @@ function isRefused(state: GpsState): boolean {
   return state.status === "paused" && state.blockedReason === "refused";
 }
 
+// The pauses only a tap (or a reset) clears: "refused" and "signedOut".
+function isStickyPause(state: GpsState): boolean {
+  return state.status === "paused" && (state.blockedReason === "refused" || state.blockedReason === "signedOut");
+}
+
 // The real offline/hidden/run-state picture, wherever the state keeps it.
 function conditionOf(state: GpsState): GpsCondition {
-  if (isRefused(state)) return state.heldCondition ?? { blocked: false };
+  if (isStickyPause(state)) return state.heldCondition ?? { blocked: false };
   return { blocked: state.blocked, reason: state.blockedReason };
 }
 
@@ -113,12 +124,12 @@ export function nextGpsState(state: GpsState, event: GpsEvent): GpsState {
     case "optIn":
     case "retry": {
       // Already on (or on its way): nothing to do. From off/denied/error, or a
-      // "refused" pause (the driver tapping is what clears it), start the flow —
+      // "refused"/"signedOut" pause (the driver tapping is what clears it), start the flow —
       // straight to "paused" if a condition is already blocking it.
       if (
         state.status === "requesting" ||
         state.status === "sharing" ||
-        (state.status === "paused" && !isRefused(state))
+        (state.status === "paused" && !isStickyPause(state))
       ) {
         return state;
       }
@@ -138,9 +149,9 @@ export function nextGpsState(state: GpsState, event: GpsEvent): GpsState {
       return { ...state, status: state.blocked ? "paused" : "requesting", errorCode: undefined };
 
     case "permissionDenied":
-      // A refused pause has no watch up, and a denial will surface again on the
-      // driver's next tap; turning it into "denied" here would lose the refusal.
-      if (!state.consent || isRefused(state)) return state;
+      // A refused or signed-out pause has no watch up, and a denial will surface
+      // again on the driver's next tap; turning it into "denied" here would lose it.
+      if (!state.consent || isStickyPause(state)) return state;
       return { ...state, status: "denied", errorCode: 1 };
 
     case "positionReceived":
@@ -155,7 +166,7 @@ export function nextGpsState(state: GpsState, event: GpsEvent): GpsState {
       const { blocked, reason } = event;
       // Sticky: the server said no, so a connectivity or visibility change can't
       // undo it. Only the condition is remembered, for the driver's next tap.
-      if (isRefused(state)) return { ...state, heldCondition: { blocked, reason } };
+      if (isStickyPause(state)) return { ...state, heldCondition: { blocked, reason } };
       if (!state.consent) return { ...state, blocked, blockedReason: reason };
       // denied/error are more specific than a pause; stay there, just remember the
       // condition for when the driver retries.
@@ -169,12 +180,23 @@ export function nextGpsState(state: GpsState, event: GpsEvent): GpsState {
     }
 
     case "sendConflict":
-      if (!state.consent || isRefused(state)) return state;
+      if (!state.consent || isStickyPause(state)) return state;
       return {
         status: "paused",
         consent: true,
         blocked: true,
         blockedReason: "refused",
+        heldCondition: conditionOf(state),
+      };
+
+    case "authExpired":
+      // From any consented state, a refusal included: signing in again comes first.
+      if (!state.consent || (isStickyPause(state) && state.blockedReason === "signedOut")) return state;
+      return {
+        status: "paused",
+        consent: true,
+        blocked: true,
+        blockedReason: "signedOut",
         heldCondition: conditionOf(state),
       };
 
@@ -196,8 +218,8 @@ export function nextGpsState(state: GpsState, event: GpsEvent): GpsState {
 // Whether the hook should have an active watchPosition and, if there's an API, have
 // told the server sharing is on. True for "sharing"/"requesting", and for "paused"
 // with a *soft* reason (offline/hidden) — the watch stays up so a fresh fix is ready
-// the moment the pause clears. False for "paused" with "runNotInProgress" or
-// "refused" (the hard pauses) and for off/denied/error/unavailable.
+// the moment the pause clears. False for "paused" with "runNotInProgress",
+// "refused" or "signedOut" (the hard pauses) and for off/denied/error/unavailable.
 export function isGpsActive(state: GpsState): boolean {
   if (state.status === "requesting" || state.status === "sharing") return true;
   return state.status === "paused" && (state.blockedReason === "offline" || state.blockedReason === "hidden");

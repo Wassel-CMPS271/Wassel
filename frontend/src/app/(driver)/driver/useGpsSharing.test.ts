@@ -200,12 +200,13 @@ function setUp(overrides: { run?: Run; api?: ReturnType<typeof fakeApi> } = {}) 
   const connectivity = fakeConnectivity();
   const onRunChange = vi.fn();
   const onRefreshRequested = vi.fn();
+  const onAuthExpired = vi.fn();
   const rendered = renderHook(
     (props: { run: Run }) =>
-      useGpsSharing({ run: props.run, api, connectivity, onRunChange, onRefreshRequested }),
+      useGpsSharing({ run: props.run, api, connectivity, onRunChange, onRefreshRequested, onAuthExpired }),
     { initialProps: { run: overrides.run ?? run() } },
   );
-  return { ...rendered, api, connectivity, onRunChange, onRefreshRequested };
+  return { ...rendered, api, connectivity, onRunChange, onRefreshRequested, onAuthExpired };
 }
 
 describe("availability", () => {
@@ -727,6 +728,96 @@ describe("stopping", () => {
 
     expect(api.sendPosition).not.toHaveBeenCalled();
     expect(result.current.state.status).toBe("off");
+  });
+});
+
+describe("a 401 (the session expired)", () => {
+  it("from sendPosition pauses as signedOut, keeps consent, clears the watch and never turns server sharing off", async () => {
+    const api = fakeApi();
+    api.sendPosition.mockRejectedValueOnce(new ApiError(401));
+    const { result, onAuthExpired, onRefreshRequested } = setUp({ api });
+    act(() => result.current.optIn());
+    await waitFor(() => expect(api.setSharing).toHaveBeenCalledTimes(1));
+
+    act(() => geolocation!.watchers[0].success(position()));
+
+    await waitFor(() =>
+      expect(result.current.state).toMatchObject({ status: "paused", consent: true, blockedReason: "signedOut" }),
+    );
+    expect(geolocation!.clearWatch).toHaveBeenCalled();
+    expect(onAuthExpired).toHaveBeenCalledTimes(1);
+    expect(onRefreshRequested).not.toHaveBeenCalled();
+    await act(async () => {});
+    expect(enabledArgs(api)).toEqual([true]);
+  });
+
+  it("from setSharing(true) pauses as signedOut and stays paused through the retry tick and reconnects", async () => {
+    const api = fakeApi();
+    api.setSharing.mockRejectedValueOnce(new ApiError(401));
+    const { result, connectivity, onAuthExpired } = setUp({ api });
+    act(() => result.current.optIn());
+    await waitFor(() =>
+      expect(result.current.state).toMatchObject({ status: "paused", blockedReason: "signedOut" }),
+    );
+
+    act(() => connectivity.setState("offline"));
+    act(() => connectivity.setState("online"));
+    act(() => connectivity.retry());
+    await act(async () => {});
+
+    expect(onAuthExpired).toHaveBeenCalledTimes(1);
+    expect(enabledArgs(api)).toEqual([true]);
+    expect(api.sendPosition).not.toHaveBeenCalled();
+    expect(result.current.state).toMatchObject({ status: "paused", consent: true, blockedReason: "signedOut" });
+  });
+
+  it("signedOut from the page pauses as signedOut and sends no setSharing request, then or on unmount", async () => {
+    installGeolocation();
+    const api = fakeApi();
+    const connectivity = fakeConnectivity();
+    const onAuthExpired = vi.fn();
+    const { result, rerender, unmount } = renderHook(
+      (props: { signedOut: boolean }) =>
+        useGpsSharing({
+          run: run(),
+          api,
+          connectivity,
+          onRunChange: vi.fn(),
+          onRefreshRequested: vi.fn(),
+          onAuthExpired,
+          signedOut: props.signedOut,
+        }),
+      { initialProps: { signedOut: false } },
+    );
+    act(() => result.current.optIn());
+    act(() => geolocation!.watchers[0].success(position()));
+    await waitFor(() => expect(result.current.state.status).toBe("sharing"));
+    expect(enabledArgs(api)).toEqual([true]);
+
+    rerender({ signedOut: true });
+    expect(result.current.state).toMatchObject({ status: "paused", consent: true, blockedReason: "signedOut" });
+    expect(geolocation!.clearWatch).toHaveBeenCalled();
+    act(() => connectivity.retry());
+    unmount();
+    await act(async () => {});
+
+    expect(enabledArgs(api)).toEqual([true]);
+    expect(onAuthExpired).not.toHaveBeenCalled();
+  });
+
+  it("the driver tapping Try again after signing in turns sharing back on", async () => {
+    const api = fakeApi();
+    api.setSharing.mockRejectedValueOnce(new ApiError(401));
+    const { result } = setUp({ api });
+    act(() => result.current.optIn());
+    await waitFor(() =>
+      expect(result.current.state).toMatchObject({ status: "paused", blockedReason: "signedOut" }),
+    );
+
+    act(() => result.current.retry());
+
+    expect(result.current.state.status).toBe("requesting");
+    expect(enabledArgs(api)).toEqual([true, true]);
   });
 });
 

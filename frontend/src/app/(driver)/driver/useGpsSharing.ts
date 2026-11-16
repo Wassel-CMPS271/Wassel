@@ -2,10 +2,11 @@
 
 // Turns the pure state machine in gpsState.ts into real browser calls (SCRUM-273):
 // navigator.geolocation.watchPosition/clearWatch, navigator.permissions.query, and
-// DriverGpsApi. Nothing is requested or sent until the driver calls optIn() — this is
-// read at call time, not stored, so it's also the user gesture iOS Safari requires
-// before it will prompt for location. With a null api (SCRUM-261 / PR #143 not yet
-// merged) the state is always "unavailable" and nothing here touches the browser APIs at all.
+// DriverGpsApi (SCRUM-261's GPS endpoints are merged on develop). Nothing is
+// requested or sent until the driver calls optIn() — this is read at call time, not
+// stored, so it's also the user gesture iOS Safari requires before it will prompt
+// for location. With a null api the state is always "unavailable" and nothing here
+// touches the browser APIs at all.
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { DriverGpsApi } from "@/lib/api/driverGps";
@@ -37,6 +38,15 @@ export interface UseGpsSharingOptions {
   // the page refetches the day and learns the run's real state: a refusal comes
   // with no Run, so onRunChange never hears about it.
   onRefreshRequested: () => void;
+  // Called on a 401 from setSharing(true) or a send: sharing is paused as
+  // "signedOut" (consent kept, the run's sharing left as it is on the server), and
+  // the page decides whether to send the driver to sign in.
+  onAuthExpired?: () => void;
+  // The page found the session gone (a 401 that /me confirmed) and is about to leave
+  // for /login: pause as "signedOut" and forget that sharing is on, so neither this
+  // nor the unmount that follows sends setSharing(false) without a session, and
+  // nothing turns it back on.
+  signedOut?: boolean;
 }
 
 export interface UseGpsSharingResult {
@@ -93,6 +103,10 @@ function isRefusal(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 409 || error.status === 404);
 }
 
+function isAuthExpired(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
 function computeAvailable(api: DriverGpsApi | null): boolean {
   return isAvailable({
     hasApi: api !== null,
@@ -107,6 +121,8 @@ export function useGpsSharing({
   connectivity,
   onRunChange,
   onRefreshRequested,
+  onAuthExpired,
+  signedOut = false,
 }: UseGpsSharingOptions): UseGpsSharingResult {
   const [state, dispatch] = useReducer(nextGpsState, undefined, () =>
     initialGpsState(computeAvailable(api)),
@@ -127,6 +143,12 @@ export function useGpsSharing({
   onRunChangeRef.current = onRunChange;
   const onRefreshRequestedRef = useRef(onRefreshRequested);
   onRefreshRequestedRef.current = onRefreshRequested;
+  const onAuthExpiredRef = useRef(onAuthExpired);
+  onAuthExpiredRef.current = onAuthExpired;
+  // Set during render, so it already holds when the teardown below runs, whether
+  // that is the pause it causes or the unmount right after it.
+  const signedOutRef = useRef(signedOut);
+  signedOutRef.current = signedOut;
   // Set only by a sendPosition 409/404 (see sendFix below), and consumed once by the
   // very next teardown: that's the one case where the hook doesn't yet know whether
   // the refusal is "run not IN_PROGRESS" or "sharing withdrawn while still
@@ -165,8 +187,8 @@ export function useGpsSharing({
   const availableRef = useRef(computeAvailable(api));
 
   // Sharing never carries over between runs (docs/contracts/driver-gps-offline.md,
-  // "consent scope"), and SCRUM-261 landing can turn `api` from null into a real
-  // client while the page is open — both reset to "off"/"unavailable". This adjusts
+  // "Client behaviour (driver GPS)"), and a null `api` can turn into a real client
+  // while the page is open — both reset to "off"/"unavailable". This adjusts
   // state *during* render rather than in an effect (React's own pattern for
   // resetting state when a prop changes): dispatching here discards this render and
   // starts over with `state` already reset, so the watch/sharing effect below never
@@ -229,6 +251,15 @@ export function useGpsSharing({
         // Any answer from the server (a 400, 403, 409, 5xx...) means it was reached;
         // only a network failure or a timeout counts against the connection.
         reportIfNetwork(connectivity, error);
+        // Signed out: stop the watch, but owe the server nothing. There is no session
+        // to send setSharing(false) with, and a stray 401 must not turn the run's
+        // sharing off behind the driver's back.
+        if (isAuthExpired(error) && activeRef.current && sessionRef.current === session) {
+          serverOnRef.current = false;
+          dispatch({ type: "authExpired" });
+          onAuthExpiredRef.current?.();
+          return;
+        }
         // Refused: stop now. The teardown this triggers finds out from
         // setSharing(false)'s own response whether the run is still IN_PROGRESS, and
         // never opts back in on its own either way. A late answer from an older
@@ -272,6 +303,11 @@ export function useGpsSharing({
           // synchronously, and it must not fire another opt-in from in here.
           reportIfNetwork(connectivity, error);
           serverOnRef.current = false;
+          if (isAuthExpired(error)) {
+            dispatch({ type: "authExpired" });
+            onAuthExpiredRef.current?.();
+            return;
+          }
           if (isRefusal(error)) {
             // Never retried on its own: the driver taps to try again.
             dispatch({ type: "sendConflict" });
@@ -300,7 +336,7 @@ export function useGpsSharing({
 
     if (active) {
       sessionRef.current += 1;
-      if (!serverOnRef.current && currentApi) requestSharingOn(currentApi, run.id);
+      if (!serverOnRef.current && currentApi && !signedOutRef.current) requestSharingOn(currentApi, run.id);
       if (watchIdRef.current === null && navigator.geolocation) {
         watchIdRef.current = navigator.geolocation.watchPosition(
           (position) => {
@@ -346,6 +382,9 @@ export function useGpsSharing({
       const checkWithdrawal = pendingWithdrawalCheckRef.current;
       pendingWithdrawalCheckRef.current = false;
       serverConfirmedRef.current = false;
+      // Signed out: there is no session to send it with, and the run's sharing stays
+      // as the driver set it (the same as a 401 of the hook's own).
+      if (signedOutRef.current) serverOnRef.current = false;
       if (serverOnRef.current && currentApi) {
         serverOnRef.current = false;
         const { result, isLatest } = setSharingInOrder(currentApi, run.id, false);
@@ -380,7 +419,7 @@ export function useGpsSharing({
   useEffect(() => {
     function retryOptIn() {
       const currentApi = apiRef.current;
-      if (!currentApi || !activeRef.current || serverOnRef.current) return;
+      if (!currentApi || !activeRef.current || serverOnRef.current || signedOutRef.current) return;
       if (connectivity.getState() === "offline") return;
       requestSharingOn(currentApi, runRef.current.id);
     }
@@ -469,6 +508,13 @@ export function useGpsSharing({
       document.removeEventListener("visibilitychange", recompute);
     };
   }, [connectivity, run.state]);
+
+  // The page's signedOut: the same pause as a 401 of the hook's own (watch cleared,
+  // consent kept), without calling onAuthExpired back. The teardown it causes sends
+  // nothing, since signedOutRef is already set.
+  useEffect(() => {
+    if (signedOut) dispatch({ type: "authExpired" });
+  }, [signedOut]);
 
   // A tap starts over: whatever failed before, this is the driver asking again.
   const optIn = useCallback(() => {

@@ -1,7 +1,7 @@
 // Driver GPS API client — SCRUM-273, built from docs/contracts/runs.md's "Live
-// location" section (SCRUM-261 / PR #143 is not yet merged on develop; this client
-// is only real once that lands). One module per backend area
-// (frontend/CLAUDE.md): every call goes through request() in client.ts.
+// location" section (SCRUM-261's GPS endpoints are merged on develop). One module
+// per backend area (frontend/CLAUDE.md): every call goes through request() in
+// client.ts.
 //
 //   PUT /api/driver/runs/{runId}/location-sharing  { enabled } -> 200 Run
 //   PUT /api/driver/runs/{runId}/location  { latitude, longitude, accuracyMeters } -> 204

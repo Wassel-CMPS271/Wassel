@@ -9,21 +9,22 @@ afterEach(() => {
 const BASE: ConnectionBannerProps = {
   state: "online",
   paused: false,
+  sessionExpired: false,
   savedCount: 0,
-  replayAvailable: true,
+  canSave: true,
   onSendNow: () => {},
 };
 
-it("renders nothing while online, not paused and with nothing saved", () => {
+it("keeps the status wrapper mounted, empty, while online, not paused and with nothing saved", () => {
   render(<ConnectionBanner {...BASE} />);
 
-  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toBeEmptyDOMElement();
 });
 
-it("renders nothing while online even with items saved (it's only about reachability)", () => {
+it("stays empty while online even with items saved (it's only about reachability)", () => {
   render(<ConnectionBanner {...BASE} savedCount={3} />);
 
-  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toBeEmptyDOMElement();
 });
 
 it("shows the offline notice with the saved count and a Send now button", () => {
@@ -48,31 +49,57 @@ it("shows an offline notice with no Send now when nothing is saved yet", () => {
 it("shows an unknown-connectivity notice too, not just offline", () => {
   render(<ConnectionBanner {...BASE} state="unknown" savedCount={1} />);
 
-  expect(screen.getByRole("status")).toBeInTheDocument();
+  expect(screen.getByRole("status")).not.toBeEmptyDOMElement();
   expect(screen.getByRole("button", { name: "Send now" })).toBeInTheDocument();
 });
 
-it("says offline saving isn't available yet when replayAvailable is false, and offers no Send now", () => {
-  render(<ConnectionBanner {...BASE} state="offline" replayAvailable={false} />);
+it("says taps can't be saved on this phone when canSave is false (storage failing), and offers no Send now", () => {
+  render(<ConnectionBanner {...BASE} state="offline" canSave={false} />);
 
-  expect(screen.getByRole("status")).toHaveTextContent("Offline saving isn't available yet");
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "You're offline. Confirmations can't be saved on this phone right now",
+  );
   expect(screen.queryByRole("button", { name: "Send now" })).not.toBeInTheDocument();
 });
 
-it("shows the signed-out notice when paused, even while online, with its own Send now", () => {
-  const onSendNow = vi.fn();
-  render(<ConnectionBanner {...BASE} paused={true} savedCount={1} onSendNow={onSendNow} />);
+it("shows the storage error even while online (a corrupt queue shows nothing otherwise)", () => {
+  render(<ConnectionBanner {...BASE} state="online" canSave={false} savedCount={0} />);
 
   const banner = screen.getByRole("status");
-  expect(banner).toHaveTextContent("You're signed out.");
+  expect(banner).toHaveTextContent("Confirmations can't be saved on this phone right now");
+  expect(banner).not.toHaveTextContent("You're offline");
+  expect(screen.queryByRole("button", { name: "Send now" })).not.toBeInTheDocument();
+});
+
+it("shows the session-expired notice once /me confirmed it, even while online, with a sign-in link and its own Send now", () => {
+  const onSendNow = vi.fn();
+  render(<ConnectionBanner {...BASE} paused={true} sessionExpired={true} savedCount={1} onSendNow={onSendNow} />);
+
+  const banner = screen.getByRole("status");
+  expect(banner).toHaveTextContent(
+    "Your session expired. Sign in again, and the 1 confirmation saved on this phone will be sent.",
+  );
+  expect(within(banner).getByRole("link", { name: "Sign in again" })).toHaveAttribute("href", "/login?expired=1");
   fireEvent.click(within(banner).getByRole("button", { name: "Send now" }));
   expect(onSendNow).toHaveBeenCalledTimes(1);
 });
 
-it("the paused notice takes priority over the offline/unavailable wording", () => {
-  render(<ConnectionBanner {...BASE} paused={true} state="offline" replayAvailable={false} />);
+it("doesn't say the session expired while paused before /me has confirmed it", () => {
+  render(<ConnectionBanner {...BASE} paused={true} savedCount={2} />);
 
-  expect(screen.getByRole("status")).toHaveTextContent("You're signed out.");
+  const banner = screen.getByRole("status");
+  expect(banner).not.toHaveTextContent(/session expired/i);
+  expect(banner).toHaveTextContent(
+    "Sending is paused while your sign-in is checked. Once it is, the 2 confirmations saved on this phone will be sent.",
+  );
+  expect(within(banner).getByRole("link", { name: "Sign in again" })).toBeInTheDocument();
+  expect(within(banner).getByRole("button", { name: "Send now" })).toBeInTheDocument();
+});
+
+it("the paused notice takes priority over the offline/unavailable wording", () => {
+  render(<ConnectionBanner {...BASE} paused={true} sessionExpired={true} state="offline" canSave={false} />);
+
+  expect(screen.getByRole("status")).toHaveTextContent("Your session expired.");
 });
 
 it('marks the banner aria-live="polite" so its wording changes are announced without stealing focus', () => {
@@ -86,4 +113,13 @@ it('marks the banner aria-live="polite" so its wording changes are announced wit
 
   expect(screen.getByRole("status")).toHaveTextContent("2 confirmations");
   expect(document.activeElement).toBe(document.body);
+});
+
+it("keeps the same status element mounted across a state change (not a remount)", () => {
+  const { rerender } = render(<ConnectionBanner {...BASE} state="offline" savedCount={0} />);
+  const banner = screen.getByRole("status");
+
+  rerender(<ConnectionBanner {...BASE} paused={true} sessionExpired={true} savedCount={1} />);
+
+  expect(screen.getByRole("status")).toBe(banner);
 });
