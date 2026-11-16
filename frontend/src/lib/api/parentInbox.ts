@@ -1,5 +1,4 @@
-// Accepted SCRUM-267 contract (#146). The optional LATE extension is pinned to
-// unmerged SCRUM-268 #158 at 7baf727 and is disabled by the production client.
+// Accepted SCRUM-267/268 contract: docs/contracts/inbox.md (#146 and #158).
 import { request } from "./client";
 export interface InboxEvent {
   id: string;
@@ -21,7 +20,7 @@ function event(value: unknown, allowLate: boolean): InboxEvent {
     || (r.readAt !== null && (typeof r.readAt !== "string" || !Number.isFinite(Date.parse(r.readAt))))) throw new Error("Invalid inbox entry");
   return r as unknown as InboxEvent;
 }
-export function createParentInboxApi({ allowLate = false }: { allowLate?: boolean } = {}) { return {
+export function createParentInboxApi({ allowLate = true }: { allowLate?: boolean } = {}) { return {
   async list(unread = false): Promise<InboxEvent[]> {
     const result = await request<unknown>(`/api/parent/inbox${unread ? "?unread=true" : ""}`);
     if (!Array.isArray(result)) throw new Error("Invalid inbox list");

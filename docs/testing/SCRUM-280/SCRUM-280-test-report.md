@@ -1,5 +1,31 @@
 # SCRUM-280 — Parent inbox and notification preferences
 
+## 16 November 2026 — real preferences and scheduled late alerts integrated
+
+### Current implementation and accepted dependency
+
+Normally merged accepted develop **cc6783f96bcea48c42c06c3afff6084e1121eee1**, including merged #158/SCRUM-268 and V15. Every earlier commit and the integrated #149 GPS/ETA work remain intact. The production Parent page now supplies the real session-scoped notification-preferences client; the production Inbox client accepts the canonical `LATE` event. GPS/ETA, child switching, Home/Absences and parent-wide Inbox remain reachable together. No production fixture or guessed endpoint is used.
+
+Fixed an own-code privacy issue: an Inbox 401/403 now also unmounts previously loaded preferences and discards pending save receipts. Production-entry regression tests retain the authenticated GET/PUT boundary, complete five-field replacement, persisted choices across navigation, historical LATE display after muting and late-response privacy assertions.
+
+### Executed verification
+
+- Focused parent Inbox/preferences/navigation/authentication: **113/113 passed** (10 files).
+- Full frontend: **934 passed, 1 pre-existing expected failure, 6 pre-existing skips**, 941 total (70 files); no unexpected failure. ESLint, production build and `git diff --check`: passed.
+- Standalone TypeScript: the same **13 existing baseline diagnostics**, no introduced diagnostic. Windows build returns 0 with the documented junction/standalone-copy EPERM warning; hosted CI uses fresh dependencies.
+- **Real PostgreSQL/Flyway + production Chromium: 2/2 passed** (`inbox-final.log`). All **15 migrations**, including V15 preferences, were applied; real test-only isolated seeding, password login and LoggingMailer 2FA were used. No production response was mocked.
+- Existing scenario preserved: actual GPS/map/countdown and sibling switching, all three confirmation types/deduplication, unread/read/read-all/reload, foreign-parent 404, roles 401/403, historical ownership after relinking, offline retry, logout/account reset, revoked access and 360px.
+- New real scenario: UI PUT/GET/reload of all five preferences; wrong-type/range 400 leaves stored choices unchanged; client invalid-threshold rejection sends no PUT; muted PICKED_UP/DROPPED_OFF/NOT_PRESENT still save real driver confirmations but make no entries; another parent's choices/events are independent; re-enabling does not backfill; actual once-a-minute scheduler writes one overdue morning LATE with no GPS, and a second scheduler cycle makes no duplicate; future pickup/drop-off delivery works; historical LATE survives muting; save/read offline errors preserve or hide the appropriate state and retry succeeds; 401/403/404 and 360px pass.
+- Prior attempts retained: first stopped because the installed Playwright needed Chromium revision 1248; installed that revision. The next attempt passed the original scenario and caught incomplete test cleanup (moving students before the previous active run ended). Cleanup now ends the real run before deleting its route; the final rerun passed both scenarios. No assertion was weakened.
+- Evidence remains ignored under `tmp/SCRUM-280-20261116/` and `frontend/e2e-artifacts/`; logs, credentials, database files, traces and screenshots are excluded from the commit. GitHub CI on the new pushed head must be checked independently; current results belong in the existing PR description.
+
+### Review and scope
+
+SCRUM-267 and SCRUM-268 dependencies are merged; the former preferences/LATE blocker is resolved. The integrated GPS implementation remains a #149 dependency; review the Inbox-specific incremental diff after #149. The independent driver/Parent workflow is pinned to the latest #144 **d1ad8229318b77562472fe4b698143180c24ac0a** and retains its live-head guard. #144 remains Draft/unmerged and accepted Driver Today still uses samples; final driver integration must follow its acceptance review. Parent-reported absence deliberately creates no Inbox event; `NOT_PRESENT` is the driver's not-at-stop confirmation, per the canonical contract. Email/push delivery is SCRUM-283, not claimed here.
+
+The implementation is available for independent review, subject to current-head CI and user approval to change Draft. No PR was merged, Draft changed, teammate code edited or Jira status changed.
+
+
 ## Independent review preparation with actual driver UI — 15 November 2026
 
 Normally propagated verified #149 `c9c569cc39511a6a133dddadb92e2e381c669bdd` into existing combined Parent branch `88f9c1a`, preserving both histories and the real GPS/ETA + Inbox production composition. The merge was clean. Develop remains `3798b40` and is already included. No teammate code/branch, Jira status, Ready flag or PR merge was changed.

@@ -79,6 +79,6 @@ function InboxContent({ api, preferencesApi }: { api: ParentInboxApi | null; pre
           </Card></li>)}</ul>}
       </>}
     </>}
-    <NotificationPreferencesPanel api={preferencesApi} onAccessDenied={status => { generation.current++; setData(null); setError(status); setLoading(false); setBusy(false); locked.current = false; }} />
+    {error !== 401 && error !== 403 && <NotificationPreferencesPanel api={preferencesApi} onAccessDenied={status => { generation.current++; setData(null); setError(status); setLoading(false); setBusy(false); locked.current = false; }} />}
   </section>;
 }

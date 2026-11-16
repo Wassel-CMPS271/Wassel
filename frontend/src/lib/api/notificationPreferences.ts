@@ -1,5 +1,4 @@
-// Prepared against SCRUM-268 #158 7baf727, docs/contracts/inbox.md.
-// Production does not supply this client until the backend is accepted.
+// Accepted SCRUM-268 #158: docs/contracts/inbox.md. Session-scoped GET/PUT.
 import { request } from "./client";
 export interface NotificationPreferences {
   pickedUp: boolean;

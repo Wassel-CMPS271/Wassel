@@ -11,6 +11,7 @@ it("production lazily uses the real request client for counts and persistent rea
  let rows: InboxEvent[] = [base, { ...base, id: "b", studentId: family[1].studentId, studentName: "Omar" }]; let count = 73;
  const f = vi.fn(async (url: string, options: RequestInit) => {
    if (url.endsWith("/children")) return Response.json(family);
+   if (url.endsWith("/notification-preferences")) return Response.json({ pickedUp: true, droppedOff: true, notPresent: true, late: true, lateAfterMinutes: 10 });
    if (url.endsWith("/unread-count")) return Response.json({ count });
    if (url.endsWith("/inbox/event%2Fa/read")) { rows = rows.map(r => r.id === base.id ? { ...r, readAt: "2026-11-14T08:00:00Z" } : r); count = 72; return Response.json(rows[0]); }
    if (url.endsWith("/read-all")) { rows = rows.map(r => ({ ...r, readAt: "2026-11-14T08:00:00Z" })); count = 0; return new Response(null, { status: 204 }); }
@@ -24,7 +25,7 @@ it("production lazily uses the real request client for counts and persistent rea
  expect(f).toHaveBeenCalledWith(expect.stringContaining("/inbox/event%2Fa/read"), expect.objectContaining({ credentials: "include", method: "POST" }));
  view.unmount(); render(<ParentPage />); await screen.findByText("Lina Navigation"); fireEvent.click(screen.getByRole("button", { name: "Inbox" })); await screen.findByText("Read");
  fireEvent.click(screen.getByText("Mark all as read")); await screen.findByText("0 unread updates"); expect(screen.getAllByText("Read")).toHaveLength(2);
- expect(f.mock.calls.some(([url]) => /notification-preferences/.test(url))).toBe(false);
+ expect(f).toHaveBeenCalledWith(expect.stringContaining("/notification-preferences"), expect.objectContaining({ method: "GET", credentials: "include" }));
 });
 it("production clears private inbox data on revoked access and restores it only after a successful retry", async () => {
  let denied = false; const f = vi.fn(async (url: string) => url.endsWith("/children") ? Response.json(family) : denied ? new Response(null, { status: 403 }) : url.endsWith("/unread-count") ? Response.json({ count: 1 }) : Response.json([base])); vi.stubGlobal("fetch", f);
@@ -32,7 +33,7 @@ it("production clears private inbox data on revoked access and restores it only 
  denied = true; fireEvent.click(screen.getByText("Refresh inbox")); await screen.findByRole("alert"); expect(screen.queryByText("Lina: Picked up")).not.toBeInTheDocument();
  denied = false; fireEvent.click(screen.getByText("Refresh inbox")); expect(await screen.findByText("Lina: Picked up")).toBeVisible();
 });
-it("prepared preferences use the canonical GET/PUT and LATE only when explicitly enabled", async () => {
+it("accepted preferences use the canonical GET/PUT and LATE contract", async () => {
  let pref = { pickedUp: true, droppedOff: true, notPresent: true, late: true, lateAfterMinutes: 10 };
  const f = vi.fn(async (url: string, options: RequestInit) => {
   if (url.endsWith("/children")) return Response.json(family);

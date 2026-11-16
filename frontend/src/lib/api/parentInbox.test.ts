@@ -10,7 +10,7 @@ it("marks an encoded entry read with POST and retains the server receipt", async
 it("does not accept another entry's receipt", async () => { response({ ...event, readAt: "2026-11-09T08:00:00Z" }); await expect(api.markRead("different")).rejects.toThrow(); });
 it("supports read-all's empty 204", async () => { const f = response(null, 204); await api.markAllRead(); expect(f).toHaveBeenCalledWith(expect.stringContaining("/inbox/read-all"), expect.objectContaining({ method: "POST" })); });
 it.each([401, 403, 404, 500])("retains HTTP %s", async status => { response(null, status); await expect(api.list()).rejects.toMatchObject({ status }); });
-it.each([[{ ...event, type: "LATE" }], [event, event], [{ ...event, createdAt: "bad" }], null])("rejects unsupported or malformed events %j", async rows => { response(rows); await expect(api.list()).rejects.toThrow(); });
+it.each([[{ ...event, type: "UNKNOWN" }], [event, event], [{ ...event, createdAt: "bad" }], null])("rejects unsupported or malformed events %j", async rows => { response(rows); await expect(api.list()).rejects.toThrow(); });
 
 it.each([401, 403, 404, 409, 500])("retains mutation HTTP %s and never fabricates a receipt", async status => {
   const fetcher = response(null, status); await expect(api.markRead("child/event")).rejects.toMatchObject({ status });
@@ -22,4 +22,6 @@ it("read-all sends no parent or student identity and no preference payload", asy
   expect(fetcher.mock.calls[0][1].body).toBeUndefined(); expect(fetcher.mock.calls[0][0]).toMatch(/\/api\/parent\/inbox\/read-all$/);
 });
 
-it("accepts the agreed LATE shape only in an explicitly enabled future adapter", async () => { response([{ ...event, type: "LATE" }]); expect((await createParentInboxApi({ allowLate: true }).list())[0].type).toBe("LATE"); });
+it("accepts the merged LATE shape in the production adapter", async () => { response([{ ...event, type: "LATE" }]); expect((await api.list())[0].type).toBe("LATE"); });
+
+it("can reject LATE explicitly for an older contract consumer", async () => { response([{ ...event, type: "LATE" }]); await expect(createParentInboxApi({ allowLate: false }).list()).rejects.toThrow(); });
