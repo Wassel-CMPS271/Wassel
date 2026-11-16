@@ -1,23 +1,20 @@
-// Confirmation replay API types — SCRUM-273, written from the DRAFT contract
-// docs/contracts/driver-gps-offline.md. SCRUM-263 (the backend) is not started, so
-// `confirmationReplayApi` is null: there is no fake or sample implementation. While it
-// is null, confirmations behave exactly as they do today — online-only, through
-// confirmStudent() in runs.ts — and the offline queue UI says saving offline isn't
-// available yet (frontend/CLAUDE.md: no mocks or fake data in a production path).
-// SCRUM-263's PR replaces the null with a request()-based client built from this
-// file's interface.
+// Offline confirmation replay (SCRUM-263 backend, SCRUM-273 client): docs/contracts/runs.md,
+// "Offline replay and clientRequestId (SCRUM-263)". It is the same PUT as confirmStudent()
+// in runs.ts, with the tap's key in the JSON body:
 //
-// Proposed endpoint (extends the existing one in runs.md; not implemented yet):
 //   PUT /api/driver/runs/{runId}/students/{studentId}/confirmation
 //       { status, clientRequestId } -> Run
 //
-// clientRequestId is a key the caller generates once per confirmation attempt and
-// resends unchanged on every retry of that same attempt (see the contract's
-// "Confirmation replay and idempotency"). No client-sent time: runs.md says the
-// confirmation time is the server's, never the client's, and the same rule for
-// location (docs/contracts/driver-gps-offline.md) points the same way. The queue
-// keeps its own `occurredAt` locally for display only; it is never sent.
+// There is no batch endpoint: the HTTP status of each request is that item's result
+// (lib/offline/classify.ts sorts the failures). clientRequestId is a UUID the queue makes
+// once per tap and resends unchanged on every retry of that tap; a repeat of a key the
+// server has already applied answers 200 with the run as it is now, and the same key
+// for a different run, student or status answers 422. It goes in the body, never in a
+// header (the backend's CORS allows only Content-Type). No client time is sent: the
+// confirmation time is the server's (runs.md "Known limits"). The queue keeps its own
+// `occurredAt` locally, for display only.
 
+import { request } from "./client";
 import type { ConfirmationStatus, Run } from "./runs";
 
 export interface ConfirmationReplayInput {
@@ -37,6 +34,18 @@ export interface ConfirmationReplayApi {
   confirm(input: ConfirmationReplayInput, options?: ConfirmationReplayOptions): Promise<Run>;
 }
 
-// SCRUM-263 not merged. While this is null, the offline queue (SCRUM-273) has nothing
-// to send once reconnected, so confirmations stay online-only.
-export const confirmationReplayApi: ConfirmationReplayApi | null = null;
+export const confirmationReplayApi: ConfirmationReplayApi = {
+  // The same URL as confirmStudent. runId and studentId are UUIDs in practice, so
+  // encoding is a no-op for them, but encode anyway since the path segment contract
+  // doesn't guarantee that.
+  confirm({ runId, studentId, status, clientRequestId }, { timeoutMs } = {}) {
+    return request<Run>(
+      `/api/driver/runs/${encodeURIComponent(runId)}/students/${encodeURIComponent(studentId)}/confirmation`,
+      {
+        method: "PUT",
+        body: { status, clientRequestId },
+        timeoutMs,
+      },
+    );
+  },
+};

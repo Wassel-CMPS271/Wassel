@@ -1,5 +1,5 @@
 // Random ids for the offline queue: an item's local id, its clientRequestId (the
-// idempotency key the server dedups on, docs/contracts/driver-gps-offline.md) and a
+// idempotency key the server dedups on, docs/contracts/runs.md "Offline replay") and a
 // tab's id for the storage lease. crypto.randomUUID only exists in a secure context
 // (HTTPS or localhost), so a page served over plain HTTP falls back to
 // crypto.getRandomValues, which every browser has everywhere. There is no Math.random

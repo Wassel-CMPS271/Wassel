@@ -1,7 +1,7 @@
 // One tab sends the queue at a time. Two tabs open on the driver screen share one
 // localStorage queue, and both would otherwise send the same items when the
 // connection comes back. The server's clientRequestId dedup makes a double send
-// harmless (docs/contracts/driver-gps-offline.md); this lock just keeps it rare.
+// harmless (docs/contracts/runs.md "Offline replay"); this lock just keeps it rare.
 //
 // navigator.locks is the real lock (released by the browser when the tab closes or
 // crashes). Where it's missing, a lease in storage stands in: a tab id and an expiry,

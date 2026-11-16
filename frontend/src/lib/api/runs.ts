@@ -6,7 +6,9 @@
 //   GET  /api/driver/runs/today                                  -> DriverDay (creates today's runs)
 //   POST /api/driver/runs/{runId}/start                          -> Run
 //   POST /api/driver/runs/{runId}/end                            -> Run
-//   PUT  /api/driver/runs/{runId}/students/{studentId}/confirmation  { status } -> Run
+//   PUT  /api/driver/runs/{runId}/students/{studentId}/confirmation  { status, clientRequestId? } -> Run
+//        (confirmStudent sends { status } only; the offline queue's replay in confirmationReplay.ts
+//        adds the tap's clientRequestId, SCRUM-263)
 //   GET  /api/head-of-transport/runs?date=                       -> RunsDay (today when date is omitted)
 //   GET  /api/head-of-transport/absences?date=                   -> AbsentStudent[] (today when date is omitted)
 //   POST /api/head-of-transport/runs/{runId}/reassignments  ReassignInput -> RunSummary (SCRUM-264; 201 changed, 200 already that driver)

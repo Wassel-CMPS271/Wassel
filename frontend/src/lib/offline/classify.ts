@@ -1,14 +1,15 @@
-// What one failed send means for the offline queue (docs/contracts/driver-gps-offline.md,
-// "Per-item result -> UI state"). Success is the resolved promise and needs no
-// classifying; this only sorts the ways a send can fail.
+// What one failed send means for the offline queue (docs/contracts/runs.md, "Offline
+// replay and clientRequestId (SCRUM-263)"). Success is the resolved promise and needs
+// no classifying: every 200, a repeat of an already-applied key included, is synced.
+// This only sorts the ways a send can fail.
 //
 //   retryable  network failure (TypeError), timeout (AbortError/TimeoutError), 408,
 //              429, 5xx, or anything unexpected: sent again later with the same key
 //   auth       401: the whole queue pauses and keeps its items until sign-in
-//   conflict   404, 409: the server disagrees with what the screen showed; never
-//              retried automatically, the day should be refetched
-//   rejected   400, 403, 422 and other 4xx, and field errors: retrying the same
-//              request can't help, so it waits for the driver
+//   conflict   404, 409: the server disagrees with what the screen showed; the item
+//              is dropped (the server stored no key for it) and the day refetched
+//   rejected   400, 403, 422 and other 4xx, and field errors: the same key would be
+//              refused the same way again, so it is never resent, only dismissed
 
 import { ApiError, ApiValidationError } from "../api/errors";
 
