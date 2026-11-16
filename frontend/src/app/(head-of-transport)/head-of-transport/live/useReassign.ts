@@ -48,6 +48,8 @@ export function reassignFailure(error: unknown): ReassignFailure {
     if (fieldErrors.driverId) {
       return failure("This driver can't take the route. Pick another driver.", { fieldErrors, reloadDrivers: true });
     }
+    // fromDriverId has no field on screen, so its message is the alert itself.
+    if (fieldErrors.fromDriverId) return failure(fieldErrors.fromDriverId, { fieldErrors });
     return failure("Check the highlighted fields and try again.", { fieldErrors });
   }
   if (!(error instanceof ApiError)) return failure(GENERIC_ERROR); // network failure
@@ -64,7 +66,11 @@ export function reassignFailure(error: unknown): ReassignFailure {
         const message = "That driver no longer exists. Pick another driver.";
         return failure(message, { fieldErrors: { driverId: message }, reloadDrivers: true });
       }
-      return failure("This run no longer exists. The list has been refreshed.", { reloadRuns: true });
+      if (detail === "Run not found") {
+        return failure("This run no longer exists. The list has been refreshed.", { reloadRuns: true });
+      }
+      // Wording we don't know (or that has drifted): say what the server said, as for a 409.
+      return failure(detail, { reloadRuns: true });
     case 409: {
       if (detail === "Only today's runs can be reassigned.") {
         return failure("Only today's runs can be reassigned.", { reloadRuns: true });
@@ -100,15 +106,25 @@ export interface ReassignPanel {
   failure: ReassignFailure | null;
   // The run the POST answered with, once it succeeded.
   reassigned: RunSummary | null;
+  // The driver the head saw: `run.driver` when the panel opened on this run, then each successful
+  // change's. The same value used for fromDriverId and the eligible-list exclusion — shown so the head
+  // sees who they're about to replace.
+  currentDriver: { id: string; firstName: string; lastName: string };
   // Resolves true on success. A second call while one is pending does nothing and resolves false.
   submit: (driverId: string, reason?: string) => Promise<boolean>;
   reloadCandidates: () => Promise<void>;
   reloadHistory: () => Promise<void>;
 }
 
-// `run` is the run as the head sees it: its driver is sent as fromDriverId, so the server refuses (409) if
-// someone changed it meanwhile. `refreshRuns` is useLivePolling's.
-export function useReassign(run: RunSummary, refreshRuns: () => Promise<void>): ReassignPanel {
+// `run` is the run as the head saw it when opening the panel: its driver is sent as fromDriverId, so the
+// server refuses (409) if someone changed it meanwhile. After a successful POST the driver it answered with
+// takes that place; a poll never does, or the guard would quietly follow someone else's change.
+// `refreshRuns` and `reportUnauthorized` are useLivePolling's.
+export function useReassign(
+  run: RunSummary,
+  refreshRuns: () => Promise<void>,
+  reportUnauthorized: () => void,
+): ReassignPanel {
   const [drivers, setDrivers] = useState<Driver[] | null>(null);
   const [routes, setRoutes] = useState<RouteSummary[] | null>(null);
   const [candidatesFailed, setCandidatesFailed] = useState(false);
@@ -126,6 +142,11 @@ export function useReassign(run: RunSummary, refreshRuns: () => Promise<void>): 
   const historyLoad = useRef(0);
 
   const runId = run.id;
+
+  // The driver the head saw: run.driver when the panel opened on this run, then each successful POST's.
+  const [seen, setSeen] = useState({ runId, driver: run.driver });
+  if (seen.runId !== runId) setSeen({ runId, driver: run.driver });
+  const seenDriver = seen.runId === runId ? seen.driver : run.driver;
 
   const reloadCandidates = useCallback(async () => {
     const load = ++candidatesLoad.current;
@@ -172,7 +193,7 @@ export function useReassign(run: RunSummary, refreshRuns: () => Promise<void>): 
     void reloadHistory();
   }, [reloadCandidates, reloadHistory]);
 
-  const currentDriverId = run.driver.id;
+  const currentDriverId = seenDriver.id;
   const candidates = useMemo(
     () => (drivers && routes ? eligibleDrivers(drivers, routes, currentDriverId) : null),
     [drivers, routes, currentDriverId],
@@ -198,6 +219,7 @@ export function useReassign(run: RunSummary, refreshRuns: () => Promise<void>): 
         const updated = await reassignRun(runId, input);
         if (!mounted.current) return true;
         setReassigned(updated);
+        setSeen({ runId, driver: updated.driver });
         // The row's driver, the audit list and who is spare all changed.
         await Promise.all([refreshRuns(), reloadHistory(), reloadCandidates()]);
         return true;
@@ -205,6 +227,8 @@ export function useReassign(run: RunSummary, refreshRuns: () => Promise<void>): 
         if (!mounted.current) return false;
         const result = reassignFailure(error);
         setFailure(result);
+        // Only /me can say whether the session is really gone; the polling hook asks it and redirects.
+        if (error instanceof ApiError && error.status === 401) reportUnauthorized();
         if (result.reloadRuns) {
           void refreshRuns();
           void reloadHistory();
@@ -216,7 +240,7 @@ export function useReassign(run: RunSummary, refreshRuns: () => Promise<void>): 
         if (mounted.current) setSubmitting(false);
       }
     },
-    [currentDriverId, refreshRuns, reloadCandidates, reloadHistory, runId],
+    [currentDriverId, refreshRuns, reloadCandidates, reloadHistory, reportUnauthorized, runId],
   );
 
   return {
@@ -227,6 +251,7 @@ export function useReassign(run: RunSummary, refreshRuns: () => Promise<void>): 
     submitting,
     failure: failureState,
     reassigned,
+    currentDriver: seenDriver,
     submit,
     reloadCandidates,
     reloadHistory,

@@ -14,6 +14,28 @@ import type {
   RunSummary,
 } from "@/lib/api/runs";
 
+// "HH:mm:ss" in the school's zone (Asia/Beirut), for when this screen last read something ("Last updated",
+// "Position as of"). These moments are the browser's own clock, not the server's, but they're shown in the
+// school's zone like every other time on this screen (formatArrival, formatWhen), so a head never has to
+// convert between two clocks on one page.
+export function formatClockTime(date: Date): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Beirut",
+  }).format(date);
+}
+
+// "Hamra (morning)" / "Hamra (afternoon)": a route's two runs share its name (docs/contracts/runs.md,
+// Run.route), and either can be IN_PROGRESS first, so both can be active together. Used wherever a run is
+// named on screen or to a screen reader (the row heading, the Reassign button, the dialog title) so two
+// rows for one route are never announced as the same thing.
+export function runLabel(run: RunSummary): string {
+  return `${run.route.name} (${run.direction === "MORNING" ? "morning" : "afternoon"})`;
+}
+
 // Why an UNAVAILABLE run has no position, from RunSummary.locationSharing (head-only nuance in the
 // contract): false is "driver not sharing", true is "no recent position" (no fix yet, or older than 5 min).
 export type UnavailableReason = "NOT_SHARING" | "NO_RECENT_POSITION";
@@ -42,9 +64,10 @@ export interface ActiveRunView {
   remainingStops: number | null;
   // Null when remainingStops is 0 or there is no location row.
   nextStop: NextStopView | null;
-  // Reserved for a lateness flag the server does not send yet (SCRUM-274 plan, gap G1). Always null until a
-  // head-of-transport endpoint provides one; map that field here. Never fill it from plannedTime and
-  // liveEstimate.
+  // Reserved for a lateness flag. The backend has no such flag for the head of transportation yet (only a
+  // parent's LATE inbox entry exists, docs/contracts/runs.md "Live ETA and stop progress"), and the
+  // contract forbids working one out here from plannedTime and the live estimate. Always null until a
+  // head-of-transport endpoint sends one; map that field here then.
   serverLateFlag: null;
 }
 

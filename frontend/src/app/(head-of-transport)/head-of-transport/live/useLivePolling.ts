@@ -12,6 +12,8 @@
 // - 403: polling stops ("forbidden"). 401: polling stops, then /me says whether the session is really gone,
 //   as the driver page does (SCRUM-273): /me 401 sends the head to /login?expired=1; /me answering
 //   anything else leaves polling stopped ("unauthorized") until `retry()`, so a stray 401 can't loop.
+//   `reportUnauthorized()` does the same for a 401 from another call on the screen (the reassign POST).
+// - The first stop wins: once stopped (say by a 403), a later 401 neither changes the reason nor asks /me.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -49,6 +51,8 @@ export interface LivePolling {
   error: LivePollingError | null;
   // Reads both now and restarts polling after a 403 or an unconfirmed 401. Does nothing once expired.
   retry: () => void;
+  // A 401 from another call on this screen: stops polling and asks /me, exactly as a polled 401 does.
+  reportUnauthorized: () => void;
   // Reads /runs now (after a reassignment). If a read is in flight it may predate the change, so one more
   // follows it; resolves when the fresh one has answered (or failed).
   refreshRuns: () => Promise<void>;
@@ -82,11 +86,14 @@ export function useLivePolling(): LivePolling {
     }
   }, []);
 
+  // False when polling was already stopped: the first reason stays.
   const stop = useCallback(
-    (reason: StopReason) => {
+    (reason: StopReason): boolean => {
+      if (stopped.current) return false;
       stopped.current = true;
       clearTimers();
       setStopReason(reason);
+      return true;
     },
     [clearTimers],
   );
@@ -130,8 +137,7 @@ export function useLivePolling(): LivePolling {
           if (error instanceof ApiError && error.status === 403) {
             stop("forbidden");
           } else if (error instanceof ApiError && error.status === 401) {
-            stop("unauthorized");
-            checkSession();
+            if (stop("unauthorized")) checkSession();
           } else {
             setFailed((current) => (current[source] ? current : { ...current, [source]: true }));
           }
@@ -191,6 +197,10 @@ export function useLivePolling(): LivePolling {
     if (!document.hidden) startTimers();
   }, [read, startTimers, stopReason]);
 
+  const reportUnauthorized = useCallback(() => {
+    if (mounted.current && stop("unauthorized")) checkSession();
+  }, [checkSession, stop]);
+
   const refreshRuns = useCallback((): Promise<void> => {
     const running = inFlight.current.runs;
     if (!running) return read("runs");
@@ -209,5 +219,5 @@ export function useLivePolling(): LivePolling {
     error = { kind: "failed", sources: SOURCES.filter((source) => failed[source]) };
   }
 
-  return { runsDay, locations, runsUpdatedAt, locationsUpdatedAt, error, retry, refreshRuns };
+  return { runsDay, locations, runsUpdatedAt, locationsUpdatedAt, error, retry, reportUnauthorized, refreshRuns };
 }

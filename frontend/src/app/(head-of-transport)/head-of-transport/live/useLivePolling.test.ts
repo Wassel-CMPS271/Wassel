@@ -385,6 +385,73 @@ describe("useLivePolling: 401", () => {
   });
 });
 
+describe("useLivePolling: the first stop reason stays", () => {
+  it("a 401 after a 403 keeps forbidden and doesn't ask /me", async () => {
+    const runs = deferred<RunsDay>();
+    const locs = deferred<RunLocation[]>();
+    runsDay.mockReturnValueOnce(runs.promise);
+    runLocations.mockReturnValueOnce(locs.promise);
+    const { result } = renderHook(() => useLivePolling());
+    await act(async () => runs.reject(new ApiError(403, "Access denied")));
+    await act(async () => locs.reject(new ApiError(401)));
+    expect(result.current.error).toEqual({ kind: "forbidden" });
+    expect(meMock).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("a 403 after a 401 keeps unauthorized", async () => {
+    const runs = deferred<RunsDay>();
+    const locs = deferred<RunLocation[]>();
+    runsDay.mockReturnValueOnce(runs.promise);
+    runLocations.mockReturnValueOnce(locs.promise);
+    const { result } = renderHook(() => useLivePolling());
+    await act(async () => runs.reject(new ApiError(401)));
+    await act(async () => locs.reject(new ApiError(403, "Access denied")));
+    expect(result.current.error).toEqual({ kind: "unauthorized" });
+    expect(meMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useLivePolling: reportUnauthorized (a 401 from the reassign POST)", () => {
+  it("stops polling and, once /me confirms it, goes to /login?expired=1", async () => {
+    meMock.mockRejectedValue(new ApiError(401));
+    const { result } = renderHook(() => useLivePolling());
+    await flush();
+    act(() => result.current.reportUnauthorized());
+    await flush();
+    expect(meMock).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith("/login?expired=1");
+    expect(result.current.error).toEqual({ kind: "expired" });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("when /me says the session is fine: stopped without redirecting until retry()", async () => {
+    const { result } = renderHook(() => useLivePolling());
+    await flush();
+    act(() => result.current.reportUnauthorized());
+    await flush();
+    expect(replace).not.toHaveBeenCalled();
+    expect(result.current.error).toEqual({ kind: "unauthorized" });
+    await advance(RUNS_POLL_MS * 2);
+    expect(runsDay).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.retry());
+    await flush();
+    expect(result.current.error).toBeNull();
+    expect(runsDay).toHaveBeenCalledTimes(2);
+  });
+
+  it("does nothing once polling has stopped for a 403", async () => {
+    runsDay.mockRejectedValueOnce(new ApiError(403, "Access denied"));
+    const { result } = renderHook(() => useLivePolling());
+    await flush();
+    act(() => result.current.reportUnauthorized());
+    await flush();
+    expect(result.current.error).toEqual({ kind: "forbidden" });
+    expect(meMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("useLivePolling: refreshRuns", () => {
   it("reads /runs now and resolves with the new answer in place", async () => {
     const { result } = renderHook(() => useLivePolling());

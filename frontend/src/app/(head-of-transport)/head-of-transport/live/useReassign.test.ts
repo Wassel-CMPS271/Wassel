@@ -97,6 +97,7 @@ function deferred<T>() {
 }
 
 let refreshRuns: ReturnType<typeof vi.fn<() => Promise<void>>>;
+let reportUnauthorized: ReturnType<typeof vi.fn<() => void>>;
 
 beforeEach(() => {
   reassign.mockReset().mockResolvedValue(run({ driver: NADIM }));
@@ -104,10 +105,11 @@ beforeEach(() => {
   drivers.mockReset().mockResolvedValue([driver(KARIM.id), driver(NADIM.id), driver("d-busy"), driver("d-new", "invited")]);
   routes.mockReset().mockResolvedValue([route("route-1", KARIM.id), route("route-2", "d-busy")]);
   refreshRuns = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+  reportUnauthorized = vi.fn<() => void>();
 });
 
 async function renderPanel(summary = run()) {
-  const hook = renderHook(({ current }) => useReassign(current, refreshRuns), { initialProps: { current: summary } });
+  const hook = renderHook(({ current }) => useReassign(current, refreshRuns, reportUnauthorized), { initialProps: { current: summary } });
   await waitFor(() => expect(hook.result.current.candidates).not.toBeNull());
   await waitFor(() => expect(hook.result.current.history).not.toBeNull());
   return hook;
@@ -122,6 +124,21 @@ describe("reassignFailure: the contract's error table", () => {
       reloadRuns: false,
       reloadDrivers: false,
     });
+  });
+
+  it("400 errors.fromDriverId: no field shows it, so it is the alert's message", () => {
+    expect(reassignFailure(new ApiValidationError({ fromDriverId: "must not be null" }))).toEqual({
+      message: "must not be null",
+      fieldErrors: { fromDriverId: "must not be null" },
+      reloadRuns: false,
+      reloadDrivers: false,
+    });
+  });
+
+  it("400 errors.driverId wins over errors.fromDriverId", () => {
+    expect(
+      reassignFailure(new ApiValidationError({ driverId: "must not be null", fromDriverId: "must not be null" })),
+    ).toMatchObject({ message: "This driver can't take the route. Pick another driver.", reloadDrivers: true });
   });
 
   it("400 with only a detail (malformed body): the generic message", () => {
@@ -150,6 +167,18 @@ describe("reassignFailure: the contract's error table", () => {
       reloadDrivers: true,
     });
   });
+
+  it.each(["Run not found.", "run not found", "Driver not found", "Driver does not exist"])(
+    "404 with wording the panel doesn't know (%s): shown as sent, never \"run no longer exists\"",
+    (detail) => {
+      expect(reassignFailure(new ApiError(404, detail))).toEqual({
+        message: detail,
+        fieldErrors: {},
+        reloadRuns: true,
+        reloadDrivers: false,
+      });
+    },
+  );
 
   it("409 detail, not today's run", () => {
     expect(reassignFailure(new ApiError(409, "Only today's runs can be reassigned."))).toMatchObject({
@@ -243,7 +272,7 @@ describe("useReassign: loading", () => {
   it("reports failed loads separately, and reloads on request", async () => {
     drivers.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     history.mockRejectedValueOnce(new ApiError(500));
-    const { result } = renderHook(() => useReassign(run(), refreshRuns));
+    const { result } = renderHook(() => useReassign(run(), refreshRuns, reportUnauthorized));
     await waitFor(() => expect(result.current.candidatesFailed).toBe(true));
     await waitFor(() => expect(result.current.historyFailed).toBe(true));
     expect(result.current.candidates).toBeNull();
@@ -302,12 +331,32 @@ describe("useReassign: submit", () => {
     expect(result.current.submitting).toBe(false);
   });
 
-  it("the run's counts, state and startedAt in the answer are the same run's (history preserved)", async () => {
+  it("takes counts, state and startedAt from the server's answer, not recomputed from the run it was given (S7)", async () => {
+    // Different from run()'s own counts/state/startedAt, so an equal result can only have come from the
+    // server's response — proving the hook doesn't substitute or reset these from the `run` prop it holds.
+    const serverAnswer = run({
+      driver: NADIM,
+      counts: { students: 5, absent: 1, pickedUp: 4, droppedOff: 1, notPresent: 0 },
+      state: "IN_PROGRESS",
+      startedAt: "2026-11-16T05:05:00Z",
+    });
+    reassign.mockResolvedValueOnce(serverAnswer);
     const { result } = await renderPanel();
     await act(async () => {
       await result.current.submit(NADIM.id);
     });
-    expect(result.current.reassigned).toEqual({ ...run(), driver: NADIM });
+    expect(result.current.reassigned).toEqual(serverAnswer);
+    expect(result.current.reassigned?.counts).not.toEqual(run().counts);
+    expect(result.current.reassigned?.startedAt).not.toBe(run().startedAt);
+  });
+
+  it("currentDriver starts as the run's driver and becomes the server's after a successful change (S4)", async () => {
+    const { result } = await renderPanel();
+    expect(result.current.currentDriver).toEqual(KARIM);
+    await act(async () => {
+      await result.current.submit(NADIM.id);
+    });
+    expect(result.current.currentDriver).toEqual(NADIM);
   });
 
   it("a blank reason is left out of the body", async () => {
@@ -316,10 +365,11 @@ describe("useReassign: submit", () => {
       await result.current.submit(NADIM.id, "   ");
     });
     expect(reassign).toHaveBeenCalledWith("run-1", { driverId: NADIM.id, fromDriverId: KARIM.id });
+    // The first POST made Nadim the driver, so he is the one the second replaces.
     await act(async () => {
-      await result.current.submit(NADIM.id);
+      await result.current.submit("d-walid");
     });
-    expect(reassign).toHaveBeenLastCalledWith("run-1", { driverId: NADIM.id, fromDriverId: KARIM.id });
+    expect(reassign).toHaveBeenLastCalledWith("run-1", { driverId: "d-walid", fromDriverId: NADIM.id });
   });
 
   it("a reason over 200 characters is refused before sending", async () => {
@@ -465,13 +515,93 @@ describe("useReassign: submit", () => {
     expect(history).toHaveBeenCalledTimes(1);
   });
 
-  it("sends the driver of the run as it is now, after a refresh changed it", async () => {
+  it("keeps sending the driver the head saw when a poll changes the run's driver", async () => {
     const { result, rerender } = await renderPanel();
     rerender({ current: run({ driver: NADIM }) });
     await act(async () => {
+      await result.current.submit("d-walid");
+    });
+    expect(reassign).toHaveBeenCalledWith("run-1", { driverId: "d-walid", fromDriverId: KARIM.id });
+  });
+
+  it("submit twice in one panel: the second sends the driver the first POST answered with", async () => {
+    const { result } = await renderPanel();
+    // After the first change Nadim is on route-1 and Karim is spare.
+    drivers.mockResolvedValue([driver(KARIM.id), driver(NADIM.id), driver("d-walid"), driver("d-busy")]);
+    routes.mockResolvedValue([route("route-1", NADIM.id), route("route-2", "d-busy")]);
+    await act(async () => {
+      expect(await result.current.submit(NADIM.id)).toBe(true);
+    });
+
+    reassign.mockResolvedValueOnce(run({ driver: { id: "d-walid", firstName: "Walid", lastName: "Saad" } }));
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.submit("d-walid");
+    });
+    expect(ok).toBe(true);
+    expect(reassign).toHaveBeenLastCalledWith("run-1", { driverId: "d-walid", fromDriverId: NADIM.id });
+    expect(result.current.failure).toBeNull();
+    expect(result.current.reassigned?.driver.id).toBe("d-walid");
+  });
+
+  it("after a reassignment the previous driver, now spare, can be picked again and the new one can't", async () => {
+    const { result } = await renderPanel();
+    expect(result.current.candidates?.map((d) => d.id)).not.toContain(KARIM.id);
+    routes.mockResolvedValue([route("route-1", NADIM.id), route("route-2", "d-busy")]);
+    await act(async () => {
+      await result.current.submit(NADIM.id);
+    });
+    expect(result.current.candidates?.map((d) => d.id)).toEqual([KARIM.id]);
+
+    await act(async () => {
       await result.current.submit(KARIM.id);
     });
-    expect(reassign).toHaveBeenCalledWith("run-1", { driverId: KARIM.id, fromDriverId: NADIM.id });
+    expect(reassign).toHaveBeenLastCalledWith("run-1", { driverId: KARIM.id, fromDriverId: NADIM.id });
+  });
+
+  it("a failed POST leaves the driver the head saw unchanged", async () => {
+    const { result } = await renderPanel();
+    reassign.mockRejectedValueOnce(new ApiError(500));
+    await act(async () => {
+      await result.current.submit(NADIM.id);
+    });
+    await act(async () => {
+      await result.current.submit(NADIM.id);
+    });
+    expect(reassign).toHaveBeenLastCalledWith("run-1", { driverId: NADIM.id, fromDriverId: KARIM.id });
+  });
+
+  it("another run starts from that run's driver", async () => {
+    const { result, rerender } = await renderPanel();
+    rerender({ current: run({ id: "run-2", driver: NADIM }) });
+    await act(async () => {
+      await result.current.submit(KARIM.id);
+    });
+    expect(reassign).toHaveBeenLastCalledWith("run-2", { driverId: KARIM.id, fromDriverId: NADIM.id });
+  });
+
+  it("a 401 on the POST hands over to the polling hook's /me check", async () => {
+    const { result } = await renderPanel();
+    reassign.mockRejectedValueOnce(new ApiError(401));
+    await act(async () => {
+      await result.current.submit(NADIM.id);
+    });
+    expect(reportUnauthorized).toHaveBeenCalledTimes(1);
+    expect(result.current.failure?.message).toBe("Your session has expired. Please sign in again.");
+  });
+
+  it("other failures (403, 409, network) don't report a 401", async () => {
+    const { result } = await renderPanel();
+    reassign
+      .mockRejectedValueOnce(new ApiError(403, "Access denied"))
+      .mockRejectedValueOnce(new ApiError(409, "Only today's runs can be reassigned."))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        await result.current.submit(NADIM.id);
+      });
+    }
+    expect(reportUnauthorized).not.toHaveBeenCalled();
   });
 
   it("an answer after unmount changes nothing and doesn't refetch", async () => {
