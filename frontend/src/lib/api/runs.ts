@@ -11,6 +11,7 @@
 //   GET  /api/head-of-transport/absences?date=                   -> AbsentStudent[] (today when date is omitted)
 //   POST /api/head-of-transport/runs/{runId}/reassignments  ReassignInput -> RunSummary (SCRUM-264; 201 changed, 200 already that driver)
 //   GET  /api/head-of-transport/runs/{runId}/reassignments       -> Reassignment[] (newest first)
+//   GET  /api/head-of-transport/runs/locations                   -> RunLocation[] (SCRUM-261/262, today's runs IN_PROGRESS)
 //
 // Dates are "YYYY-MM-DD" and times of day "HH:mm", both school-local (Asia/Beirut).
 // Moments (startedAt, endedAt, confirmation.at) are ISO-8601 UTC with a "Z".
@@ -74,6 +75,9 @@ export interface RunSummary {
   vehicle: RouteVehicle;
   driver: RouteDriver;
   counts: RunCounts;
+  // true while the driver is sharing this run's position. Only the driver and the head of
+  // transportation get this; a parent never learns why a position is missing.
+  locationSharing: boolean;
 }
 
 export interface Run extends RunSummary {
@@ -133,6 +137,47 @@ export interface Reassignment {
   reason: string | null;
 }
 
+// LIVE: a fix up to 60s old. STALE: 60s to 5 minutes old, position kept. UNAVAILABLE: no row, sharing off,
+// no fix yet, or older than 5 minutes (position null). Decide what to draw from this, never from position alone.
+export type LocationStatus = "LIVE" | "STALE" | "UNAVAILABLE";
+
+// Present exactly when status is LIVE or STALE. receivedAt is the server's moment; ageSeconds is the whole
+// seconds between it and the server's clock when the answer was made, so a client never needs its own clock.
+export interface BusPosition {
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  receivedAt: string; // moment
+  ageSeconds: number;
+}
+
+// arrivesAt is a moment (UTC, "Z"); secondsAway is never negative, so a countdown never needs the client's clock.
+// Null unless status is LIVE, and null when the target stop has no pin.
+export interface Estimate {
+  arrivesAt: string; // moment
+  secondsAway: number;
+}
+
+// The first stop still to do in the run's order; null exactly when remainingStops is 0.
+export interface NextStop {
+  studentId: string;
+  firstName: string;
+  lastName: string;
+  plannedTime: string | null; // "HH:mm", school-local. Null on an afternoon run or with no planned time.
+  estimate: Estimate | null;
+}
+
+// The head of transportation's live view of today's runs IN_PROGRESS (SCRUM-261/262). No order: match by
+// runId. [] on a holiday. UNAVAILABLE + RunSummary.locationSharing === false means "not sharing"; with it
+// true, "no fresh position".
+export interface RunLocation {
+  runId: string;
+  status: LocationStatus;
+  position: BusPosition | null;
+  remainingStops: number; // stops still to do (neither done nor skippable)
+  nextStop: NextStop | null;
+}
+
 export function getDriverToday(): Promise<DriverDay> {
   return request<DriverDay>("/api/driver/runs/today");
 }
@@ -179,6 +224,12 @@ export function reassignRun(runId: string, input: ReassignInput): Promise<RunSum
 
 export function getRunReassignments(runId: string): Promise<Reassignment[]> {
   return request<Reassignment[]>(`/api/head-of-transport/runs/${runId}/reassignments`);
+}
+
+// The live control screen (SCRUM-274): position, progress and ETA for every run of the school that is
+// IN_PROGRESS today, in no particular order. [] on a holiday. Join with getRunsDay() on run.id === runId.
+export function getRunLocations(): Promise<RunLocation[]> {
+  return request<RunLocation[]>("/api/head-of-transport/runs/locations");
 }
 
 function dateQuery(date?: string): string {
