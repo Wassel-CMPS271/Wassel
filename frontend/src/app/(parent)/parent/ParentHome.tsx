@@ -31,7 +31,7 @@ export interface ParentHomeProps {
 }
 
 // Optional compositions are supplied only after their real integrations are ready.
-// Production supplies accepted clients; omitted destinations remain non-interactive.
+// Each authenticated page supplies its accepted clients; unavailable destinations stay non-interactive.
 export function ParentHome({ accountKey = "current-parent", ...features }: ParentHomeProps) {
   return <ParentHomeContent key={accountKey} {...features} />;
 }
@@ -76,6 +76,40 @@ function ParentHomeContent({ renderTracking, renderInbox }: Omit<ParentHomeProps
       } else setRefreshError(true);
     } finally { busy.current = false; if (mounted.current) setRefreshing(false); }
   }
+
+  // Keep run start/end, direction and assignment changes current without a
+  // reload. This is an authenticated child-list refresh, never a location read
+  // for a child that the server says is not waiting.
+  const trackingChild = view.kind === "tracking" ? selectedChild?.studentId : null;
+  useEffect(() => {
+    if (!trackingChild) return;
+    let active = true, inFlight = false, stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      if (!active || inFlight || stopped || document.hidden) return;
+      inFlight = true;
+      try {
+        const children = await loadParentChildren();
+        if (active) { setState({ kind: "loaded", children }); setRefreshError(false); }
+      } catch (error) {
+        if (!active) return;
+        if (error instanceof ApiError && [401, 403].includes(error.status)) {
+          stopped = true;
+          setState({ kind: "failed", reason: error.status === 401 ? "expired" : "forbidden" });
+        } else setRefreshError(true);
+      } finally {
+        inFlight = false;
+        if (active && !stopped && !document.hidden) timer = setTimeout(() => void poll(), 60_000);
+      }
+    };
+    const visibilityChanged = () => {
+      clearTimeout(timer);
+      if (!document.hidden) void poll();
+    };
+    if (!document.hidden) timer = setTimeout(() => void poll(), 60_000);
+    document.addEventListener("visibilitychange", visibilityChanged);
+    return () => { active = false; clearTimeout(timer); document.removeEventListener("visibilitychange", visibilityChanged); };
+  }, [trackingChild]);
 
   function navigate(next: View) {
     setView(next);
@@ -131,6 +165,10 @@ function ParentHomeContent({ renderTracking, renderInbox }: Omit<ParentHomeProps
         </Card>
       )}
 
+      {view.kind === "tracking" && refreshError && <div role="alert" className="flex flex-col items-start" style={{ gap: spacing.sm }}>
+        <p>Couldn&apos;t refresh run status. Showing the last loaded status.</p>
+        <Button variant="secondary" disabled={refreshing} onClick={refresh} style={navStyle}>Retry run status</Button>
+      </div>}
       {state.kind === "loaded" && (view.kind === "absences" || view.kind === "tracking") && <div className="flex min-w-0 flex-col" style={{ gap: spacing.md }}>
         <label className="flex min-w-0 flex-col text-sm" style={{ gap: spacing.sm }}>Choose child for {view.kind === "tracking" ? "bus tracking" : "absences"}
           <select value={selectedChild?.studentId ?? ""} className={`w-full min-w-0 rounded-md ${focusRingClass}`} style={{ ...focusRingStyle, minHeight: sizing.tapTarget, padding: spacing.sm, backgroundColor: darkTheme.surface.input, color: darkTheme.text.primary }} onChange={event => {

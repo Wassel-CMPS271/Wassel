@@ -21,14 +21,15 @@ import {
 } from "@/styles/tokens";
 
 interface NavItem {
+  id: "children" | "route" | "profile";
   label: string;
   Icon: ComponentType<{ size?: number }>;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "My children", Icon: StudentIcon },
-  { label: "School route", Icon: VehicleIcon },
-  { label: "Profile", Icon: SettingsIcon },
+  { id: "children", label: "My children", Icon: StudentIcon },
+  { id: "route", label: "School route", Icon: VehicleIcon },
+  { id: "profile", label: "Profile", Icon: SettingsIcon },
 ];
 
 export default function ParentLayout({
@@ -105,11 +106,11 @@ function ParentShell({ children }: { children: React.ReactNode }) {
             className="flex flex-col"
             style={{ gap: spacing.xs }}
           >
-            {NAV_ITEMS.map(({ label, Icon }) => label === "My children" ? (
-              <Link key={label} href="/parent" onClick={resetHome} className="flex items-center text-sm rounded-md focus-visible:outline focus-visible:outline-2" style={{ gap: spacing.sm, padding: `${spacing.sm} ${spacing.md}`, minHeight: sizing.tapTarget, color: colors.primary[300], outlineColor: colors.primary[400] }}><Icon /><span>{label}</span></Link>
+            {NAV_ITEMS.map(({ id, label, Icon }) => id === "children" ? (
+              <Link key={id} href="/parent" onClick={resetHome} className="flex items-center text-sm rounded-md focus-visible:outline focus-visible:outline-2" style={{ gap: spacing.sm, padding: `${spacing.sm} ${spacing.md}`, minHeight: sizing.tapTarget, color: colors.primary[300], outlineColor: colors.primary[400] }}><Icon /><span>{label}</span></Link>
             ) : (
               <span
-                key={label}
+                key={id}
                 aria-disabled="true"
                 title="Coming soon"
                 className="flex items-center text-sm"

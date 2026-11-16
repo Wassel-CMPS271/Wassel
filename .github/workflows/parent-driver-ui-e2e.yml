@@ -12,6 +12,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   parent-driver-ui-e2e:
+    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base.ref
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -26,17 +27,13 @@ jobs:
           --health-cmd "pg_isready -U postgres -d wassel_e2e"
           --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
-      - name: Refuse stale driver review evidence
-        shell: bash
-        run: |
-          actual="$(git ls-remote https://github.com/Wassel-CMPS271/Wassel.git refs/pull/144/head | cut -f1)"
-          test "$actual" = "d1ad8229318b77562472fe4b698143180c24ac0a" || { echo "PR 144 changed; independently review and verify its new head before updating the pin."; exit 1; }
       - uses: actions/checkout@v4
-      # Immutable reviewed candidate; never copies source into the Parent branch.
+      # Immutable reviewed candidate, independent of later PR-head movement.
+      # The runner still verifies its exact HEAD and tracked source cleanliness.
       - uses: actions/checkout@v4
         with:
           repository: Wassel-CMPS271/Wassel
-          ref: d1ad8229318b77562472fe4b698143180c24ac0a
+          ref: 2cb70da8087b924eef8f920c84927c29535e6851
           path: tmp/parent-driver-candidate
           persist-credentials: false
       - uses: actions/setup-java@v4
@@ -60,7 +57,7 @@ jobs:
         working-directory: frontend
         env:
           E2E_DRIVER_CHECKOUT: ${{ github.workspace }}/tmp/parent-driver-candidate
-          E2E_DRIVER_EXPECTED_HEAD: d1ad8229318b77562472fe4b698143180c24ac0a
+          E2E_DRIVER_EXPECTED_HEAD: 2cb70da8087b924eef8f920c84927c29535e6851
           E2E_MAVEN_CMD: mvn
           E2E_DB_URL: jdbc:postgresql://127.0.0.1:5432/wassel_e2e
           E2E_DB_USERNAME: postgres
