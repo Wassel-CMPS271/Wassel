@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { Button, type ButtonVariant } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { CheckIcon } from "@/components/ui/icons";
 import type { ConfirmationStatus, RunStop } from "@/lib/api/runs";
-import { colors, darkTheme, radius, sizing, spacing } from "@/styles/tokens";
+import type { QueueItem } from "@/lib/offline/queue";
+import { colors, darkTheme, queuePill, radius, sizing, spacing } from "@/styles/tokens";
 import type { StopState } from "./today";
 
 const CONFIRMATION_LABELS: Record<ConfirmationStatus, string> = {
@@ -81,6 +82,175 @@ function actionVariant(state: StopState, position: number): ButtonVariant {
   return state === "done" ? "ghost" : "secondary";
 }
 
+// This device's clock, labelled as such: it's the tap time, not the server's
+// (the server records its own time and never reads occurredAt, runs.md "Known
+// limits"), so the screen never implies the server recorded this exact moment.
+function formatLocalTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+const QUEUE_LABELS: Record<QueueItem["state"], string> = {
+  queued: "Saved on phone",
+  sending: "Sending…",
+  synced: "Sent",
+  conflict: "Conflict",
+  error: "Couldn't send",
+  blocked: "Waiting to send",
+};
+
+function queuePillStyle(state: QueueItem["state"]): CSSProperties | undefined {
+  switch (state) {
+    case "sending":
+      return { backgroundColor: queuePill.sendingBg, color: queuePill.sendingText };
+    case "synced":
+      return { backgroundColor: queuePill.syncedBg, color: queuePill.syncedText };
+    case "error":
+      return { backgroundColor: queuePill.errorBg, color: queuePill.errorText };
+    case "conflict":
+      // A conflict is a warning like "Absent", so it reuses that tint rather
+      // than a new one (tokens.ts).
+      return { backgroundColor: darkTheme.runStop.absentBg, color: darkTheme.runStop.absentText };
+    case "queued":
+    case "blocked":
+      return undefined; // The plain neutral pill.
+  }
+}
+
+// One queue item's status for this stop: a pill, the local tap time, and Try
+// again (a retryable failure, resent with the same key) or Dismiss (a refused
+// tap, which the same key can't fix, or an earlier day's) behind a confirm
+// step — the same inline pattern as RevokeAccessControl (Escape cancels, focus
+// moves to Confirm and back to the triggering button).
+function QueueStatus({
+  item,
+  name,
+  onRetry,
+  onDismiss,
+}: {
+  item: QueueItem;
+  name: string;
+  onRetry: () => void;
+  onDismiss: () => void;
+}) {
+  const [confirmingDismiss, setConfirmingDismiss] = useState(false);
+  const retryable = item.state === "error" && item.lastError?.kind === "retryable";
+  const rejected = item.state === "error" && item.lastError?.kind === "rejected";
+  const dismissable = item.state === "conflict" || rejected;
+  const dismissRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const restoreFocusRef = useRef(false);
+
+  useEffect(() => {
+    if (confirmingDismiss) confirmRef.current?.focus();
+  }, [confirmingDismiss]);
+
+  useEffect(() => {
+    if (!confirmingDismiss && restoreFocusRef.current) {
+      restoreFocusRef.current = false;
+      dismissRef.current?.focus();
+    }
+  }, [confirmingDismiss]);
+
+  function cancelDismiss() {
+    restoreFocusRef.current = true;
+    setConfirmingDismiss(false);
+  }
+
+  function confirmDismiss() {
+    restoreFocusRef.current = true;
+    setConfirmingDismiss(false);
+    onDismiss();
+  }
+
+  return (
+    <div className="flex flex-col" style={{ gap: spacing.xs }}>
+      {/* aria-live, not role="status": this already sits inside the stop's
+          labelled group, and a second status landmark per stop would be noisy
+          on a run with many stops. Announces queued -> sending -> sent/error
+          without moving focus. */}
+      <div
+        className="flex items-center flex-wrap"
+        style={{ gap: spacing.sm }}
+        aria-live="polite"
+      >
+        <Pill style={queuePillStyle(item.state)}>
+          {item.state === "synced" && <CheckIcon size={14} />}
+          {QUEUE_LABELS[item.state]}
+          {" · "}
+          {CONFIRMATION_LABELS[item.status]}
+        </Pill>
+        <span className="text-xs" style={{ color: darkTheme.text.muted }}>
+          {formatLocalTime(item.occurredAt)} (local time)
+        </span>
+      </div>
+
+      {item.state === "conflict" && item.lastError && (
+        <p className="text-sm" style={{ color: darkTheme.runStop.absentText }}>
+          {item.lastError.message}
+        </p>
+      )}
+
+      {rejected && item.lastError && (
+        <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>
+          {item.lastError.message}
+        </p>
+      )}
+
+      {retryable && (
+        <Button
+          data-stop-retry
+          ref={dismissRef}
+          variant="secondary"
+          onClick={onRetry}
+          style={{ minHeight: sizing.tapTarget, alignSelf: "flex-start" }}
+        >
+          Try again
+        </Button>
+      )}
+
+      {dismissable &&
+        (confirmingDismiss ? (
+          <div
+            role="group"
+            aria-label="Confirm dismiss"
+            className="flex items-center flex-wrap"
+            style={{ gap: spacing.sm }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") cancelDismiss();
+            }}
+          >
+            <span className="text-sm" style={{ color: darkTheme.text.secondary }}>
+              Remove this from the list on this phone? It won&apos;t be sent.
+            </span>
+            <Button
+              ref={confirmRef}
+              variant="danger"
+              aria-label={`Confirm dismiss saved tap for ${name}`}
+              onClick={confirmDismiss}
+              style={{ minHeight: sizing.tapTarget }}
+            >
+              Confirm
+            </Button>
+            <Button variant="ghost" onClick={cancelDismiss} style={{ minHeight: sizing.tapTarget }}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button
+            data-stop-retry
+            ref={dismissRef}
+            variant="secondary"
+            aria-label={`Dismiss saved tap for ${name}`}
+            onClick={() => setConfirmingDismiss(true)}
+            style={{ minHeight: sizing.tapTarget, alignSelf: "flex-start" }}
+          >
+            Dismiss
+          </Button>
+        ))}
+    </div>
+  );
+}
+
 export interface StopCardProps {
   stop: RunStop;
   state: StopState;
@@ -88,12 +258,24 @@ export interface StopCardProps {
   // The confirmations still allowed for this stop (nextConfirmations in
   // today.ts); none hides the buttons.
   actions: ConfirmationStatus[];
-  // The status whose request is in flight for this stop, or null.
+  // Online-only fallback (a tap the phone couldn't save): the status whose
+  // request is in flight for this stop, or null.
   pendingStatus: ConfirmationStatus | null;
-  // This stop's last failed confirmation, if any.
+  // Online-only fallback: this stop's last failed confirmation, if any.
   error: string | null;
+  // The server's detail after it refused this stop's saved tap with a 404/409
+  // (the queue dropped it and the day was reloaded), or null.
+  notice?: string | null;
   onConfirm: (status: ConfirmationStatus) => void;
   onRetry: () => void;
+  // Offline queue (SCRUM-273): the item representing this stop's confirmation
+  // attempt right now (the earliest one still unsent, or a just-synced one
+  // about to be pruned), or null/undefined when there's nothing to show —
+  // every past attempt has synced and been pruned, or was dropped after a
+  // 404/409 (see notice), or the tap went through the online-only fallback.
+  queueItem?: QueueItem | null;
+  onRetryQueueItem?: () => void;
+  onDismissQueueItem?: () => void;
 }
 
 export function StopCard({
@@ -103,13 +285,19 @@ export function StopCard({
   actions,
   pendingStatus,
   error,
+  notice,
   onConfirm,
   onRetry,
+  queueItem,
+  onRetryQueueItem,
+  onDismissQueueItem,
 }: StopCardProps) {
   const isNext = state === "next";
   const isDone = state === "done";
   const name = `${stop.firstName} ${stop.lastName}`;
-  const pending = pendingStatus !== null;
+  // "Saving…" and the disabled buttons cover both an online attempt in flight
+  // and a queued item being sent, so the driver can't double-tap either way.
+  const pending = pendingStatus !== null || queueItem?.state === "sending";
   const hasPin = stop.latitude !== null && stop.longitude !== null;
   const hasPhone = stop.guardianPhone.trim().length > 0;
 
@@ -248,7 +436,7 @@ export function StopCard({
             </div>
           )}
 
-          {(actions.length > 0 || error) && (
+          {(actions.length > 0 || error || notice || queueItem) && (
             <div
               role="group"
               aria-label={`Confirm ${name}`}
@@ -287,6 +475,19 @@ export function StopCard({
                     Try again
                   </Button>
                 </div>
+              )}
+              {notice && (
+                <p role="alert" className="text-sm" style={{ color: darkTheme.runStop.absentText }}>
+                  {notice}
+                </p>
+              )}
+              {queueItem && (
+                <QueueStatus
+                  item={queueItem}
+                  name={name}
+                  onRetry={() => onRetryQueueItem?.()}
+                  onDismiss={() => onDismissQueueItem?.()}
+                />
               )}
             </div>
           )}
