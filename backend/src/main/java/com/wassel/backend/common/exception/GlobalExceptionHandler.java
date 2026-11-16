@@ -20,6 +20,7 @@ import com.wassel.backend.drivers.exception.DriverStatusConflictException;
 import com.wassel.backend.drivers.exception.VehicleAssignmentConflictException;
 import com.wassel.backend.reports.exception.InvalidTotalsRangeException;
 import com.wassel.backend.routes.exception.ActiveRunConflictException;
+import com.wassel.backend.routes.exception.BestRouteConflictException;
 import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
 import com.wassel.backend.routes.exception.RouteCapacityExceededException;
@@ -38,6 +39,7 @@ import com.wassel.backend.students.exception.InvalidStopOrderException;
 import com.wassel.backend.students.exception.StudentAlreadyExistsException;
 import com.wassel.backend.students.exception.StudentNotActiveException;
 import com.wassel.backend.students.exception.StudentNotFoundException;
+import com.wassel.backend.students.exception.StudentStatusConflictException;
 import com.wassel.backend.users.exception.EmailAlreadyInUseException;
 import com.wassel.backend.users.exception.RevokeNotAllowedException;
 import com.wassel.backend.users.exception.UserNotFoundException;
@@ -243,6 +245,13 @@ public class GlobalExceptionHandler {
 
 	// No "errors" map: the contract has this as a plain detail naming the current count and the
 	// capacity, not a field error.
+	// A plain detail, as the roster contract has it: it says what to do first (restore, take off the route, set a pin).
+	@ExceptionHandler({ StudentStatusConflictException.class, BestRouteConflictException.class })
+	public ProblemDetail handleRosterConflict(RuntimeException ex) {
+		logRejected(ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
 	@ExceptionHandler(RouteCapacityExceededException.class)
 	public ProblemDetail handleRouteCapacityExceeded(RouteCapacityExceededException ex) {
 		logRejected(ex);
