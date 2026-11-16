@@ -193,6 +193,12 @@ public class NotificationDeliveryService {
 			skip(id, DeliveryReason.NO_RECIPIENT);
 			return false;
 		}
+		if (!event.getParentUserId().equals(child.parentUserId())) {
+			// The head moved the child to another parent (or unlinked them) after the tap: the entry stays in the inbox, but a
+			// new email to the old parent would name the child to someone no longer linked to them.
+			skip(id, DeliveryReason.NO_RECIPIENT);
+			return false;
+		}
 		String body = DeliveryEmail.body(event.getType(), child.firstName(), RunDirection.valueOf(event.getDirection()),
 				event.getCreatedAt(), clock.getZone(), frontendBaseUrl);
 		try {

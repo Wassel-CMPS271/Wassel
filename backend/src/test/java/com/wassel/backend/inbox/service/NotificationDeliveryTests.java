@@ -427,6 +427,33 @@ class NotificationDeliveryTests extends DeliverySupport {
 	}
 
 	@Test
+	void aChildMovedToAnotherParentBetweenTheTapAndTheTickIsNotEmailedToEitherAndTheEntryStays() throws Exception {
+		Scene lina = aChild("Lina");
+		tap(lina, "PICKED_UP");
+		UUID newParent = aParent();
+		jdbc.update("UPDATE students SET parent_user_id = ? WHERE id = ?", newParent, lina.child());
+
+		deliveries.deliverDue();
+
+		assertEquals(0, mailer.calls());
+		assertEquals(DeliveryStatus.SKIPPED, theDelivery().getStatus());
+		assertEquals(DeliveryReason.NO_RECIPIENT, theDelivery().getReason());
+		assertEquals(1, inboxRepository.count(), "the entry stays with the parent it was made for");
+	}
+
+	@Test
+	void aChildWhoseParentWasRemovedBetweenTheTapAndTheTickIsNotEmailed() throws Exception {
+		Scene lina = aChild("Lina");
+		tap(lina, "PICKED_UP");
+		jdbc.update("UPDATE students SET parent_user_id = NULL WHERE id = ?", lina.child());
+
+		deliveries.deliverDue();
+
+		assertEquals(0, mailer.calls());
+		assertEquals(DeliveryReason.NO_RECIPIENT, theDelivery().getReason());
+	}
+
+	@Test
 	void anEntryThatIsGoneEndsAtOnceAsNoRecipient() throws Exception {
 		Scene lina = aChild("Lina");
 		tap(lina, "PICKED_UP");

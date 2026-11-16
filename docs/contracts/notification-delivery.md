@@ -53,7 +53,7 @@ A delivery goes `PENDING`, then `SENDING` for the length of one attempt, then `S
 
 A delivery is `SKIPPED`, with no email, when:
 
-- `NO_RECIPIENT`: the parent has no account in the school, the account is disabled (revoked), the address is blank, or the child (or the entry) can no longer be found in the school, so there is no name to put in the email.
+- `NO_RECIPIENT`: the parent has no account in the school, the account is disabled (revoked), the address is blank, or the child (or the entry) can no longer be found in the school, so there is no name to put in the email, or the child is **no longer linked to the parent the entry was made for** (the head moved them to another parent or removed the link after the tap). The entry stays in the inbox of the parent it was made for; only the new email is withheld, because it would name the child to someone no longer linked to them.
 - `PREFERENCE_OFF`: the parent turned that type off **after** the entry was made and before the email went out. The email re-checks the choice when it is sent. The entry stays in the inbox.
 - `DAILY_CAP`: the day's cap is used up, see below. The cap is checked first, so once it is used up a delivery that would have been skipped for another reason also reads `DAILY_CAP`.
 

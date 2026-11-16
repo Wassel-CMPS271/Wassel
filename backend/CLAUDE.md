@@ -627,8 +627,8 @@ that's the structure this codebase moved away from.
   (a timeout type in `BrevoMailer` is the follow-up). Constants, not settings (as `RunLocation.LIVE_FOR`): 4 attempts, retried after 1, 5 and 15 minutes,
   `EXPIRED` when not sent within 60 minutes of the entry (the same 60 as the look-back, so turning the sender on never emails older entries), batch of 20.
   Every exception from `Mailer.send` is retryable (no permanent-vs-transient split: that is a follow-up in `BrevoMailer`, and the bound caps what a
-  rejected address costs at 3 more calls). The parent, their enabled account and their choice are re-checked at send time (`SKIPPED`
-  `NO_RECIPIENT`/`PREFERENCE_OFF`); the child's first name is read then with `StudentService.getStudent`, because the entry stores only the full name.
+  rejected address costs at 3 more calls). The parent, their enabled account, their choice and that the child is still linked to that parent are re-checked at send time (`SKIPPED`
+  `NO_RECIPIENT`/`PREFERENCE_OFF`; a child moved to another parent after the tap keeps the entry with the first parent but sends no email); the child's first name is read then with `StudentService.getStudent`, because the entry stores only the full name.
   `NotificationDeliveryProperties` (`wassel.notifications.email.enabled`, `daily-cap`, default 150): the cap is counted from the table
   (the `attempts` of every delivery but a `SKIPPED` one, claimed since midnight in the school's zone, across the whole deployment, because the provider's limit is per account;
   assumed 300 a day on Brevo's free plan, unverified), and a due delivery over it is `SKIPPED`/`DAILY_CAP`. The cap check and the `claim` run in one short transaction under a Postgres advisory lock (`lockForCap`), so two instances cannot both take the last attempt; entries are sent oldest first (`discover` sets `next_attempt_at` from the entry's time). `deliverDue` never throws: a failure outside one delivery is logged as an error with the class only. The three scheduled jobs get `spring.task.scheduling.pool.size: 3` so a slow provider cannot hold up the late alerts. **Privacy:** the email has the first name,
