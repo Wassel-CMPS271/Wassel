@@ -47,7 +47,7 @@ Each student counts **once a day** in `pickedUp`, `droppedOff`, `notPresent` and
 
 ### The range
 
-- `from` defaults to today and `to` defaults to `from`, so no parameters is today.
+- `from` defaults to today and `to` defaults to `from`, so no parameters is today. A parameter with an empty value (`?from=`) counts as not given, exactly like leaving it out, as on every other optional date in the API (`?date=` of the runs and the absences); anything else that is not a date is 400.
 - `to` before `from` is 400 on `to`. A range of more than **62 days** (both ends included) is 400 on `to`. A date in the future is allowed and is all zeros.
 - A date that is not `"YYYY-MM-DD"` is 400.
 
