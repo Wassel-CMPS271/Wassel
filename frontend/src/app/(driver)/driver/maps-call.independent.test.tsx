@@ -5,6 +5,10 @@ import { day, run, student } from "@/test-support/driverContract";
 import type { RunStop } from "@/lib/api/runs";
 import DriverTodayPage from "./page";
 
+// App Router supplies this framework navigation context in production.
+const router = vi.hoisted(() => ({ replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
+
 // Both source revisions share these spies. The separate unmocked HTTP gate
 // still fails when the production screen uses samples instead of request().
 const driverCalls = vi.hoisted(() => ({

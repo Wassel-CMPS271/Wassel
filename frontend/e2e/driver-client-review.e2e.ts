@@ -14,6 +14,9 @@ test("real Driver Today client: login/2FA, GPS consent/withdrawal, actions, pers
   const head = await browser.newPage({ baseURL });
   const driver = await browser.newPage({ baseURL, viewport: { width: 360, height: 800 } });
   const parent = await browser.newPage({ baseURL });
+  // Match the isolated WeekdayE2eClock used by the real backend. Clock.install
+  // advances normally; the durable queue must not see today's run as an old day.
+  await driver.clock.install({ time: new Date("2026-11-02T08:00:00Z") });
   const crashes: string[] = [];
   driver.on("pageerror", error => crashes.push(error.message));
   await driver.context().grantPermissions(["geolocation"]);

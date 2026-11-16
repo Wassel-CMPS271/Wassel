@@ -5,6 +5,10 @@ import type { ConfirmationStatus, Run } from "@/lib/api/runs";
 import { confirmStudent, endRun, getDriverToday, startRun } from "@/lib/api/runs";
 import { day, deferred, instant, run, student } from "@/test-support/driverContract";
 import DriverTodayPage from "./page";
+
+// App Router supplies this framework navigation context in production.
+const router = vi.hoisted(() => ({ replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 import { RunAction } from "./RunAction";
 
 // Both source revisions share these spies. The separate unmocked HTTP gate
@@ -27,8 +31,13 @@ vi.mock("@/components/auth/RoleGuard", async () => ({
   useCurrentUser: () => ({ id: "user-250", email: "independent@e2e.invalid", role: "DRIVER", schoolId: "school-250" }),
 }));
 
-beforeEach(() => vi.resetAllMocks());
-afterEach(cleanup);
+// The candidate offline flow calls a new adapter for the same public confirmation.
+// Keep the independent receipt/error spy and all existing acceptance assertions.
+vi.mock("@/lib/api/confirmationReplay", () => ({ confirmationReplayApi: {
+  confirm: ({ runId, studentId, status }: { runId: string; studentId: string; status: ConfirmationStatus }) => driverCalls.confirmStudent(runId, studentId, status),
+} }));
+beforeEach(() => { vi.resetAllMocks(); localStorage.clear(); vi.setSystemTime(new Date(instant)); });
+afterEach(() => { cleanup(); localStorage.clear(); vi.useRealTimers(); });
 
 async function show(value = day()) {
   vi.mocked(getDriverToday).mockResolvedValue(value);
@@ -104,7 +113,7 @@ describe("SCRUM-243: Today from acceptance criteria", () => {
     await show(day([run({ stops, counts: { students: 2, absent: 2, pickedUp: 0, droppedOff: 0, notPresent: 0 } })]));
     expect(screen.getAllByText("Skip")).toHaveLength(2);
     expect(screen.queryByText("Next stop")).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(/every stop.*done or skipped/i);
+    expect(screen.getByText(/every stop.*done or skipped/i)).toHaveAttribute("role", "status");
   });
 
   it("does not consider an afternoon pickup completed until dropoff", async () => {
@@ -204,7 +213,7 @@ describe("SCRUM-244: legal actions and observable state changes", () => {
     await show(day([run({ stops: [student(1), student(2)] })]));
     const button = within(row()).getByRole("button", { name: "Picked up" });
     act(() => { fireEvent.click(button); fireEvent.click(button); });
-    expect(confirmStudent).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(confirmStudent).toHaveBeenCalledTimes(1));
     expect(within(row()).getByRole("button", { name: "Not present" })).toBeDisabled();
     expect(within(row(2)).getByRole("button", { name: "Picked up" })).toBeEnabled();
     await act(async () => gate.resolve(run({ stops: [student(1, { confirmation: { status: "PICKED_UP", at: instant } }), student(2)] })));

@@ -3,6 +3,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import { day, run, student } from "@/test-support/driverContract";
 import DriverTodayPage from "./page";
 
+// App Router supplies this framework navigation context in production.
+const router = vi.hoisted(() => ({ replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
+
 // Only the authenticated-user context is supplied; runs and request() remain real.
 vi.mock("@/components/auth/RoleGuard", async () => ({
   ...await vi.importActual("@/components/auth/RoleGuard"),

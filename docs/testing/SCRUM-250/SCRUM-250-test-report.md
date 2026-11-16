@@ -1,5 +1,32 @@
 # SCRUM-250 — Independent driver frontend tests
 
+## 16 November 2026 — new driver replay flow and real browser verification
+
+### Source preservation and harness updates
+
+Normally merged accepted develop **cc6783f96bcea48c42c06c3afff6084e1121eee1**. All **65 independent acceptance scenarios** remain present; no skip, expected-failure marker or relaxed acceptance outcome was added. No teammate source/branch was edited. Fresh detached checkouts retain each review attempt; tracked production files stayed clean.
+
+PR #144 moved from e3ec666 to **d1ad8229318b77562472fe4b698143180c24ac0a** during this session. Its real Today/replay flow adds App Router access and durable storage on every tap. Standalone suites now supply framework router context; the confirmation component spy observes the new public replay adapter as well as the old direct adapter. Fixture dates match the run's date and local storage is cleared between cases. The all-absent assertion still requires the same completion wording and `role=status`, now scoped correctly alongside the additional queue status. The duplicate dispatch assertion awaits asynchronous durable storage and still requires exactly one API call; pending/retry assertions remain unchanged.
+
+### Exact results
+
+- Accepted develop/default branch final focused run: **64 passed / 1 failed** (65). Failure: production Driver Today still imports `getDriverTodaySample`/`confirmStudentSample` and never calls the real `/api/driver/runs/today` endpoint. This remains a genuine delivery blocker.
+- Accepted full frontend regression: **826 passed / 1 failed**, plus 1 existing expected failure and 6 existing skips (834 total). Same real-endpoint failure. Final-head hosted CI is checked separately after push.
+- Latest #144 candidate, after harness isolation: **63 passed / 2 failed** (65), preserved in `driver-latest-final.log`:
+  1. **prevents duplicate confirmations while leaving other students actionable**: the one-call assertion passes, but the queue's projected pending pickup removes `Not present` rather than rendering that control disabled as the existing acceptance test expects.
+  2. **keeps a failed confirmation scoped to its student and retries the same status**: after HTTP 409/refetch the row shows the error and normal action controls, but no explicit `Try again` control expected by the existing test.
+- These are observable **acceptance/UX differences**, not proof that duplicate submissions or backend 409 handling are defective. SCRUM-244 requires no double submission and a retryable plain error; SCRUM-273/263 adds queued projection and dropping/refetching stale 409s. Majd/independent review must resolve the intended pending/retry interaction without blind unsafe replay. The two failures were retained, not hidden to get green CI.
+- Before proper harness setup, new-head runs showed 35 router-provider failures, then 7 date/storage/adapter mismatches. Those intermediate logs remain preserved; they are not reported as 35/7 production defects. Historical e3ec666 **65/65** evidence remains dated to that older head.
+- **Real browser against latest #144 and accepted PostgreSQL/Flyway backend: 1/1 passed**, `real-browser-aligned-clock.log`: real password/2FA, real GET Today, consent/location/withdrawal and Parent LIVE, Start/End, pickup/drop-off/not-present PUTs, reload persistence, role denial and 360px without crashes/overflow. Device GPS is a browser fixture; production responses are real. This test does not certify offline reconnect or physical GPS.
+- The initial real-browser attempt timed out before the pickup PUT: backend WeekdayE2eClock used November 2 while browser Date was November 16, so the new durable queue correctly withheld an earlier-day item. The test browser now uses an advancing clock aligned with the isolated backend; all original HTTP/state/privacy/layout assertions pass. No production clock/code was changed; the initial timeout trace is retained.
+- Final ESLint: passed. Production build: passed. Final standalone TypeScript: the same **13 diagnostics as fresh develop**, no introduced diagnostic. `git diff --check`: passed. Local standalone junction-copy warning remains disclosed.
+- New ignored evidence: `tmp/SCRUM-250-20261116/`, isolated candidate checkouts and their ignored E2E artifacts. No secrets, traces, mail logs or generated credentials are committed.
+
+### Completion blockers
+
+Keep #148 Draft. #144 is still unmerged/Draft; accepted develop remains sample-backed. Resolve the two pending/retry acceptance differences with the feature owner, complete independent review/integration of #144, then rerun all 65 and full regression on accepted source with no candidate override. Real browser success on the candidate does not remove the accepted-source endpoint failure. No Jira status was changed.
+
+
 ## Fresh readiness audit — 15 November 2026
 
 #144 is now marked Ready, but its head is still `e3ec66670324a77edfe014dec7a00f18ee39ac3c`; the production replay adapter remains null and no formal approval exists. Develop is unchanged at `3798b40`. The existing #148 branch already contains it, so no redundant merge or feature edit was made.
