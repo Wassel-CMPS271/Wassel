@@ -1,0 +1,9 @@
+{
+  "date": "2026-11-16",
+  "emailEnabled": true,
+  "dailyCap": 150,
+  "counts": { "pending": 1, "sending": 0, "sent": 38, "failed": 1, "skipped": 3 },
+  "reasons": { "PREFERENCE_OFF": 2, "NO_RECIPIENT": 1, "DAILY_CAP": 0, "PROVIDER_ERROR": 1, "EXPIRED": 0, "INTERRUPTED": 0 },
+  "retried": 4,
+  "oldestPendingAt": "2026-11-16T05:41:07Z"
+}
