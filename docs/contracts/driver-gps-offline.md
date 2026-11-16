@@ -178,6 +178,13 @@ on the page:
   flight) waits for the next 30-second connectivity tick rather than going at once: `drain()`
   returns the in-flight run without starting a new one, so Try again should ask it to run again
   once that send settles, rather than assume the one in flight already covers it.
+- There is no offline app shell: reloading the driver page with no connection at all shows the
+  browser's offline page (or "Couldn't reach Wassel. Refresh to try again." if only the backend is
+  down). Saved taps stay safe on the phone and sync later with the same `clientRequestId`; showing
+  them after an offline reload needs a service worker.
+- A single "position unavailable" error while sharing turns sharing off until the driver taps Try
+  again, as the contract specifies. A brief signal loss on a real phone may trigger it; not yet
+  checked on a real device.
 
 ## Changing this page
 
