@@ -187,7 +187,7 @@ that's the structure this codebase moved away from.
   case the manual-pin fallback exists for.
 - `students` — student roster. Real module: add (with an optional address, SCRUM-213), list,
   search/filter by query/status/grade/route (SCRUM-167), and editing address, map-pin location,
-  and parent-linking (SCRUM-166) are done. The active/inactive toggle is not built yet. The
+  and parent-linking (SCRUM-166) are done. Pausing and archiving a student is the `roster` module (SCRUM-270, below); a student is `ACTIVE`, `PAUSED` or `INACTIVE` (archived). The
   frontend's CSV import screen (SCRUM-160) calls this module's own create-student endpoint
   once per row (SCRUM-193) — there is no bulk/batch endpoint, so a large file is one request
   per row, sequential and not atomic: a failure partway through leaves a partial import. The old `route` string column
@@ -637,6 +637,25 @@ that's the structure this codebase moved away from.
   exception itself. No Micrometer and no new actuator endpoint (`HealthEndpointTests` stays): the summary is the monitoring. Tests use a
   `RecordingMailer` (a real class that stands in for the provider and can refuse) through `DeliverySupport`, which empties the outbox and the inbox
   first because the sender looks at every school's entries. Known limits: see the contract (at most once against a crash only, a rejected address is retried, the cap counts attempts, English plain text, no unsubscribe link).
+- `roster` — pausing and archiving a student and placing a student on the best route (SCRUM-270):
+  `PUT /api/head-of-transport/students/{id}/status`, `GET` and `POST .../students/{id}/best-route`. Shapes and rules are in
+  `docs/contracts/roster.md`. A new module because both touch the students and the routes, and `students` never imports
+  `routes`; it stores nothing and nothing depends on it. `RosterService.changeStatus` checks the change first
+  (`StudentService.requireChange`: the one refused change is archived to paused, 409), then takes a student who is
+  becoming `PAUSED` or `INACTIVE` off their route (`RouteService.releaseFromRoute`, which refuses, 409, a student on a bus
+  today exactly as `removeStudent` does) and sets the status, in one transaction, so a refusal never takes anyone off a
+  route and a change either happens whole or not at all. The status column's check constraint was widened to
+  `PAUSED` in V17; `INACTIVE` kept its name and means archived, so the roster filter, the frontend's `active | inactive` and
+  every `status != ACTIVE` check (adding to a route, approving an address request, route generation) already treat a paused
+  student as not active. Runs, confirmations and attendance hold plain ids, so nothing of a student's past is touched.
+  Best route (`RouteService.bestRoutes`/`placeOnBestRoute`): for each route of the school with a free seat, one travel-time
+  matrix over its pinned stops, the new pin and the school, then `RouteTimings.schedule` for every place the student could take
+  (a stop with no pin is not on the schedule, so it is only a seat); the fewest added driving minutes wins, ties by route name,
+  and a route whose first pickup would be before 06:00 whatever the place is skipped `STARTS_TOO_EARLY`, a full one `FULL`.
+  `POST` locks the chosen route (`findLockedOwned`, SCRUM-259) and works its seats and schedule out again before
+  `StudentService.assignToRouteAt` rewrites the stops as a clean 1..n, so two students cannot take the last seat. Known limits:
+  one road-provider request per route with a seat (its cache serves known pairs), the other stops keep their order, no history
+  of who paused whom, and going back to active leaves the student on no route.
 - `reports` — the head of transportation's transport totals and their CSV export over a date range (SCRUM-271):
   `GET /api/head-of-transport/transport-totals?from=&to=` and `.../export`. Shapes and rules are in
   `docs/contracts/transport-totals.md`. Stores nothing and nothing depends on it; `ReportService` reads three
