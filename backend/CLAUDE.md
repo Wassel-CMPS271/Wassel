@@ -187,7 +187,7 @@ that's the structure this codebase moved away from.
   case the manual-pin fallback exists for.
 - `students` — student roster. Real module: add (with an optional address, SCRUM-213), list,
   search/filter by query/status/grade/route (SCRUM-167), and editing address, map-pin location,
-  and parent-linking (SCRUM-166) are done. The active/inactive toggle is not built yet. The
+  and parent-linking (SCRUM-166) are done. Pausing and archiving a student is the `roster` module (SCRUM-270, below); a student is `ACTIVE`, `PAUSED` or `INACTIVE` (archived). The
   frontend's CSV import screen (SCRUM-160) calls this module's own create-student endpoint
   once per row (SCRUM-193) — there is no bulk/batch endpoint, so a large file is one request
   per row, sequential and not atomic: a failure partway through leaves a partial import. The old `route` string column
@@ -614,6 +614,48 @@ that's the structure this codebase moved away from.
   school. `LiveEta.arrivals` is the one chain that gives the arrival at every stop (`estimate` is its entry for one stop).
   Known limits: morning runs only (no afternoon schedule), a run never started or not yet created is not watched, an alert is
   never withdrawn, and the head of transportation's "run not started" alert (SCRUM-77) is not built.
+  Email delivery (SCRUM-283), rules in `docs/contracts/notification-delivery.md`: `GET /api/admin/notification-deliveries/summary?date=`
+  (ADMIN, own school, counts only). Table `notification_deliveries` (migration V16, unique `inbox_event_id`, no foreign keys; V16 also adds
+  `idx_inbox_events_created_at` on SCRUM-267's table). Email only, through `auth.service.Mailer` (so `inbox` now depends on `auth` and `users`).
+  **Rows are found, not pushed:** `NotificationDeliveryService.deliverDue` (called by `config/NotificationDeliveryJob`, every 30 s, not in the
+  `test` profile, and only when `NOTIFICATION_EMAIL_ENABLED=true`) inserts a delivery for every entry made in the last 60 minutes with one
+  `INSERT ... SELECT ... ON CONFLICT DO NOTHING`, so the driver's confirmation transaction is untouched and a mail failure can never fail a tap.
+  The service is deliberately not `@Transactional`: every repository change is one conditional statement in its own transaction and none is
+  open during `Mailer.send`. `claim` (`UPDATE ... WHERE status = 'PENDING' AND next_attempt_at <= now`) counts the attempt and is what stops two
+  instances or two ticks both sending. **At most once means against a crash:** a crash mid-send leaves a `SENDING` row that becomes `FAILED`/`INTERRUPTED` after
+  5 minutes and is never sent again; a provider that accepts the email and then times out is retried like any error, so that email can arrive twice
+  (a timeout type in `BrevoMailer` is the follow-up). Constants, not settings (as `RunLocation.LIVE_FOR`): 4 attempts, retried after 1, 5 and 15 minutes,
+  `EXPIRED` when not sent within 60 minutes of the entry (the same 60 as the look-back, so turning the sender on never emails older entries), batch of 20.
+  Every exception from `Mailer.send` is retryable (no permanent-vs-transient split: that is a follow-up in `BrevoMailer`, and the bound caps what a
+  rejected address costs at 3 more calls). The parent, their enabled account, their choice and that the child is still linked to that parent are re-checked at send time (`SKIPPED`
+  `NO_RECIPIENT`/`PREFERENCE_OFF`; a child moved to another parent after the tap keeps the entry with the first parent but sends no email); the child's first name is read then with `StudentService.getStudent`, because the entry stores only the full name.
+  `NotificationDeliveryProperties` (`wassel.notifications.email.enabled`, `daily-cap`, default 150): the cap is counted from the table
+  (the `attempts` of every delivery but a `SKIPPED` one, claimed since midnight in the school's zone, across the whole deployment, because the provider's limit is per account;
+  assumed 300 a day on Brevo's free plan, unverified), and a due delivery over it is `SKIPPED`/`DAILY_CAP`. The cap check and the `claim` run in one short transaction under a Postgres advisory lock (`lockForCap`), so two instances cannot both take the last attempt; entries are sent oldest first (`discover` sets `next_attempt_at` from the entry's time). `deliverDue` never throws: a failure outside one delivery is logged as an error with the class only. The three scheduled jobs get `spring.task.scheduling.pool.size: 3` so a slow provider cannot hold up the late alerts. **Privacy:** the email has the first name,
+  the type, the school-local time and a link (`DeliveryEmail`, pinned by `docs/contracts/samples/notification-delivery/email-picked-up.txt`); logs hold
+  the delivery id, the entry id, the attempt and the exception's class only, never `e.getMessage()` (an SMTP error can hold the recipient) or the
+  exception itself. No Micrometer and no new actuator endpoint (`HealthEndpointTests` stays): the summary is the monitoring. Tests use a
+  `RecordingMailer` (a real class that stands in for the provider and can refuse) through `DeliverySupport`, which empties the outbox and the inbox
+  first because the sender looks at every school's entries. Known limits: see the contract (at most once against a crash only, a rejected address is retried, the cap counts attempts, English plain text, no unsubscribe link).
+- `roster` — pausing and archiving a student and placing a student on the best route (SCRUM-270):
+  `PUT /api/head-of-transport/students/{id}/status`, `GET` and `POST .../students/{id}/best-route`. Shapes and rules are in
+  `docs/contracts/roster.md`. A new module because both touch the students and the routes, and `students` never imports
+  `routes`; it stores nothing and nothing depends on it. `RosterService.changeStatus` checks the change first
+  (`StudentService.requireChange`: the one refused change is archived to paused, 409), then takes a student who is
+  becoming `PAUSED` or `INACTIVE` off their route (`RouteService.releaseFromRoute`, which refuses, 409, a student on a bus
+  today exactly as `removeStudent` does) and sets the status, in one transaction, so a refusal never takes anyone off a
+  route and a change either happens whole or not at all. The status column's check constraint was widened to
+  `PAUSED` in V17; `INACTIVE` kept its name and means archived, so the roster filter, the frontend's `active | inactive` and
+  every `status != ACTIVE` check (adding to a route, approving an address request, route generation) already treat a paused
+  student as not active. Runs, confirmations and attendance hold plain ids, so nothing of a student's past is touched.
+  Best route (`RouteService.bestRoutes`/`placeOnBestRoute`): for each route of the school with a free seat, one travel-time
+  matrix over its pinned stops, the new pin and the school, then `RouteTimings.schedule` for every place the student could take
+  (a stop with no pin is not on the schedule, so it is only a seat); the fewest added driving minutes wins, ties by route name,
+  and a route whose first pickup would be before 06:00 whatever the place is skipped `STARTS_TOO_EARLY`, a full one `FULL`.
+  `POST` locks the chosen route (`findLockedOwned`, SCRUM-259) and works its seats and schedule out again before
+  `StudentService.assignToRouteAt` rewrites the stops as a clean 1..n, so two students cannot take the last seat. Known limits:
+  one road-provider request per route with a seat (its cache serves known pairs), the other stops keep their order, no history
+  of who paused whom, and going back to active leaves the student on no route.
 - `reports` — the head of transportation's transport totals and their CSV export over a date range (SCRUM-271):
   `GET /api/head-of-transport/transport-totals?from=&to=` and `.../export`. Shapes and rules are in
   `docs/contracts/transport-totals.md`. Stores nothing and nothing depends on it; `ReportService` reads three
@@ -763,6 +805,12 @@ its `raise()` through the application context by name, and a missing class, bean
 When #158 merges, delete `Scrum268Gate`, `Scrum268GateTests` and the `@EnabledIf` line in both classes, and check that both report `Skipped: 0`. Two known findings stay as tests behind
 `-Dknown-bug.SCRUM-268-coercion=true` (wrong-typed preference values are accepted) and `-Dknown-bug.SCRUM-271-empty-date=true` (an
 empty `?from=` counts as omitted). Run one with `sh ./mvnw test -Dtest=<Class>`. Report and bugs: `docs/testing/SCRUM-266/`.
+
+**Independent tests of the notification delivery (SCRUM-283, for Moustafa's S4-12 suite)**: the author's suites are
+`NotificationDeliveryTests`, `NotificationDeliveryCapTests` (`inbox/service`), `NotificationDeliveryJobTests` (`inbox/config`) and
+`AdminNotificationDeliveryControllerTests`. The sender has no HTTP trigger, so independent tests call `NotificationDeliveryService.deliverDue()` by
+name and read the mail through a stand-in `Mailer`; rules to challenge from the contract alone: no second email across repeats, replays and
+parallel senders, the cap across Beirut midnight, privacy of logs and the summary, the preference re-check, the 60-minute window and at-most-once.
 
 **Independent tests of Hashem's Sprint 4 work (SCRUM-272, by Moustafa)**, written from the tickets and `docs/contracts/runs.md`, not
 from the authors' own suites: `LiveLocationCriteriaTests` (261), `LiveEtaCriteriaTests` (262), `OfflineReplayCriteriaTests` (263) and
