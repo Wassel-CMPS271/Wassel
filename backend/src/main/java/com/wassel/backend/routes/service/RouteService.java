@@ -21,6 +21,12 @@ import com.wassel.backend.routes.dto.StudentRouteResponse;
 import com.wassel.backend.routes.entity.Route;
 import com.wassel.backend.routes.entity.RouteProposal;
 import com.wassel.backend.routes.entity.RouteVersion;
+import com.wassel.backend.routes.dto.BestRoutePlacementResponse;
+import com.wassel.backend.routes.dto.BestRouteResponse;
+import com.wassel.backend.routes.dto.RouteOptionResponse;
+import com.wassel.backend.routes.dto.RouteSkipReason;
+import com.wassel.backend.routes.dto.SkippedRouteResponse;
+import com.wassel.backend.routes.exception.BestRouteConflictException;
 import com.wassel.backend.routes.exception.ActiveRunConflictException;
 import com.wassel.backend.routes.exception.ProposalNotFoundException;
 import com.wassel.backend.routes.exception.RouteAssignmentConflictException;
@@ -38,6 +44,7 @@ import com.wassel.backend.routing.service.TravelTimes;
 import com.wassel.backend.schools.config.SchoolLocationProperties;
 import com.wassel.backend.schools.service.SchoolSettingsService;
 import com.wassel.backend.students.dto.StudentResponse;
+import com.wassel.backend.students.exception.StudentNotActiveException;
 import com.wassel.backend.students.service.StudentService;
 import com.wassel.backend.vehicles.dto.VehicleResponse;
 import com.wassel.backend.vehicles.service.VehicleService;
@@ -53,6 +60,7 @@ import java.time.Duration;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -537,6 +545,179 @@ public class RouteService {
 	@Transactional(readOnly = true)
 	public Optional<UUID> findDriverIdOfRoute(UUID schoolId, UUID routeId) {
 		return routeRepository.findDriverIdBySchoolIdAndId(schoolId, routeId);
+	}
+
+	/**
+	 * Takes a student off the route they are on, if any, for archiving or pausing them (SCRUM-270). A student with a
+	 * confirmation on a run in progress today stays until it ends (409, {@link ActiveRunConflictException}), as in
+	 * {@link #removeStudent}. A student on no route is left as they are.
+	 */
+	@Transactional
+	public void releaseFromRoute(UUID schoolId, UUID studentId) {
+		UUID routeId = studentService.getRouteId(schoolId, studentId);
+		if (routeId == null) {
+			return;
+		}
+		requireNotOnABus(schoolId, studentId);
+		studentService.removeFromRoute(schoolId, studentId, routeId);
+	}
+
+	/**
+	 * The routes this student could go on, best first (SCRUM-270, docs/contracts/roster.md): for each route of the school
+	 * that has a seat, the stop position that adds the fewest driving minutes ({@link RouteTimings}, so the same legs and
+	 * the same "first pickup not before 06:00" rule as the route's own schedule), ties broken by route name. A full route,
+	 * and a route that could not be driven whatever the place, are skipped with the reason. Changes nothing. The student
+	 * must be active, on no route, with a pin, and the school must have an arrival time (409 otherwise).
+	 *
+	 * <p>shortcut: one travel-time matrix per route that has a seat, so a school with many routes asks the road provider
+	 * once for each (its cache serves every pair it already knows); one matrix for the whole fleet would pass the
+	 * provider's size limit.
+	 */
+	@Transactional(readOnly = true)
+	public BestRouteResponse bestRoutes(UUID schoolId, UUID studentId) {
+		StudentResponse student = requirePlaceable(schoolId, studentId);
+		LocalTime schoolArrival = requireSchoolArrival(schoolId);
+		List<RouteOptionResponse> options = new ArrayList<>();
+		List<SkippedRouteResponse> skipped = new ArrayList<>();
+		for (Route route : routeRepository.findBySchoolIdOrderByCreatedAtAsc(schoolId)) {
+			Placement placement = place(route, student, schoolArrival);
+			if (placement.option() != null) {
+				options.add(placement.option());
+			}
+			else {
+				skipped.add(new SkippedRouteResponse(route.getId(), route.getName(), placement.skipped()));
+			}
+		}
+		options.sort(Comparator.comparingInt(RouteOptionResponse::extraMinutes)
+				.thenComparing(RouteOptionResponse::routeName).thenComparing(RouteOptionResponse::routeId));
+		return new BestRouteResponse(studentId, options.isEmpty() ? null : options.get(0), List.copyOf(options),
+				List.copyOf(skipped));
+	}
+
+	/**
+	 * Puts the student on the best route at the best place ({@link #bestRoutes}). The chosen route's row is locked and
+	 * its seats and schedule are worked out again under the lock (SCRUM-259), so two students cannot both take the last
+	 * seat: the later one is told the route changed (409) and can ask again. Answers with where, what it added and the
+	 * route as it is now. 409 when no route can take them.
+	 *
+	 * <p>ponytail: the matrices are read inside this transaction and may wait on the road provider (its 3 s timeout) while
+	 * it holds a connection, as {@link #propose} does; fine for one school.
+	 */
+	@Transactional
+	public BestRoutePlacementResponse placeOnBestRoute(UUID schoolId, UUID studentId) {
+		RouteOptionResponse choice = bestRoutes(schoolId, studentId).recommended();
+		if (choice == null) {
+			throw new BestRouteConflictException(
+					"No route has a free seat and a schedule that can be driven for this student.");
+		}
+		Route route = findLockedOwned(schoolId, choice.routeId());
+		StudentResponse student = requirePlaceable(schoolId, studentId);
+		RouteOptionResponse now = place(route, student, requireSchoolArrival(schoolId)).option();
+		if (now == null) {
+			throw new BestRouteConflictException("The route filled up or changed while it was being chosen. Try again.");
+		}
+		studentService.assignToRouteAt(schoolId, studentId, route.getId(), now.position());
+		return new BestRoutePlacementResponse(now.position(), now.extraMinutes(), now.arrivalTime(),
+				toResponse(schoolId, route));
+	}
+
+	/** The student, if they may be placed: active, on no route, with a pin (409 each). 404 if they are not in the school. */
+	private StudentResponse requirePlaceable(UUID schoolId, UUID studentId) {
+		StudentResponse student = studentService.getStudent(schoolId, studentId);
+		if (!"active".equals(student.status())) {
+			throw new StudentNotActiveException("Only active students can be placed on a route.");
+		}
+		if (studentService.getRouteId(schoolId, studentId) != null) {
+			throw new BestRouteConflictException(
+					"The student is already on a route. Take them off it first, or move them by hand.");
+		}
+		if (!hasPin(student)) {
+			throw new BestRouteConflictException("The student has no pin yet. Set their address or place the pin first.");
+		}
+		return student;
+	}
+
+	private LocalTime requireSchoolArrival(UUID schoolId) {
+		LocalTime arrival = schoolSettingsService.getTimes(schoolId).arrivalTime();
+		if (arrival == null) {
+			throw new BestRouteConflictException(
+					"The school's arrival time is not set, so no pickup time can be worked out.");
+		}
+		return arrival;
+	}
+
+	/** The best place on one route, or why there is none. */
+	private record Placement(RouteOptionResponse option, RouteSkipReason skipped) {
+	}
+
+	private Placement place(Route route, StudentResponse student, LocalTime schoolArrival) {
+		UUID schoolId = route.getSchoolId();
+		int seats = vehicleService.getOwnedVehicle(schoolId, route.getVehicleId()).capacity();
+		List<StudentResponse> stops = studentService.listOnRoute(schoolId, route.getId());
+		if (seats - stops.size() < 1) {
+			return new Placement(null, RouteSkipReason.FULL);
+		}
+		// Only pinned stops are on the schedule (the contract skips the others), so the cost is worked out over them and
+		// the place is mapped back to the full list of stops afterwards.
+		List<Integer> pinnedAt = new ArrayList<>();
+		List<Coordinate> points = new ArrayList<>();
+		for (int i = 0; i < stops.size(); i++) {
+			if (hasPin(stops.get(i))) {
+				pinnedAt.add(i);
+				points.add(pinOf(stops.get(i)));
+			}
+		}
+		int pinned = pinnedAt.size();
+		points.add(pinOf(student));
+		points.add(schoolCoordinate());
+		Duration[][] matrix = travelTimes.matrix(points);
+		int newPoint = pinned;
+		int schoolPoint = pinned + 1;
+		int[] current = new int[pinned];
+		for (int i = 0; i < pinned; i++) {
+			current[i] = i;
+		}
+		long base = pinned == 0 ? 0
+				: RouteTimings.schedule(matrix, current, schoolPoint, schoolArrival).drivingTime().toMinutes();
+		int bestSlot = -1;
+		long bestExtra = 0;
+		RouteTimings.Timing bestTiming = null;
+		for (int slot = 0; slot <= pinned; slot++) {
+			int[] order = new int[pinned + 1];
+			int at = 0;
+			for (int i = 0; i < slot; i++) {
+				order[at++] = i;
+			}
+			order[at++] = newPoint;
+			for (int i = slot; i < pinned; i++) {
+				order[at++] = i;
+			}
+			RouteTimings.Timing timing = RouteTimings.schedule(matrix, order, schoolPoint, schoolArrival);
+			if (timing.startsTooEarly()) {
+				continue;
+			}
+			long extra = timing.drivingTime().toMinutes() - base;
+			if (bestSlot < 0 || extra < bestExtra) {
+				bestSlot = slot;
+				bestExtra = extra;
+				bestTiming = timing;
+			}
+		}
+		if (bestSlot < 0) {
+			return new Placement(null, RouteSkipReason.STARTS_TOO_EARLY);
+		}
+		int index;
+		if (pinned == 0) {
+			index = stops.size();
+		}
+		else if (bestSlot < pinned) {
+			index = pinnedAt.get(bestSlot);
+		}
+		else {
+			index = pinnedAt.get(pinned - 1) + 1;
+		}
+		return new Placement(new RouteOptionResponse(route.getId(), route.getName(), index + 1, (int) bestExtra,
+				bestTiming.arrivals().get(bestSlot), seats - stops.size()), null);
 	}
 
 	private VehicleResponse requireActiveVehicle(UUID schoolId, UUID vehicleId) {
