@@ -1,0 +1,54 @@
+name: Independent integrated Driver E2E
+on:
+  push:
+    branches: [test/SCRUM-250-driver-screen-tests, develop]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [develop]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: independent-driver-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  independent-driver-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: wassel_e2e
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: disposable-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d wassel_e2e"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      # Driver GPS/offline UI is now merged into develop; test this exact checkout.
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run test:e2e:install -- --with-deps
+        working-directory: frontend
+      - name: Real integrated Driver acceptance browser scenario
+        run: node e2e/review-driver-integrated.mjs
+        working-directory: frontend
+        env:
+          E2E_MAVEN_CMD: mvn
+          E2E_DB_URL: jdbc:postgresql://127.0.0.1:5432/wassel_e2e
+          E2E_DB_USERNAME: postgres
+          E2E_DB_PASSWORD: disposable-ci-only
+      # No upload of authentication/mail logs, database files, traces or video.
