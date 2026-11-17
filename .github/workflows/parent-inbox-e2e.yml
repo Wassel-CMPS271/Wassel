@@ -3,8 +3,9 @@ on:
   push:
     branches: [feature/SCRUM-280-parent-notifications, develop]
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
     branches: [develop]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -12,7 +13,6 @@ concurrency:
   cancel-in-progress: true
 jobs:
   parent-inbox-e2e:
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base.ref
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
