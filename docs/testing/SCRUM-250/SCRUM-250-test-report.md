@@ -1,5 +1,27 @@
 # SCRUM-250 — Independent driver frontend tests
 
+## 17 November 2026 — accepted Driver integration and direct real-browser CI
+
+Normally merged accepted develop **ed4736d64b402a02cb30a3f1253a97109b4f3b7e**, including merged Driver #144 (reviewed source 2cb70da) and roster #142. The previous sample-client integration blocker is resolved: Driver Today calls the real authenticated **/api/driver/runs/today** endpoint, and its independent delivery gate passes. All **65** independent acceptance cases and their original assertions are preserved; no teammate feature source or branch was edited.
+
+| Current-source check | Actual result |
+| --- | --- |
+| Original 65 independent driver cases on accepted HEAD | **63 passed / 2 failed / 0 skipped** |
+| Full frontend | **1,272 passed / 2 failed / 1 existing expected failure / 5 existing skips** (1,280; 78 files) |
+| ESLint / production build / git diff --check | Passed |
+| Standalone TypeScript | Same **13 accepted-develop baseline diagnostics**, zero introduced; compiler remains nonzero |
+| Direct integrated Driver + real PostgreSQL/Flyway/Chromium | **1/1 passed**, runner exit 0; all 17 migrations applied |
+
+The two failures are unchanged acceptance expectations against the new Driver UI:
+1. **prevents duplicate confirmations while leaving other students actionable**: while a pickup is pending in the durable queue, the row removes **Not present** rather than leaving the expected disabled button. This failure does not establish that duplicate requests occur; preserve the entire acceptance case and agree/fix the pending-control UX with the feature owner.
+2. **keeps a failed confirmation scoped to its student and retries the same status**: after mocked HTTP 409, the queue drops/refetches the conflicting item and returns normal actions without the expected explicit **Try again** button. Confirm the intended conflict-recovery UX against SCRUM-244/273 and resolve the expectation with independent review; no silent test rewrite was made.
+
+The real production browser scenario verifies actual password and 2FA, authenticated GET today, Start/End, pickup/drop-off/not-present, reload persistence, real sharing/location/withdrawal requests and Parent LIVE response, role denial and 360px/no crashes. Device GPS is simulated; no business response is mocked. The advancing browser test clock matches the isolated Monday school clock, retaining real queue date validation. This is now **accepted source**, not merely an unmerged candidate. It does not certify physical phone GPS or the full offline/reconnect/reload/cross-tab matrix.
+
+Added **review-driver-integrated.mjs** and a dedicated PostgreSQL browser CI job selecting the existing scenario directly from this branch. The shared run.mjs and historical read-only review-driver.mjs remain unchanged; the 65 normal cases still fail normally where required. Current-head CI must be read after push and is expected to retain the two acceptance failures.
+
+Evidence is ignored under tmp/SCRUM-250-20261117-accepted/ and preserved e2e-artifacts histories. No logs, credentials, generated artifacts or detached review overlays are committed. Historical sections below retain their original source/date. **Keep #148 Draft and not merge-ready** until the two pending/conflict UX expectations are resolved, all acceptance checks pass and independent review is complete. No Jira/Draft status changes or merges were performed.
+
 ## 16 November 2026 — new driver replay flow and real browser verification
 
 ### Source preservation and harness updates
