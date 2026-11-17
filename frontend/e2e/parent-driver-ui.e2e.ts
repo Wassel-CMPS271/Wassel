@@ -1,19 +1,40 @@
 import { expect, test, type APIResponse } from "@playwright/test";
 import { credentials, signIn } from "./auth-helpers";
 async function json<T>(r: APIResponse, status = 200): Promise<T> { expect(r.status(), await r.text()).toBe(status); return r.json(); }
-test("actual candidate driver UI feeds the production Parent Leaflet map and ETA", async ({ browser }) => {
+test("actual integrated driver UI feeds the production Parent Leaflet map and ETA", async ({ browser }) => {
  test.setTimeout(240_000);
  const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:4180";
  const parent = await browser.newPage({ baseURL, viewport: { width: 360, height: 800 } });
  const head = await browser.newPage({ baseURL });
- const driver = await browser.newPage({ baseURL: "http://127.0.0.1:4192", viewport: { width: 360, height: 800 } });
+ // Separate devices: viewing the Parent must not background the Driver tab.
+ const driverBrowser = await browser.browserType().launch();
+ const driver = await driverBrowser.newPage({ baseURL, viewport: { width: 360, height: 800 } });
  const errors: string[] = []; parent.on("pageerror", e => errors.push(e.message)); driver.on("pageerror", e => errors.push(e.message));
  await driver.context().grantPermissions(["geolocation"]);
- await driver.context().setGeolocation({ latitude: 33.8800, longitude: 35.5200, accuracy: 12.5 });
+ // Chromium override changes emit POSITION_UNAVAILABLE before the replacement
+ // fix (reproduced independently). Model a continuously available device here,
+ // rather than injecting that failure into this success scenario. Only the device
+ // position source is simulated; consent, permissions.query and all APIs/UI are real.
+ await driver.addInitScript(() => {
+  let next = 0;
+  const watches = new Map<number, ReturnType<typeof setInterval>>();
+  const position = (latitude = 33.8800): GeolocationPosition => ({
+   coords: { latitude, longitude: 35.5200, accuracy: 12.5, altitude: null, altitudeAccuracy: null, heading: null, speed: null, toJSON() { return {}; } },
+   timestamp: Date.now(), toJSON() { return {}; },
+  });
+  Object.defineProperty(navigator, "geolocation", { configurable: true, value: {
+   getCurrentPosition: (success: PositionCallback) => queueMicrotask(() => success(position())),
+   watchPosition: (success: PositionCallback) => {
+    const id = ++next; let north = false;
+    queueMicrotask(() => { if (watches.has(id)) success(position()); });
+    watches.set(id, setInterval(() => { north = !north; success(position(north ? 33.8805 : 33.8800)); }, 5_000));
+    return id;
+   },
+   clearWatch: (id: number) => { clearInterval(watches.get(id)); watches.delete(id); },
+  } });
+ });
  const routes = "/api/head-of-transport/routes";
  let routeId: string | undefined;
- let gpsFeed: ReturnType<typeof setInterval> | undefined;
- let feeding = false;
  try {
   await signIn(parent, "PARENT"); await signIn(head, "HEAD_OF_TRANSPORT");
   const children = await json<{ studentId: string; firstName: string; lastName: string }[]>(await parent.request.get("/api/parent/children")); expect(children).toHaveLength(2);
@@ -37,17 +58,13 @@ test("actual candidate driver UI feeds the production Parent Leaflet map and ETA
   const sent = driver.waitForResponse(r => new URL(r.url()).pathname === `${runPath}/location` && r.request().method() === "PUT");
   await driver.getByRole("button", { name: "Share my location", exact: true }).click(); expect((await sharing).status()).toBe(200);
   const fix = await sent; expect(fix.status()).toBe(204); expect(fix.request().postDataJSON()).toEqual({ latitude: 33.8800, longitude: 35.5200, accuracyMeters: 12.5 });
-  // Real browser position updates keep the actual API fix fresh during the
-  // coarse run-status poll; no business API response is mocked.
-  feeding = true;
-  gpsFeed = setInterval(() => { void driver.context().setGeolocation({ latitude: 33.8800, longitude: 35.5200, accuracy: 12.5 }).catch(error => { if (feeding) errors.push(`GPS fixture: ${String(error)}`); }); }, 15_000);
-  await expect(parent.getByText("Live bus location", { exact: true })).toBeVisible({ timeout: 90_000 }); await expect(parent.locator(".leaflet-marker-icon")).toHaveCount(1);
-  await expect(parent.getByRole("timer")).toContainText("Estimated arrival in");
   const path = (id: string) => `/api/parent/children/${id}/bus-location`;
   expect(await json(await parent.request.get(path(children[0].studentId)))).toMatchObject({ status: "LIVE", position: { latitude: 33.8800, longitude: 35.5200, accuracyMeters: 12.5 } });
+  await expect(parent.getByText("Live bus location", { exact: true })).toBeVisible({ timeout: 90_000 }); await expect(parent.locator(".leaflet-marker-icon")).toHaveCount(1);
+  await expect(parent.getByRole("timer")).toContainText("Estimated arrival in");
+
   await parent.getByRole("combobox", { name: "Choose child for bus tracking" }).selectOption(children[1].studentId);
   await expect(parent.getByRole("heading", { name: `Bus tracking for ${children[1].firstName} ${children[1].lastName}` })).toBeVisible(); await expect(parent.getByRole("timer")).toBeVisible();
-  feeding = false; clearInterval(gpsFeed);
   const stop = driver.waitForResponse(r => new URL(r.url()).pathname === `${runPath}/location-sharing` && r.request().postDataJSON()?.enabled === false);
   await driver.getByRole("button", { name: "Stop sharing", exact: true }).click(); expect((await stop).status()).toBe(200);
   await expect(parent.getByText("Bus location is unavailable.")).toBeVisible({ timeout: 20_000 });
@@ -64,10 +81,10 @@ test("actual candidate driver UI feeds the production Parent Leaflet map and ETA
   expect((await driver.request.get(path(children[0].studentId))).status()).toBe(403);
   expect(errors).toEqual([]);
   await parent.screenshot({ path: "e2e-artifacts/parent-dual-ui-360.png", fullPage: true });
-  console.log("PASS actual driver candidate UI -> real consent/location APIs -> production Parent Leaflet/ETA, automatic run start/end without reload, withdrawal, child switching, real password/2FA, PostgreSQL/Flyway, roles and both 360px layouts. Browser device GPS is simulated; offline replay and physical GPS are not certified.");
+  console.log("PASS actual integrated driver UI -> real consent/location APIs -> production Parent Leaflet/ETA, automatic run start/end without reload, withdrawal, child switching, real password/2FA, PostgreSQL/Flyway, roles and both 360px layouts. Browser device GPS is simulated; offline replay and physical GPS are not certified.");
  } finally {
-  feeding = false; clearInterval(gpsFeed);
   if (routeId) expect((await head.request.delete(`${routes}/${routeId}`)).status()).toBe(204);
   await Promise.all([parent.close(), head.close(), driver.close()]);
+  await driverBrowser.close();
  }
 });
