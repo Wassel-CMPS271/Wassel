@@ -1,4 +1,4 @@
-name: Independent real address decisions E2E
+name: Independent address decisions and offline replay E2E
 on:
   push:
     branches: [test/SCRUM-282-operations-ui-tests, develop]
@@ -43,7 +43,7 @@ jobs:
         working-directory: frontend
       - run: npm run test:e2e:install -- --with-deps
         working-directory: frontend
-      - name: Real Head address decisions and parent requests
+      - name: Real address decisions and offline confirmation replay
         run: node e2e/review-operations-address.mjs
         working-directory: frontend
         env:

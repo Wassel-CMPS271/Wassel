@@ -15,7 +15,7 @@ export function candidate<T>(file: string, selectedRef = ref): T {
   const cached = cache.get(key); if (cached) return cached.exports as T;
   let source: string;
   try { source = execFileSync("git", ["show", `${selectedRef}:frontend/src/${file}`], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); }
-  catch { throw new Error(`SCRUM-282 dependency missing: ${file} at ${selectedRef}. Integrate SCRUM-273 or explicitly select its fetched head; do not skip this gate.`); }
+  catch { throw new Error(`SCRUM-282 dependency missing: ${file} at ${selectedRef}. Integrate the corresponding feature or explicitly select its fetched review head; do not skip this gate.`); }
   const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const loaded = { exports: {} as unknown }; cache.set(key, loaded);
   const load = (name: string): unknown => {
