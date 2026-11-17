@@ -1,5 +1,38 @@
 # SCRUM-280 — Parent inbox and notification preferences
 
+## After PR #149 merged — 17 November 2026
+
+PR #149 is confirmed merged as develop **dec60bcb3f3de01a4e27c548f3e2f80bef3ca808**. Normally merged that accepted base into the existing #150 branch without conflicts. All earlier Inbox, preferences, GPS/ETA, navigation, account-reset code and evidence remain. The #149 merge dependency is resolved; no teammate branch, Jira status or Draft state was changed.
+
+### New independently executable coverage
+
+Added **ParentInbox.recovery.integration.test.tsx**, four separate owned regressions through the production page/layout, real RoleGuard and request() client with test-only HTTP fixtures. **4/4 passed**. They exercise the functional paths that #169's incorrect text assertions abort before reaching:
+
+1. A failed mark-read 404 keeps the single unread entry, sends no fake receipt/decrement, exposes no private server detail and permits retry.
+2. A mid-session 401 clears Inbox data, preferences and mutation controls, leaves backend read state unchanged and offers Sign in.
+3. A successful mark-read refetches the authoritative two-to-one count; correct singular wording and separate sibling read state persist through full layout/page remount and authentication.
+4. A list-500 failure exposes no server detail; refresh recovers the single unread entry and preferences without a stale alert.
+
+These cases supplement the existing acceptance suite. They do not replace, patch, skip or reclassify any original test. Correct production **1 unread update** wording is unchanged. Initial typing mistakes in the new query options were corrected using exact anchored accessible-name matchers; the final four cases pass with their original functional assertions intact.
+
+### Executed post-merge validation
+
+| Check | Actual result |
+| --- | --- |
+| New owned recovery/privacy/persistence cases | **4/4 passed** |
+| Original #169 snapshot da61dfb6a7951221ceb38092a5c117eaa9216d6e | **76 passed / 4 failed / 0 skipped**; all four test files and shared harness byte-identical |
+| Full frontend including all raw external tests | **1,482 passed / 4 failed / 1 existing expected failure / 5 existing skips** (1,492; 93 files); only the four known text matchers fail |
+| ESLint / production build / full PR whitespace check | Passed |
+| Standalone TypeScript after correcting the new tests | Same **13 accepted-develop diagnostics**, zero introduced; compiler remains nonzero |
+| Fresh real Inbox/preferences Chromium + PostgreSQL/Flyway | **2/2 passed**, 17 migrations; real login/2FA, read/read-all/reload, ownership, revocation, muting, late-alert scheduling/deduplication, errors/retry and 360px |
+| Fresh real GPS/ETA Chromium + PostgreSQL/Flyway | **1/1 passed**, server stale cutoff, withdrawal, child switching, morning/afternoon, privacy, actual Leaflet and 360px |
+
+The integrated actual Driver-to-Parent browser workflow remains enabled as an additional current-head CI gate. All business API responses in real-stack browser tests remain real; device GPS alone is simulated where stated. This is not physical-device or deployed-production certification. Windows junction standalone-copy warnings remain disclosed; production Next build/server/browser execution succeeds, without certifying Windows standalone packaging.
+
+**Exact remaining blocker:** #169 still has six plural text matchers across four cases, while its own singular-wording case requires the opposite for count one. Original expectations and strict red CI are preserved. #169's owner must align those matchers with its singular criterion while retaining authorization, ownership, read receipts, server counts, reload and retry assertions. The complete six-line map is in SCRUM-169-wording-conflict.md. No remaining backend or #149 dependency was found; this PR is not represented as merge-ready while independent acceptance is 76/80. Current-head hosted checks are authoritative after push.
+
+New evidence is ignored under tmp/SCRUM-280-20261117-post149/ and preserved e2e-artifacts histories. All older dated sections below remain historical evidence.
+
 ## 17 November 2026 — review fixes, unchanged independent tests and final real APIs
 
 Accepted develop **ed4736d64b402a02cb30a3f1253a97109b4f3b7e** is merged, including Driver #144, roster #142, Inbox #146 and preferences/late alerts #158. Verified #149 tracking fixes through **b0c809c** are merged normally into this existing branch; GPS and Inbox remain mounted together. Historical sections below are retained with their original dates.
