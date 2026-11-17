@@ -137,7 +137,7 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
     </p>
     {items === null && !loadFailed && <p role="status">Loading address requests…</p>}
     {loadFailed && <Card className="flex flex-col items-start" style={sectionGap}>
-      <p role="alert">Couldn't load address requests. No request has been changed.</p>
+      <p role="alert">Couldn&apos;t load address requests. No request has been changed.</p>
       <Button variant="secondary" style={minTarget} onClick={() => setReload(value => value + 1)}>Retry address requests</Button>
     </Card>}
     {items && <>
@@ -152,7 +152,7 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
               Submitted {timestamp(item.createdAt)}
               {item.decidedAt ? " · Decided " + timestamp(item.decidedAt) : ""}
             </p>
-            {item.status === "pending" && <p>The school's saved pickup details remain unchanged.</p>}
+            {item.status === "pending" && <p>The school&apos;s saved pickup details remain unchanged.</p>}
             {item.status === "approved" && <p>The school approved this request and saved the address.</p>}
             {item.status === "rejected" && <p>{item.rejectionReason ?
               "Reason: " + item.rejectionReason : "The school did not provide a reason."}</p>}
@@ -221,7 +221,7 @@ function AttendancePanel({ studentId, onAccessError }: { studentId: string; onAc
   return <section aria-label="Attendance history" className="flex min-w-0 flex-col" style={sectionGap}>
     <h2 className="text-xl font-semibold">Recorded attendance history</h2>
     <p className="text-sm" style={{ color: darkTheme.text.secondary }}>
-      School-local run dates (Asia/Beirut). Times show when the server recorded a driver's confirmation, including offline syncs.
+      School-local run dates (Asia/Beirut). Times show when the server recorded a driver&apos;s confirmation, including offline syncs.
       Reported absences are separate from these driver records.
     </p>
     <Card>
@@ -239,7 +239,7 @@ function AttendancePanel({ studentId, onAccessError }: { studentId: string; onAc
     </Card>
     {items === null && !failed && <p role="status">Loading attendance…</p>}
     {failed && <Card className="flex flex-col items-start" style={sectionGap}>
-      <p role="alert">Couldn't load attendance. No records have been changed.</p>
+      <p role="alert">Couldn&apos;t load attendance. No records have been changed.</p>
       <Button variant="secondary" style={minTarget} onClick={() => setReload(value => value + 1)}>Retry attendance</Button>
     </Card>}
     {items && <>
