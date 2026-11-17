@@ -12,6 +12,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   parent-inbox-e2e:
+    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base.ref
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:

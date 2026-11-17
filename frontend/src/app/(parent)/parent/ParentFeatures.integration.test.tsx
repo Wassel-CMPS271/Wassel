@@ -25,7 +25,7 @@ beforeEach(() => {
  });
  vi.stubGlobal("fetch", request);
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function home() { await screen.findByText("Lina Navigation"); }
 function open(name: string) { fireEvent.click(screen.getByRole("button", { name })); }
 it("keeps real GPS/ETA, parent-wide Inbox and selected-child Absences reachable together", async () => {
@@ -106,4 +106,32 @@ it.each([401, 403])("hides loaded preferences and ignores a pending receipt when
  expect(screen.queryByLabelText("Picked up")).not.toBeInTheDocument(); expect(screen.queryByText("Lina: Picked up")).not.toBeInTheDocument();
  await act(async () => pending.resolve(Response.json({ pickedUp: true, droppedOff: true, notPresent: true, late: true, lateAfterMinutes: 55 })));
  expect(screen.queryByText("Preferences saved.")).not.toBeInTheDocument(); expect(screen.queryByLabelText("Minutes after planned pickup")).not.toBeInTheDocument();
+});
+
+it("opens the real Inbox and preferences when children alone fail, with retry still available on My children", async () => {
+ const original = request.getMockImplementation()!; let unavailable = true;
+ request.mockImplementation((url: string, options: RequestInit) => url.endsWith("/children") && unavailable ? Promise.resolve(new Response(null, { status: 503 })) : original(url, options));
+ render(<ParentPage />); await screen.findByRole("alert"); expect(screen.getByRole("button", { name: "Inbox" })).toBeEnabled();
+ open("Inbox"); expect(await screen.findByText("42 unread updates")).toBeVisible(); expect(await screen.findByLabelText("Picked up")).toBeChecked();
+ expect(screen.queryByText("Couldn't load transport details")).not.toBeInTheDocument(); expect(screen.getByRole("button", { name: "Bus tracking" })).toBeDisabled();
+ open("My children"); await screen.findByRole("alert"); unavailable = false; fireEvent.click(screen.getByRole("button", { name: "Try again" })); await home();
+ expect(screen.getByRole("button", { name: "Bus tracking" })).toBeEnabled();
+});
+it.each([401, 403])("does not offer Inbox after children report lost session access (%s)", async status => {
+ request.mockResolvedValue(new Response(null, { status })); render(<ParentPage />); await screen.findByRole("alert");
+ expect(screen.getByRole("button", { name: "Inbox" })).toBeDisabled(); expect(request).toHaveBeenCalledTimes(1); expect(screen.queryByLabelText("Picked up")).not.toBeInTheDocument();
+});
+it("opens Inbox while the independent child request is pending", async () => {
+ const pending = deferred<Response>(); const original = request.getMockImplementation()!;
+ request.mockImplementation((url: string, options: RequestInit) => url.endsWith("/children") ? pending.promise : original(url, options));
+ render(<ParentPage />); expect(screen.getByRole("button", { name: "Inbox" })).toBeEnabled(); open("Inbox"); await screen.findByText("42 unread updates");
+ expect(screen.queryByText(/Loading your children's transport details/)).not.toBeInTheDocument();
+ await act(async () => pending.resolve(Response.json(family))); expect(screen.getByText("Lina: Picked up")).toBeVisible();
+});
+
+it("keeps supported Inbox updates visible when an additive unknown event is received", async () => {
+ vi.spyOn(console, "warn").mockImplementation(() => {}); const original = request.getMockImplementation()!;
+ request.mockImplementation((url: string, options: RequestInit) => url.endsWith("/inbox") ? Promise.resolve(Response.json([{ ...event, id: "future", type: "FUTURE_EVENT", studentName: "Hidden future child" }, event])) : original(url, options));
+ render(<ParentPage />); await home(); open("Inbox"); expect(await screen.findByText("Lina: Picked up")).toBeVisible(); expect(screen.getByText("42 unread updates")).toBeVisible();
+ expect(screen.queryByText(/Hidden future child/)).not.toBeInTheDocument(); expect(screen.queryByText(/Could not update the inbox/)).not.toBeInTheDocument();
 });

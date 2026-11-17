@@ -4,13 +4,13 @@ import type { InboxEvent, ParentInboxApi } from "@/lib/api/parentInbox";
 import { ApiError } from "@/lib/api/errors";
 import { InboxPanel } from "./InboxPanel";
 const entry: InboxEvent = { id: "a", type: "PICKED_UP", studentId: "s", studentName: "Lina", runId: "r", direction: "MORNING", createdAt: "2026-11-09T07:00:00Z", readAt: null };
-function source(rows: InboxEvent[] = [entry]) { return { list: vi.fn().mockResolvedValue(rows), unreadCount: vi.fn().mockResolvedValue(73), markRead: vi.fn().mockResolvedValue({ ...entry, readAt: "2026-11-09T08:00:00Z" }), markAllRead: vi.fn().mockResolvedValue(undefined) } satisfies ParentInboxApi; }
+function source(rows: InboxEvent[] = [entry]) { return { list: vi.fn().mockResolvedValue(rows), unreadCount: vi.fn().mockResolvedValue(rows.length ? 73 : 0), markRead: vi.fn().mockResolvedValue({ ...entry, readAt: "2026-11-09T08:00:00Z" }), markAllRead: vi.fn().mockResolvedValue(undefined) } satisfies ParentInboxApi; }
 it("never displays sample notifications when no backend is integrated", () => { render(<InboxPanel />); expect(screen.getByText("Inbox is not available yet.")).toBeVisible(); expect(screen.queryByText(/Lina/)).not.toBeInTheDocument(); });
 it("renders every defined event type and keeps siblings distinct", async () => {
   const api = source([entry, { ...entry, id: "b", studentName: "Omar", studentId: "t", type: "DROPPED_OFF" }, { ...entry, id: "c", type: "NOT_PRESENT" }]);
   render(<InboxPanel api={api} />); expect(await screen.findByText("Lina: Picked up")).toBeVisible(); expect(screen.getByText("Omar: Dropped off")).toBeVisible(); expect(screen.getByText("Lina: Not at the stop")).toBeVisible(); expect(screen.getByText("73 unread updates")).toBeVisible();
 });
-it("shows loading then empty results", async () => { render(<InboxPanel api={source([])} />); expect(screen.getByText("Loading inbox…")).toBeVisible(); expect(await screen.findByText("No transport updates yet.")).toBeVisible(); });
+it("shows loading then empty results", async () => { const api = source([]); api.unreadCount.mockResolvedValue(0); render(<InboxPanel api={api} />); expect(screen.getByText("Loading inbox…")).toBeVisible(); expect(await screen.findByText("No transport updates yet.")).toBeVisible(); });
 it("refreshes the authoritative count after marking read, and persists after remount", async () => {
   const api = source(); const view = render(<InboxPanel api={api} />); await screen.findByText("Lina: Picked up");
   api.list.mockResolvedValue([{ ...entry, readAt: "2026-11-09T08:00:00Z" }]); api.unreadCount.mockResolvedValue(72);
@@ -94,4 +94,10 @@ it("does not invent preference controls or endpoints while SCRUM-268 has no cont
   const api = source([]); render(<InboxPanel api={api} />); await screen.findByText("No transport updates yet.");
   expect(screen.getByText("Preferences and late alerts are not available yet.")).toBeVisible(); expect(screen.queryByRole("switch")).not.toBeInTheDocument();
   expect(api.markAllRead).not.toHaveBeenCalled(); expect(api.markRead).not.toHaveBeenCalled();
+});
+
+it("preserves the unread total when no supported rows can be displayed", async () => {
+ const api = source([]); api.unreadCount.mockResolvedValue(73); render(<InboxPanel api={api} />); expect(await screen.findByText("73 unread updates")).toBeVisible();
+ expect(screen.getByText("No transport updates to display here. Your unread total includes updates not shown in this list.")).toBeVisible();
+ expect(screen.queryByText("No transport updates yet.")).not.toBeInTheDocument(); expect(screen.getByText("Mark all as read")).toBeEnabled();
 });
