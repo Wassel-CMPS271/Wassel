@@ -1,0 +1,11 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { notificationPreferencesApi as api, parseNotificationPreferences } from "./notificationPreferences";
+const value = { pickedUp: true, droppedOff: false, notPresent: true, late: true, lateAfterMinutes: 15 };
+afterEach(() => vi.unstubAllGlobals());
+function reply(body: unknown, status = 200) { const f = vi.fn().mockResolvedValue(Response.json(body, { status })); vi.stubGlobal("fetch", f); return f; }
+it("GETs the signed-in parent's preferences with cookies and no identity argument", async () => { const f = reply(value); expect(await api.get()).toEqual(value); expect(f).toHaveBeenCalledWith(expect.stringMatching(/\/api\/parent\/notification-preferences$/), expect.objectContaining({ method: "GET", credentials: "include", body: undefined })); });
+it("PUTs all five choices and applies the real server receipt", async () => { const saved = { ...value, lateAfterMinutes: 20 }; const f = reply(saved); expect(await api.save(value)).toEqual(saved); expect(f).toHaveBeenCalledWith(expect.stringMatching(/notification-preferences$/), expect.objectContaining({ method: "PUT", credentials: "include", body: JSON.stringify(value) })); });
+it.each([5, 60])("accepts threshold boundary %s", minutes => expect(parseNotificationPreferences({ ...value, lateAfterMinutes: minutes }).lateAfterMinutes).toBe(minutes));
+it.each([null, {}, { ...value, late: "true" }, { ...value, pickedUp: null }, { ...value, lateAfterMinutes: 4 }, { ...value, lateAfterMinutes: 61 }, { ...value, lateAfterMinutes: 5.5 }, { ...value, lateAfterMinutes: "10" }])("rejects invalid preference shape %j before sending anything", async invalid => { const f = reply(value); expect(() => parseNotificationPreferences(invalid)).toThrow(); await expect(api.save(invalid as typeof value)).rejects.toThrow(); expect(f).not.toHaveBeenCalled(); });
+it.each([401, 403, 404, 500])("preserves real HTTP %s without fallback preferences", async status => { reply(null, status); await expect(api.get()).rejects.toMatchObject({ status }); });
+it("preserves the server's named validation errors", async () => { reply({ errors: { lateAfterMinutes: "Choose 5 to 60" } }, 400); await expect(api.save(value)).rejects.toMatchObject({ errors: { lateAfterMinutes: "Choose 5 to 60" } }); });

@@ -43,10 +43,13 @@ next-env.d.ts
 # landing page generated originals (large, kept local)
 /public/landing/originals/
 
-# Generated isolated Parent GPS review launcher
-/e2e/.parent-tracking-review-run.mjs
+# Generated isolated Inbox browser launcher
+/e2e/.parent-inbox-review-run.mjs
 
-# Versioned generated tracking launchers preserve prior review runs
+/e2e/.parent-inbox-review-run-*.mjs
+
+# Tracking launchers retained alongside Inbox launchers
+/e2e/.parent-tracking-review-run.mjs
 /e2e/.parent-tracking-review-run-*.mjs
 
 # Isolated dual-UI review launchers
