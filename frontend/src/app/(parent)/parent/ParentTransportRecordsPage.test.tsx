@@ -108,7 +108,7 @@ describe("SCRUM-281 parent linked-child UI", () => {
     fill("From date", "2026-01-01");
     fill("To date", "2026-03-04");
     fireEvent.click(screen.getByRole("button", { name: "Show attendance" }));
-    expect(await screen.findByText(/at most 62 days/)).toBeVisible();
+    expect(await screen.findByText("Choose at most 62 days, including both endpoints.")).toBeVisible();
     expect(attendance).toHaveBeenCalledTimes(1);
     fill("To date", "2026-03-03");
     fireEvent.click(screen.getByRole("button", { name: "Show attendance" }));
