@@ -42,3 +42,6 @@ next-env.d.ts
 
 # landing page generated originals (large, kept local)
 /public/landing/originals/
+
+# Generated content-addressed local address review launcher
+/e2e/.operations-address-run-*.mjs

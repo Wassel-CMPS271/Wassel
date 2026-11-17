@@ -1,4 +1,36 @@
-# SCRUM-282 â€” Independent operations UI tests
+# SCRUM-282 — Independent operations UI tests
+
+## 17 November 2026 — merged Driver/roster, real address browser and live-control review
+
+Accepted develop **ed4736d64b402a02cb30a3f1253a97109b4f3b7e** is merged normally. **Driver #144 and roster #142 are now merged**, so their prior missing-client/default-HEAD blockers are resolved. All original 39 independent cases/assertions and historical failure evidence remain. No teammate branch or production source was modified.
+
+### Completed independent work
+
+- Original accepted-source slice: **39/39 passed**: durable GPS/confirmation queue (12), GPS permissions (4), address decisions (7), canonical address client (9), Admin authorization/navigation (7). The original request deadline, durable cross-tab, delayed-conflict draft, real address delivery and replay delivery cases are green against HEAD.
+- Added **19 independent SCRUM-274 cases** derived from its actual draft **ce1478449db1e86f2d2730d293834e6a6350c67f** and agreed APIs. They cover active-run/location joining, exclusion of not-started/finished rows, empty/unknown/unavailable/stale states, remaining stops, separate planned/live values, failed-refresh withdrawal of live claims, directional confirmation counts, named 44px reassignment trigger, real authenticated location/reassignment/history requests, seen-driver concurrency guard and HTTP 400/401/403/404/409/500 propagation.
+- All available independent slices together: **58/58 passed**, with accepted HEAD for Driver/roster/Admin and the explicit immutable #168 head for live control. This is not a claim #168 is merged or late-run acceptance is complete.
+- Added a **real address browser scenario** against accepted source: actual parent requests and Head approve/reject UI, no saved address/pin mutation before approval, approval persistence, rejection preserving saved data, real offline action failure/retry, keyboard focus/Escape cancellation, reload, 409, role/ownership 401/403/404 and 360px/no crashes. **1/1 passed**, runner exit 0, native PostgreSQL/Flyway (17 migrations), real password/2FA, no business response mocked.
+- Updated CI to run the original 39 against accepted HEAD, an explicit strict immutable #168 review job, and the real address browser against PostgreSQL. Shared runner stays unchanged; generated local launcher/artifacts are excluded.
+
+| Final verification | Actual result |
+| --- | --- |
+| Existing Driver/roster/address/Admin acceptance on accepted source | **39 passed / 0 failed** |
+| Added live-control acceptance on exact #168 draft | **19 passed / 0 failed** |
+| All available independent cases with explicit control candidate | **58/58 passed** |
+| Full default-HEAD frontend regression | **1,256 passed / 11 failed / 1 existing expected failure / 5 existing skips** (1,273; 79 files) |
+| Real accepted-source address browser | **1/1 passed** |
+| ESLint / production build / git diff --check | Passed |
+| Corrected standalone TypeScript | **13 accepted-develop baseline diagnostics**, zero introduced; compiler remains nonzero |
+
+The **11 normal default-HEAD failures** are delivery gates for still-unmerged SCRUM-274: ten active-run/row cases require its absent UI/view modules and one location-client case requires its absent getRunLocations export. Eight reassignment/history/error cases already pass on HEAD. No missing module is skipped, replaced with a fake, or marked expected-failure. The explicit candidate passes all 19, while normal CI remains red until the implementation is integrated. Initial own fixture type errors (unavailable type import and missing vehicle capacity) and an ambiguous text locator were corrected; their initial logs and final corrected runs are retained.
+
+### Exact remaining scope
+
+#168 is still a Draft, unmerged at ce147844. SCRUM-274 must be independently reviewed and accepted before the same 19 default-HEAD gates can pass. Its **Head not-started/late-run flag and contract are still missing**: the implementation explicitly reserves serverLateFlag as null; parent LATE inbox events do not define this Head API. Do not infer lateness from planned pickup and ETA or fabricate a field. Full live-control polling/auth/mobile and atomic reassignment/history preservation still require real-browser/integration acceptance once the feature/contract is complete. Physical phone GPS, offline app reload and the complete replay recovery matrix are not certified by the address/browser or unit passes above.
+
+Evidence: ignored tmp/SCRUM-282-20261117-accepted/ (both full regressions, final TypeScript, real address browser), SCRUM-282-20261117-independent-final.log and preserved artifacts/histories. Windows standalone/junction build warnings remain disclosed; build and actual Next browser execution pass, not a standalone deployment certification.
+
+**Readiness: keep #151 Draft / not merge-ready.** #144/#142 are resolved dependencies; #168/SCRUM-274 integration, agreed lateness contract and remaining end-to-end acceptance are the blockers. No Jira status, Draft state or teammate branch changed, and no PR was merged. Earlier sections below describe historical sources/dates.
 
 ## 16 November 2026 — latest address/replay candidates, original failures preserved
 
