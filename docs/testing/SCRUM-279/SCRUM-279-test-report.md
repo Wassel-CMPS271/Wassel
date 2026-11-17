@@ -1,5 +1,37 @@
 # SCRUM-279 — Parent live bus map and countdown
 
+## 17 November 2026 — review fixes and accepted Driver integration
+
+Accepted develop **ed4736d64b402a02cb30a3f1253a97109b4f3b7e** is merged normally, including Driver #144 and roster #142. Existing commits and all dated evidence are preserved. Historical dependency/readiness statements below describe their dates, not the current status.
+
+### Changes and review findings
+
+- Tracking now refreshes authorized child/run details every 60 seconds while open, across start, finish, direction and assignment changes. Late responses after navigation/account changes are ignored; auth failures clear private state and stop automatic retries.
+- Telemetry stops automatic polling on 401/403/404, with explicit recovery controls; transient failures back off at 15/30/60/120 seconds. Hidden tabs pause polling; returning refreshes immediately. Afternoon loading/errors never reuse morning pickup labels or times.
+- Stable live/stale announcements are separate from the changing last-seen age. Navigation uses stable item ids. Removed the unused legacy ArrivalCountdown and migrated all four safety cases to the canonical server-duration LiveEtaCountdown; no acceptance case was removed or skipped.
+- Removed the obsolete moving #144 CI pin/candidate checkout now that Driver is merged. Browser CI tests the exact integrated checkout. Parent workflow jobs ignore PR title/body-only edits while retaining base-change execution. Shared run.mjs and teammate production source remain unchanged.
+- Corrected identified UTF-8 report corruption. WeekdayE2eClock is the same file/blob used by the existing own test branches, not multiple runtime clocks; #149 lands it once and #150 inherits it.
+
+### Executed current-source validation
+
+| Check | Result |
+| --- | --- |
+| Focused parent/client/navigation/lifecycle/accessibility cases | **94 passed** (before the dependency-only Driver/roster merge); all included in full regression below |
+| Full frontend on accepted Driver/roster | **1,299 passed / 0 unexpected failures / 1 existing expected failure / 5 existing skips** (1,305 total; 81 files) |
+| ESLint and production build | Passed; the final real-stack launcher builds this current frontend |
+| Standalone TypeScript | Same **13 accepted-develop baseline diagnostics**, zero introduced |
+| Real integrated Driver UI -> Parent UI, PostgreSQL/Flyway/Chromium | **1 passed**, exit 0; all 17 migrations applied |
+| Raw #169 tracking acceptance in the composed #150 branch | **43/43 passed**; combined raw suite remains 76/80 due to four singular/plural conflicts, described in #150 |
+| git diff --check | Passed before commit |
+
+The extended real browser test keeps Tracking open before Start and after End, with **no Parent reload or manual refresh after starting**. It verifies automatic state transitions, real password and 2FA, actual Driver consent/location requests, real Parent APIs, Leaflet marker, server ETA, child switching, withdrawal, role denial, cleanup and both 360px layouts.
+
+Only the Driver device position source is simulated. A separate Chromium probe reproduced native override replacement emitting POSITION_UNAVAILABLE (code 2) before a new fix; the previous failed runs are preserved. The success fixture models a continuously available position source in a separate Driver browser process. It does not mock business/auth/consent responses, suppress production errors, certify physical phone GPS, or certify offline replay. The existing server-STALE/afternoon/privacy browser suite remains a separate CI gate.
+
+Evidence remains ignored under tmp/SCRUM-279-20261117{,-review,-accepted}/ and timestamped e2e-artifacts history. Windows node_modules-junction standalone-copy warnings remain disclosed: Next build exits successfully and the actual production server/browser works; Windows standalone deployment is not certified. Hosted CI uses fresh dependencies. Current-head hosted results must be read after push, not inferred from local passes.
+
+**Readiness:** own tracking review findings are fixed and accepted Driver integration is verified. Check current-head hosted CI and independent review before merging. No PR merge, Jira update, teammate branch edit or Draft change was performed.
+
 ## 16 November 2026 — accepted develop and latest driver verification
 
 - Merged accepted `origin/develop` **cc6783f96bcea48c42c06c3afff6084e1121eee1** normally; preserved the existing GPS/ETA implementation, all earlier commits and browser evidence. No teammate source or branch was edited.

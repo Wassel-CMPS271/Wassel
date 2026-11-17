@@ -1,4 +1,4 @@
-name: Parent and candidate driver UI E2E
+name: Parent and integrated driver UI E2E
 on:
   push:
     branches: [feature/SCRUM-279-parent-live-map, feature/SCRUM-280-parent-notifications, develop]
@@ -28,14 +28,7 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@v4
-      # Immutable reviewed candidate, independent of later PR-head movement.
-      # The runner still verifies its exact HEAD and tracked source cleanliness.
-      - uses: actions/checkout@v4
-        with:
-          repository: Wassel-CMPS271/Wassel
-          ref: 2cb70da8087b924eef8f920c84927c29535e6851
-          path: tmp/parent-driver-candidate
-          persist-credentials: false
+      # Driver GPS/offline UI is now merged into develop; test this exact checkout.
       - uses: actions/setup-java@v4
         with:
           java-version: '21'
@@ -48,16 +41,12 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
-      - run: npm ci
-        working-directory: tmp/parent-driver-candidate/frontend
       - run: npm run test:e2e:install -- --with-deps
         working-directory: frontend
-      - name: Actual candidate driver UI to production Parent UI
+      - name: Actual integrated Driver UI to Parent UI
         run: node e2e/review-parent-driver.mjs
         working-directory: frontend
         env:
-          E2E_DRIVER_CHECKOUT: ${{ github.workspace }}/tmp/parent-driver-candidate
-          E2E_DRIVER_EXPECTED_HEAD: 2cb70da8087b924eef8f920c84927c29535e6851
           E2E_MAVEN_CMD: mvn
           E2E_DB_URL: jdbc:postgresql://127.0.0.1:5432/wassel_e2e
           E2E_DB_USERNAME: postgres
