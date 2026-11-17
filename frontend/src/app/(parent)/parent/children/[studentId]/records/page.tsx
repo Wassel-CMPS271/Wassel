@@ -1,4 +1,4 @@
-import { ParentTransportRecordsPage } from "../../ParentTransportRecordsPage";
+import { ParentTransportRecordsPage } from "../../../ParentTransportRecordsPage";
 
 // The parent layout enforces PARENT role; the client verifies linkage and
 // the backend authorizes each per-child request against the cookie session.
