@@ -10,6 +10,7 @@ import { BrandMark } from "@/components/ui/BrandMark";
 import {
   ClockIcon,
   DriverIcon,
+  LiveIcon,
   RouteIcon,
   SettingsIcon,
   StudentIcon,
@@ -27,6 +28,7 @@ interface NavItem {
 // Settings has no ticket yet.
 const NAV_ITEMS: NavItem[] = [
   { label: "Today", href: "/head-of-transport/today", enabled: true, Icon: ClockIcon },
+  { label: "Live", href: "/head-of-transport/live", enabled: true, Icon: LiveIcon },
   { label: "Parents", href: "/head-of-transport/parents", enabled: true, Icon: StudentIcon },
   { label: "Vehicles", href: "/head-of-transport/vehicles", enabled: true, Icon: VehicleIcon },
   { label: "Drivers", href: "/head-of-transport/drivers", enabled: true, Icon: DriverIcon },
