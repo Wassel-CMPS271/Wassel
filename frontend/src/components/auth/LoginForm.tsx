@@ -22,7 +22,7 @@ const CODE_ALREADY_SENT =
   "A sign-in code was sent less than a minute ago. Enter it, or wait a minute and sign in again.";
 
 const NOTICES = {
-  expired: "Your sign-in has expired. Please sign in again.",
+  expired: "Your session expired. Please sign in again.",
   passwordSet: "Your password is set. Sign in to continue.",
 };
 

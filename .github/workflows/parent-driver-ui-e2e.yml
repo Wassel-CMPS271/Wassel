@@ -1,10 +1,11 @@
-name: Parent and candidate driver UI E2E
+name: Parent and integrated driver UI E2E
 on:
   push:
     branches: [feature/SCRUM-279-parent-live-map, feature/SCRUM-280-parent-notifications, develop]
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
     branches: [develop]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -26,19 +27,8 @@ jobs:
           --health-cmd "pg_isready -U postgres -d wassel_e2e"
           --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
-      - name: Refuse stale driver review evidence
-        shell: bash
-        run: |
-          actual="$(git ls-remote https://github.com/Wassel-CMPS271/Wassel.git refs/pull/144/head | cut -f1)"
-          test "$actual" = "d1ad8229318b77562472fe4b698143180c24ac0a" || { echo "PR 144 changed; independently review and verify its new head before updating the pin."; exit 1; }
       - uses: actions/checkout@v4
-      # Immutable reviewed candidate; never copies source into the Parent branch.
-      - uses: actions/checkout@v4
-        with:
-          repository: Wassel-CMPS271/Wassel
-          ref: d1ad8229318b77562472fe4b698143180c24ac0a
-          path: tmp/parent-driver-candidate
-          persist-credentials: false
+      # Driver GPS/offline UI is now merged into develop; test this exact checkout.
       - uses: actions/setup-java@v4
         with:
           java-version: '21'
@@ -51,16 +41,12 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
-      - run: npm ci
-        working-directory: tmp/parent-driver-candidate/frontend
       - run: npm run test:e2e:install -- --with-deps
         working-directory: frontend
-      - name: Actual candidate driver UI to production Parent UI
+      - name: Actual integrated Driver UI to Parent UI
         run: node e2e/review-parent-driver.mjs
         working-directory: frontend
         env:
-          E2E_DRIVER_CHECKOUT: ${{ github.workspace }}/tmp/parent-driver-candidate
-          E2E_DRIVER_EXPECTED_HEAD: d1ad8229318b77562472fe4b698143180c24ac0a
           E2E_MAVEN_CMD: mvn
           E2E_DB_URL: jdbc:postgresql://127.0.0.1:5432/wassel_e2e
           E2E_DB_USERNAME: postgres

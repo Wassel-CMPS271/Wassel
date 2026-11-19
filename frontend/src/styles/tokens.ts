@@ -187,6 +187,7 @@ export const darkTheme = {
     emptyState: "rgba(20, 22, 29, 0.5)", // dashed "nothing here yet" panel: surface.card at half strength
     emptyStateBadge: "rgba(255, 255, 255, 0.05)", // icon circle inside the empty state
     skeleton: "rgba(255, 255, 255, 0.08)", // pulsing blocks of a loading placeholder list
+    pendingBadge: "rgba(247, 144, 9, 0.14)", // tint of warning[500]: icon circle beside a heading for items awaiting a decision (address requests)
     overlay: "rgba(5, 6, 10, 0.72)", // modal dialog backdrop, a tint of background.base
   },
   interactive: {
@@ -232,6 +233,31 @@ export const darkTheme = {
     absentText: colors.warning[500],
     absentBg: "rgba(247, 144, 9, 0.14)", // "Absent" pill, tint of warning[500]
   },
+} as const;
+
+/**
+ * Offline confirmation queue pills (SCRUM-273, driver Today screen): each state
+ * gets its own tint, built from existing palette colors — no new hex values —
+ * following `runStop`'s recipe (a low-opacity fill of the palette color, text in
+ * the solid color). Checked against `surface.card`, the pill's actual backdrop:
+ *   sendingText (primary[300]) on sendingBg      ~6.5:1
+ *   syncedText (success[500]) on syncedBg        ~5.6:1
+ *   errorText (error[500]) on errorBg            ~4.6:1 (error[500] itself is only
+ *     ~4.8:1 on plain surface.card, so this pill's tint is a low 6% opacity —
+ *     14%, matching the others, dips just under 4.5:1)
+ * conflictBg/conflictText reuse `runStop.absentBg`/`absentText` (~6.2:1 there
+ * already) rather than a new pair, since a conflict pill is a warning like absent.
+ * "queued" and "blocked" reuse the plain neutral pill (`surface.emptyStateBadge` +
+ * `text.secondary`, ~10.9:1) used elsewhere for a non-urgent status — nothing new
+ * needed there.
+ */
+export const queuePill = {
+  sendingBg: "rgba(77, 127, 255, 0.14)", // tint of primary[400]
+  sendingText: colors.primary[300],
+  syncedBg: "rgba(18, 183, 106, 0.14)", // tint of success[500], same recipe as darkTheme.status.liveBadgeBg
+  syncedText: colors.success[500],
+  errorBg: "rgba(240, 68, 56, 0.06)", // tint of error[500], kept low for contrast — see comment above
+  errorText: colors.error[500],
 } as const;
 
 /**

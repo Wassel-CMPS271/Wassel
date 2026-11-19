@@ -137,6 +137,10 @@ class RoleAccessMatrixTests {
 		TABLE.put("PATCH /api/head-of-transport/students/{id}/address", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("PATCH /api/head-of-transport/students/{id}/location", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("PATCH /api/head-of-transport/students/{id}/parent", Access.HEAD_OF_TRANSPORT_ONLY);
+		// roster (SCRUM-270)
+		TABLE.put("PUT /api/head-of-transport/students/{id}/status", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("GET /api/head-of-transport/students/{id}/best-route", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("POST /api/head-of-transport/students/{id}/best-route", Access.HEAD_OF_TRANSPORT_ONLY);
 
 		TABLE.put("GET /api/head-of-transport/routes", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("GET /api/head-of-transport/routes/{id}", Access.HEAD_OF_TRANSPORT_ONLY);
@@ -233,6 +237,7 @@ class RoleAccessMatrixTests {
 		VALID_BODIES.put("PATCH /api/head-of-transport/students/{id}/address", "{\"address\":\"Hamra Street, Beirut\"}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/students/{id}/location", "{\"latitude\":33.9,\"longitude\":35.5}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/students/{id}/parent", "{\"parentUserId\":\"" + SOME_ID + "\"}");
+		VALID_BODIES.put("PUT /api/head-of-transport/students/{id}/status", "{\"status\":\"paused\"}");
 		String route = "{\"name\":\"Test route\",\"vehicleId\":\"" + SOME_ID + "\",\"driverId\":\"" + SOME_ID + "\"}";
 		VALID_BODIES.put("POST /api/head-of-transport/routes", route);
 		VALID_BODIES.put("PUT /api/head-of-transport/routes/{id}", route);

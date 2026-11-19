@@ -5,7 +5,7 @@ import type { BusLocation } from "@/lib/api/parentTracking";
 import { ApiError } from "@/lib/api/errors";
 import { TrackingPanel } from "./TrackingPanel";
 vi.mock("@/components/map/MapView", () => ({ MapView: (p: { label: string }) => <div role="region" aria-label={p.label} /> }));
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 const child: Child = { studentId: "a", firstName: "Lina", lastName: "Test", route: null, driver: null, vehicle: null, expectedPickupTime: "07:20", todayRun: { state: "IN_PROGRESS", direction: "MORNING", stopsLeft: 2 } };
 const fix: BusLocation = { status: "LIVE", position: { latitude: 33.9, longitude: 35.5, accuracyMeters: 12, receivedAt: "2026-11-09T07:00:00Z", ageSeconds: 10 } };
 it("has no production fallback when the API is not integrated", () => { render(<TrackingPanel child={child} />); expect(screen.getByText("Live tracking is not available yet.")).toBeVisible(); expect(screen.queryByRole("region")).not.toBeInTheDocument(); });
@@ -48,4 +48,40 @@ it("drops the previous route/driver fix before an authorized assignment changes"
   const view = render(<TrackingPanel child={child} api={api} />); await screen.findByRole("region");
   view.rerender(<TrackingPanel child={{ ...child, route: { id: "changed", name: "New route" } }} api={api} />);
   expect(screen.queryByRole("region")).not.toBeInTheDocument(); expect(api).toHaveBeenCalledTimes(2);
+});
+
+it.each([401, 403, 404])("stops background tracking after terminal access HTTP %s", async status => {
+  vi.useFakeTimers(); const api = vi.fn().mockResolvedValueOnce(fix).mockRejectedValue(new ApiError(status));
+  render(<TrackingPanel child={child} api={api} />); await act(async () => {});
+  await act(async () => vi.advanceTimersByTimeAsync(15_000)); expect(api).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole("alert")).toBeVisible(); expect(screen.queryByRole("region")).not.toBeInTheDocument();
+  await act(async () => vi.advanceTimersByTimeAsync(60_000)); expect(api).toHaveBeenCalledTimes(2);
+  if (status !== 401) { fireEvent.click(screen.getByText("Retry tracking")); await act(async () => {}); expect(api).toHaveBeenCalledTimes(3); }
+});
+it.each(["loading", "error"])("does not reuse a morning pickup time for afternoon %s", async phase => {
+  const api = vi.fn().mockImplementation(() => phase === "loading" ? new Promise(() => {}) : Promise.reject(new Error("offline")));
+  render(<TrackingPanel child={{ ...child, todayRun: { ...child.todayRun!, direction: "AFTERNOON" } }} api={api} />);
+  await act(async () => {}); expect(screen.queryByText(/morning/i)).not.toBeInTheDocument(); expect(screen.queryByText(/07:20/)).not.toBeInTheDocument();
+  expect(screen.getByText(phase === "loading" ? "Loading bus location…" : "Could not load bus location. Please try again.")).toBeVisible();
+});
+
+it("backs off consecutive transient failures and resets the delay after recovery", async () => {
+ vi.useFakeTimers(); const api = vi.fn().mockRejectedValueOnce(new ApiError(503)).mockRejectedValueOnce(new Error("offline")).mockResolvedValue(fix);
+ render(<TrackingPanel child={child} api={api} />); await act(async () => {}); expect(api).toHaveBeenCalledTimes(1);
+ await act(async () => vi.advanceTimersByTimeAsync(15_000)); expect(api).toHaveBeenCalledTimes(2);
+ await act(async () => vi.advanceTimersByTimeAsync(29_999)); expect(api).toHaveBeenCalledTimes(2);
+ await act(async () => vi.advanceTimersByTimeAsync(1)); expect(api).toHaveBeenCalledTimes(3); expect(screen.getByText("Live bus location")).toBeVisible();
+ await act(async () => vi.advanceTimersByTimeAsync(15_000)); expect(api).toHaveBeenCalledTimes(4);
+});
+it("pauses hidden-tab telemetry and refreshes immediately when visible again", async () => {
+ vi.useFakeTimers(); const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false); const api = vi.fn().mockResolvedValue(fix);
+ render(<TrackingPanel child={child} api={api} />); await act(async () => {}); expect(api).toHaveBeenCalledTimes(1);
+ hidden.mockReturnValue(true); act(() => document.dispatchEvent(new Event("visibilitychange"))); await act(async () => vi.advanceTimersByTimeAsync(120_000)); expect(api).toHaveBeenCalledTimes(1);
+ hidden.mockReturnValue(false); await act(async () => document.dispatchEvent(new Event("visibilitychange"))); expect(api).toHaveBeenCalledTimes(2); expect(screen.getByText("Live bus location")).toBeVisible();
+});
+it("keeps ticking position ages outside the status live region", async () => {
+ vi.useFakeTimers(); const api = vi.fn().mockResolvedValueOnce({ ...fix, status: "STALE", position: { ...fix.position, ageSeconds: 140 } }).mockReturnValue(new Promise(() => {}));
+ render(<TrackingPanel child={child} api={api} />); await act(async () => {}); expect(screen.getByRole("status")).toHaveTextContent("This position is stale.");
+ expect(screen.getByText("Last seen 140 seconds ago.")).toHaveAttribute("aria-live", "off"); await act(async () => vi.advanceTimersByTimeAsync(1000));
+ expect(screen.getByRole("status")).toHaveTextContent("This position is stale."); expect(screen.getByText("Last seen 141 seconds ago.")).toHaveAttribute("aria-live", "off");
 });

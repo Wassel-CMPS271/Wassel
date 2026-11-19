@@ -1,5 +1,47 @@
 # SCRUM-279 — Parent live bus map and countdown
 
+## 17 November 2026 — review fixes and accepted Driver integration
+
+Accepted develop **ed4736d64b402a02cb30a3f1253a97109b4f3b7e** is merged normally, including Driver #144 and roster #142. Existing commits and all dated evidence are preserved. Historical dependency/readiness statements below describe their dates, not the current status.
+
+### Changes and review findings
+
+- Tracking now refreshes authorized child/run details every 60 seconds while open, across start, finish, direction and assignment changes. Late responses after navigation/account changes are ignored; auth failures clear private state and stop automatic retries.
+- Telemetry stops automatic polling on 401/403/404, with explicit recovery controls; transient failures back off at 15/30/60/120 seconds. Hidden tabs pause polling; returning refreshes immediately. Afternoon loading/errors never reuse morning pickup labels or times.
+- Stable live/stale announcements are separate from the changing last-seen age. Navigation uses stable item ids. Removed the unused legacy ArrivalCountdown and migrated all four safety cases to the canonical server-duration LiveEtaCountdown; no acceptance case was removed or skipped.
+- Removed the obsolete moving #144 CI pin/candidate checkout now that Driver is merged. Browser CI tests the exact integrated checkout. Parent workflows no longer subscribe to PR metadata edits, so those events cannot cancel a real in-progress run; explicit workflow dispatch is available for rechecks after a base change. Shared run.mjs and teammate production source remain unchanged.
+- Corrected identified UTF-8 report corruption. WeekdayE2eClock is the same file/blob used by the existing own test branches, not multiple runtime clocks; #149 lands it once and #150 inherits it.
+
+### Executed current-source validation
+
+| Check | Result |
+| --- | --- |
+| Focused parent/client/navigation/lifecycle/accessibility cases | **94 passed** (before the dependency-only Driver/roster merge); all included in full regression below |
+| Full frontend on accepted Driver/roster | **1,299 passed / 0 unexpected failures / 1 existing expected failure / 5 existing skips** (1,305 total; 81 files) |
+| ESLint and production build | Passed; the final real-stack launcher builds this current frontend |
+| Standalone TypeScript | Same **13 accepted-develop baseline diagnostics**, zero introduced |
+| Real integrated Driver UI -> Parent UI, PostgreSQL/Flyway/Chromium | **1 passed**, exit 0; all 17 migrations applied |
+| Raw #169 tracking acceptance in the composed #150 branch | **43/43 passed**; combined raw suite remains 76/80 due to four singular/plural conflicts, described in #150 |
+| git diff --check | Passed before commit |
+
+The extended real browser test keeps Tracking open before Start and after End, with **no Parent reload or manual refresh after starting**. It verifies automatic state transitions, real password and 2FA, actual Driver consent/location requests, real Parent APIs, Leaflet marker, server ETA, child switching, withdrawal, role denial, cleanup and both 360px layouts.
+
+Only the Driver device position source is simulated. A separate Chromium probe reproduced native override replacement emitting POSITION_UNAVAILABLE (code 2) before a new fix; the previous failed runs are preserved. The success fixture models a continuously available position source in a separate Driver browser process. It does not mock business/auth/consent responses, suppress production errors, certify physical phone GPS, or certify offline replay. The existing server-STALE/afternoon/privacy browser suite remains a separate CI gate.
+
+Evidence remains ignored under tmp/SCRUM-279-20261117{,-review,-accepted}/ and timestamped e2e-artifacts history. Windows node_modules-junction standalone-copy warnings remain disclosed: Next build exits successfully and the actual production server/browser works; Windows standalone deployment is not certified. Hosted CI uses fresh dependencies. Current-head hosted results must be read after push, not inferred from local passes.
+
+**Readiness:** own tracking review findings are fixed and accepted Driver integration is verified. Check current-head hosted CI and independent review before merging. No PR merge, Jira update, teammate branch edit or Draft change was performed.
+
+## 16 November 2026 — accepted develop and latest driver verification
+
+- Merged accepted `origin/develop` **cc6783f96bcea48c42c06c3afff6084e1121eee1** normally; preserved the existing GPS/ETA implementation, all earlier commits and browser evidence. No teammate source or branch was edited.
+- Focused: **74 passed**. Full frontend: **840 passed, 1 pre-existing expected failure, 6 pre-existing skips** (847 total). ESLint, production build and `git diff --check`: passed. Standalone TypeScript still reports the 13 established baseline diagnostics; no new diagnostic appeared.
+- Updated the isolated dual-frontend GPS workflow's immutable driver candidate from `e3ec666` to PR #144 **d1ad8229318b77562472fe4b698143180c24ac0a**, which arrived during this review. The live-head guard remains enforced. Existing real-browser results above/below are retained with their original dates; new-head browser/CI results will be recorded on the existing PR, not assumed from an older head.
+- The latest #144 and #142 heads passed the 30 existing independent operations cases; the extended address-client checks bring that candidate slice to **39/39**. This does not prove the entire driver acceptance suite: its pending-button and explicit 409 retry cases remain under independent review in SCRUM-250.
+- The real GPS/ETA APIs (#143/#153) are accepted. #144 remains an unmerged Draft and accepted develop still ships the sample Driver Today screen. The Parent map is suitable for independent review of its own implementation, with final driver integration and independent approval still required. Draft status is unchanged by user instruction.
+- Local Windows production build exits successfully with the previously documented node_modules-junction standalone-copy EPERM warning; this does not certify a Windows standalone deployment. Hosted CI uses fresh dependencies.
+
+
 ## Independent frontend review packet and actual driver UI slice — 15 November 2026
 
 Latest live audit: develop remains `3798b40d2364a738f29dbf2c1d33bbaa1cd9601c`. #144 is now marked Ready, but its source is still exact `e3ec66670324a77edfe014dec7a00f18ee39ac3c`, with null replay adapter and no formal approval. Its readiness flag is not accepted as completion. No teammate branch, Jira status, PR merge or Ready flag was changed.
@@ -194,7 +236,7 @@ Evidence: `tmp/SCRUM-279-20261110/` (focused/full regression, lint/build/type co
 Earlier dated sections below are preserved historical evidence.
 
 
-## Status â€” 9 November 2026
+## Status — 9 November 2026
 
 PARTIALLY COMPLETE / integration BLOCKED. Jira In Progress. Branch feature/SCRUM-279-parent-live-map, based on develop 8a249e8. No backend source was copied or modified.
 
@@ -222,7 +264,7 @@ Tests use explicit test-only fixtures/injected API boundaries. Unit success is n
 
 ## Blocking dependencies and completion steps
 
-1. SCRUM-261 / #143 remains unmerged; preserve V10 â†’ V11 â†’ V12 migration order. Recheck its final contract and wire getBusLocation only after the accepted API is available.
+1. SCRUM-261 / #143 remains unmerged; preserve V10 → V11 → V12 migration order. Recheck its final contract and wire getBusLocation only after the accepted API is available.
 2. SCRUM-262 has no defined/merged ETA contract. Do not infer an ETA from the planned pickup time or add guessed fields; implement an adapter and validity rules only from that contract.
 3. SCRUM-273 / #144 remains a draft with GPS/replay APIs null and known defects. The real driver-to-parent slice is unavailable.
 4. Add Parent Home child selection/navigation and compose the components with authenticated real data after those gates. Verify both multiple-child isolation and server ownership with actual sessions, consent/end transitions, stale/missing GPS/ETA, persistence/error recovery and the actual 360px Leaflet UI.
