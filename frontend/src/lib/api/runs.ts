@@ -6,7 +6,9 @@
 //   GET  /api/driver/runs/today                                  -> DriverDay (creates today's runs)
 //   POST /api/driver/runs/{runId}/start                          -> Run
 //   POST /api/driver/runs/{runId}/end                            -> Run
-//   PUT  /api/driver/runs/{runId}/students/{studentId}/confirmation  { status } -> Run
+//   PUT  /api/driver/runs/{runId}/students/{studentId}/confirmation  { status, clientRequestId? } -> Run
+//        (confirmStudent sends { status } only; the offline queue's replay in confirmationReplay.ts
+//        adds the tap's clientRequestId, SCRUM-263)
 //   GET  /api/head-of-transport/runs?date=                       -> RunsDay (today when date is omitted)
 //   GET  /api/head-of-transport/absences?date=                   -> AbsentStudent[] (today when date is omitted)
 //   POST /api/head-of-transport/runs/{runId}/reassignments  ReassignInput -> RunSummary (SCRUM-264; 201 changed, 200 already that driver)
@@ -45,6 +47,11 @@ export interface RunStop extends Stop {
   absent: boolean;
   // The latest confirmation, or null when there is none yet.
   confirmation: Confirmation | null;
+  // true for a student who has a confirmation on this run and is no longer on
+  // the route: they stay on the run, after the route's current stops, so a
+  // child who was picked up never disappears from the bus they are on. false
+  // for every other stop (docs/contracts/runs.md#runstop).
+  removedFromRoute: boolean;
 }
 
 export interface RunCounts {
@@ -75,8 +82,8 @@ export interface RunSummary {
   vehicle: RouteVehicle;
   driver: RouteDriver;
   counts: RunCounts;
-  // true while the driver is sharing this run's position. Only the driver and the head of
-  // transportation get this; a parent never learns why a position is missing.
+  // true while the driver is sharing this run's position (docs/contracts/runs.md#live-location).
+  // Only the driver and the head of transportation get it: a parent never learns why a position is missing.
   locationSharing: boolean;
 }
 
