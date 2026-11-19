@@ -21,6 +21,8 @@ interface BestRoutePanelProps {
   student: Student;
   /** Called with the route as it is after the placement (stops renumbered), and the placement itself. */
   onPlaced: (route: Route, placement: BestRoutePlacement) => void;
+  /** Tells the caller whether the POST is in flight, so e.g. an Escape that closes the panel can be held off meanwhile. */
+  onPlacingChange?: (isPlacing: boolean) => void;
 }
 
 type LoadState =
@@ -122,7 +124,7 @@ function LoadingSkeleton() {
 // recommended route (POST, which always uses the recommended route at its
 // position). The other options are shown for comparison only, because the
 // backend cannot place on them.
-export function BestRoutePanel({ student, onPlaced }: BestRoutePanelProps) {
+export function BestRoutePanel({ student, onPlaced, onPlacingChange }: BestRoutePanelProps) {
   const [load, setLoad] = useState<LoadState>({ kind: "loading" });
   const [isPlacing, setIsPlacing] = useState(false);
   const [placed, setPlaced] = useState<BestRoutePlacement | null>(null);
@@ -137,6 +139,10 @@ export function BestRoutePanel({ student, onPlaced }: BestRoutePanelProps) {
   const placeErrorId = useId();
   const name = `${student.firstName} ${student.lastName}`;
   const studentId = student.id;
+
+  useEffect(() => {
+    onPlacingChange?.(isPlacing);
+  }, [isPlacing, onPlacingChange]);
 
   // Only the newest request may write the state: a retry, or a new student,
   // makes an earlier answer stale.

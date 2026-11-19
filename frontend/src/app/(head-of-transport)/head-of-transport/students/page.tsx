@@ -215,6 +215,35 @@ export default function StudentsPage() {
     setLastStatusChange({ studentId: updated.id });
   }
 
+  // A filter or the search moving on is the head of transport's own next
+  // action: the announcement about the student the *previous* action hid is
+  // no longer about what's on screen, so it goes. Changing status doesn't
+  // call this, so the announcement survives the student's own row leaving.
+  function clearStatusChangeAnnouncement() {
+    focusAfterStatusChangeRef.current = false;
+    setLastStatusChange(null);
+  }
+
+  function handleQueryChange(value: string) {
+    setSearchInput(value);
+    clearStatusChangeAnnouncement();
+  }
+
+  function handleStatusFilterChange(value: StatusFilterValue) {
+    setStatusFilter(value);
+    clearStatusChangeAnnouncement();
+  }
+
+  function handleGradeFilterChange(value: string) {
+    setGradeFilter(value);
+    clearStatusChangeAnnouncement();
+  }
+
+  function handleRouteFilterChange(value: RouteFilterValue) {
+    setRouteFilter(value);
+    clearStatusChangeAnnouncement();
+  }
+
   // A best-route placement: update the row's route line in place and keep
   // the route filter's assignments consistent, without refetching anything.
   function handlePlaced(studentId: string, route: Route, placement: BestRoutePlacement) {
@@ -318,14 +347,14 @@ export default function StudentsPage() {
           {!isLoading && !loadError && students.length > 0 && (
             <StudentFilters
               query={searchInput}
-              onQueryChange={setSearchInput}
+              onQueryChange={handleQueryChange}
               status={statusFilter}
-              onStatusChange={setStatusFilter}
+              onStatusChange={handleStatusFilterChange}
               grade={gradeFilter}
-              onGradeChange={setGradeFilter}
+              onGradeChange={handleGradeFilterChange}
               grades={grades}
               route={routeFilter}
-              onRouteChange={setRouteFilter}
+              onRouteChange={handleRouteFilterChange}
               routes={routeData.routes}
               routesStatus={routesStatus}
               onRetryRoutes={() => loadRouteData("retrying")}
@@ -398,6 +427,7 @@ export default function StudentsPage() {
                     setStatusFilter("all");
                     setGradeFilter("all");
                     setRouteFilter("all");
+                    clearStatusChangeAnnouncement();
                   }}
                   style={{ marginTop: spacing.sm }}
                 >

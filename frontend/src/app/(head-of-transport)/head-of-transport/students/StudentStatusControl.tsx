@@ -163,7 +163,8 @@ export function StudentStatusControl({ student, onChanged }: StudentStatusContro
           <div className="flex flex-wrap" style={{ gap: spacing.sm }}>
             <Button
               ref={confirmRef}
-              variant="danger"
+              // Pause is reversible (secondary); only archive is destructive (danger).
+              variant={confirming.variant}
               onClick={() => submit(confirming)}
               disabled={pending !== null}
               aria-label={`Confirm ${confirming.kind} ${name}`}

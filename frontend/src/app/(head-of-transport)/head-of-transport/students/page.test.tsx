@@ -730,6 +730,41 @@ it("hides a student from the current status filter once they change, and announc
   await waitFor(() => expect(within(statusFilters).getByRole("button", { name: "Active" })).toHaveFocus());
 });
 
+it("clears the hidden-by-filter announcement once the head of transport moves the filter on, even to a filter that still hides him", async () => {
+  stubFetch(jsonResponse(200, { ...HADI, status: "paused" }));
+  await renderLoaded();
+
+  fireEvent.click(screen.getByRole("button", { name: "Active" }));
+  await screen.findByText("Hadi Rizk");
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+  await screen.findByText("Hadi Rizk is now Paused and is hidden by the current filter.");
+
+  // Archived still doesn't show a paused student, but this is the head of
+  // transport's own next filter choice: the earlier announcement is stale.
+  fireEvent.click(screen.getByRole("button", { name: "Archived" }));
+
+  expect(screen.queryByText(/is hidden by the current filter/)).not.toBeInTheDocument();
+  expect(screen.queryByText("Hadi Rizk")).not.toBeInTheDocument();
+});
+
+it("clears the hidden-by-filter announcement when the search changes too", async () => {
+  stubFetch(jsonResponse(200, { ...HADI, status: "paused" }));
+  await renderLoaded();
+
+  fireEvent.click(screen.getByRole("button", { name: "Active" }));
+  await screen.findByText("Hadi Rizk");
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+  await screen.findByText("Hadi Rizk is now Paused and is hidden by the current filter.");
+
+  fireEvent.change(screen.getByLabelText("Search"), { target: { value: "Lina" } });
+
+  expect(screen.queryByText(/is hidden by the current filter/)).not.toBeInTheDocument();
+});
+
 it("leaves focus in the row when the student still matches the filter", async () => {
   stubFetch(jsonResponse(200, { ...HADI, status: "paused" }));
   await renderLoaded();
@@ -752,6 +787,36 @@ it("keeps the old status and shows the bus-today 409 message, leaving the route 
   expect(await within(row("Hadi Rizk")).findByRole("alert")).toHaveTextContent(busToday);
   expect(within(row("Hadi Rizk")).getByText("Active")).toBeInTheDocument();
   expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument();
+});
+
+it("shows a 403 on a status change and leaves the student as they were", async () => {
+  stubFetch(jsonResponse(403, { detail: "You do not have permission to change this student's status." }));
+  await renderLoaded();
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+
+  expect(await within(row("Hadi Rizk")).findByRole("alert")).toHaveTextContent(
+    "You do not have permission to change this student's status.",
+  );
+  expect(within(row("Hadi Rizk")).getByText("Active")).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" })).toBeEnabled();
+});
+
+it("shows a 404 on a status change and leaves the student as they were", async () => {
+  stubFetch(jsonResponse(404, { detail: "Student not found" }));
+  await renderLoaded();
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+
+  expect(await within(row("Hadi Rizk")).findByRole("alert")).toHaveTextContent(
+    "This student could not be found. They may have been removed; refresh the list.",
+  );
+  expect(within(row("Hadi Rizk")).getByText("Active")).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" })).toBeEnabled();
 });
 
 it("returns focus to the Pause button after Cancel", async () => {
@@ -939,3 +1004,30 @@ it("closes the best-route panel when the student is paused from the same row, an
   expect(screen.queryByRole("heading", { name: "Best route for Nora Fakhoury" })).not.toBeInTheDocument();
 });
 
+it("ignores Escape on the best-route panel while a placement is in flight, same as the status control", async () => {
+  vi.mocked(getStudents).mockResolvedValue([NORA]);
+  vi.mocked(getRouteAssignments).mockResolvedValue({ routes: [HAMRA_ROUTE, VERDUN_ROUTE], byStudent: new Map() });
+  const post = deferred<Response>();
+  stubFetch(jsonResponse(200, NORA_BEST_ROUTE), post.promise);
+  render(<StudentsPage />);
+  await screen.findByText("Nora Fakhoury");
+  await waitFor(() => expect(screen.getByLabelText("Route")).toBeEnabled());
+
+  fireEvent.click(screen.getByRole("button", { name: "Find a route" }));
+  const placeButton = await screen.findByRole("button", { name: `Place on ${HAMRA_ROUTE.name}` });
+  fireEvent.click(placeButton);
+  await waitFor(() => expect(placeButton).toBeDisabled());
+
+  fireEvent.keyDown(placeButton, { key: "Escape" });
+
+  // Still here and still placing: Escape did nothing while the POST was in flight.
+  expect(screen.getByRole("heading", { name: "Best route for Nora Fakhoury" })).toBeInTheDocument();
+  expect(placeButton).toBeDisabled();
+
+  post.resolve(jsonResponse(201, NORA_PLACEMENT));
+  await waitFor(() => expect(within(row("Nora Fakhoury")).getByText(`Route: ${HAMRA_ROUTE.name}`)).toBeInTheDocument());
+
+  // Once it's settled, Escape closes the panel as usual.
+  fireEvent.keyDown(screen.getByRole("heading", { name: "Best route for Nora Fakhoury" }), { key: "Escape" });
+  expect(screen.queryByRole("heading", { name: "Best route for Nora Fakhoury" })).not.toBeInTheDocument();
+});

@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { Student } from "@/lib/api/students";
 import studentPausedFixture from "@/lib/api/__fixtures__/roster/student-paused.json";
 import { StudentStatusControl } from "./StudentStatusControl";
+import { colors } from "@/styles/tokens";
 
 afterEach(() => {
   cleanup();
@@ -57,6 +58,21 @@ it("offers Pause and Archive for an active student", () => {
   expect(screen.getByRole("button", { name: `Pause ${NAME}` })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: `Archive ${NAME}` })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /^(Resume|Restore)/ })).not.toBeInTheDocument();
+});
+
+it("Confirm pause is not the danger color, because pause is reversible; Confirm archive is", () => {
+  setup(ACTIVE);
+
+  fireEvent.click(screen.getByRole("button", { name: `Pause ${NAME}` }));
+  expect(screen.getByRole("button", { name: `Confirm pause ${NAME}` })).not.toHaveStyle({
+    backgroundColor: colors.error[600],
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+  fireEvent.click(screen.getByRole("button", { name: `Archive ${NAME}` }));
+  expect(screen.getByRole("button", { name: `Confirm archive ${NAME}` })).toHaveStyle({
+    backgroundColor: colors.error[600],
+  });
 });
 
 it("offers Resume and Archive for a paused student", () => {
@@ -174,7 +190,7 @@ it("shows the bus-today 409 exactly as the server wrote it and stays on the old 
   // Still the active student's buttons, enabled, with focus back on Pause.
   const pause = screen.getByRole("button", { name: `Pause ${NAME}` });
   expect(pause).toBeEnabled();
-  expect(pause).toHaveFocus();
+  await waitFor(() => expect(pause).toHaveFocus());
   expect(pause).toHaveAccessibleDescription(BUS_TODAY);
   expect(screen.getByRole("button", { name: `Archive ${NAME}` })).toBeEnabled();
   expect(screen.getByRole("status")).toHaveTextContent("");

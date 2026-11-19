@@ -71,9 +71,9 @@ function deferred() {
   return { promise, resolve };
 }
 
-function setup() {
+function setup(onPlacingChange?: (isPlacing: boolean) => void) {
   const onPlaced = vi.fn();
-  render(<BestRoutePanel student={STUDENT} onPlaced={onPlaced} />);
+  render(<BestRoutePanel student={STUDENT} onPlaced={onPlaced} onPlacingChange={onPlacingChange} />);
   return { onPlaced };
 }
 
@@ -231,7 +231,7 @@ it("offers Retry after a 5xx, focuses it, and loads on retry", async () => {
 
   expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't work out the best route. Please try again.");
   const retry = screen.getByRole("button", { name: "Retry" });
-  expect(retry).toHaveFocus();
+  await waitFor(() => expect(retry).toHaveFocus());
   expect(retry).toHaveStyle({ minHeight: "44px" });
 
   fireEvent.click(retry);
@@ -289,6 +289,22 @@ it("sends one POST however often Place is pressed, and disables it while in flig
   answer.resolve(json(201, PLACEMENT));
   await waitFor(() => expect(onPlaced).toHaveBeenCalledTimes(1));
   expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it("reports isPlacing to the caller: true once the POST starts, false once it settles", async () => {
+  const answer = deferred();
+  stubFetch(json(200, BEST_ROUTE), answer.promise);
+  const onPlacingChange = vi.fn();
+  setup(onPlacingChange);
+
+  const place = await loaded();
+  expect(onPlacingChange).toHaveBeenLastCalledWith(false);
+  fireEvent.click(place);
+
+  await waitFor(() => expect(onPlacingChange).toHaveBeenLastCalledWith(true));
+
+  answer.resolve(json(201, PLACEMENT));
+  await waitFor(() => expect(onPlacingChange).toHaveBeenLastCalledWith(false));
 });
 
 it.each([

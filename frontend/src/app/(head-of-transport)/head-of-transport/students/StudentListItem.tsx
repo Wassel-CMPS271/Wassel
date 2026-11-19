@@ -64,6 +64,9 @@ export function StudentListItem({
   }
   const bestRouteButtonRef = useRef<HTMLButtonElement>(null);
   const wasPanelOpenRef = useRef(false);
+  // Set by BestRoutePanel: a POST in flight, so Escape doesn't close the
+  // panel out from under it (the status control holds Escape off the same way).
+  const isPlacingRef = useRef(false);
 
   // The trigger stays visible (as "Hide best route") once opened even if the
   // student stops qualifying mid-flight (e.g. they just got placed), so there
@@ -78,7 +81,7 @@ export function StudentListItem({
   }, [bestRoutePanelOpen]);
 
   function handleBestRouteKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape") {
+    if (event.key === "Escape" && !isPlacingRef.current) {
       event.preventDefault();
       setBestRoutePanelOpen(false);
     }
@@ -199,6 +202,9 @@ export function StudentListItem({
           <BestRoutePanel
             student={student}
             onPlaced={(route, placement) => onPlaced(student.id, route, placement)}
+            onPlacingChange={(value) => {
+              isPlacingRef.current = value;
+            }}
           />
         </div>
       )}
