@@ -1,9 +1,9 @@
 "use client";
 
-import type { ComponentType } from "react";
+import { useState, type ComponentType, type MouseEvent } from "react";
 import Link from "next/link";
 import { MotionConfig } from "framer-motion";
-import { RoleGuard } from "@/components/auth/RoleGuard";
+import { RoleGuard, useCurrentUser } from "@/components/auth/RoleGuard";
 import { UserBlock } from "@/components/auth/UserBlock";
 import { BrandMark } from "@/components/ui/BrandMark";
 import {
@@ -21,14 +21,15 @@ import {
 } from "@/styles/tokens";
 
 interface NavItem {
+  id: "children" | "route" | "profile";
   label: string;
   Icon: ComponentType<{ size?: number }>;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "My children", Icon: StudentIcon },
-  { label: "School route", Icon: VehicleIcon },
-  { label: "Profile", Icon: SettingsIcon },
+  { id: "children", label: "My children", Icon: StudentIcon },
+  { id: "route", label: "School route", Icon: VehicleIcon },
+  { id: "profile", label: "Profile", Icon: SettingsIcon },
 ];
 
 export default function ParentLayout({
@@ -44,6 +45,11 @@ export default function ParentLayout({
 }
 
 function ParentShell({ children }: { children: React.ReactNode }) {
+  const user = useCurrentUser();
+  const [homeVersion, setHomeVersion] = useState(0);
+  function resetHome(event: MouseEvent<HTMLAnchorElement>) {
+    if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) setHomeVersion(value => value + 1);
+  }
   return (
     <MotionConfig reducedMotion="user">
       <div
@@ -64,6 +70,7 @@ function ParentShell({ children }: { children: React.ReactNode }) {
         >
           <Link
             href="/parent"
+            onClick={resetHome}
             className="flex items-center rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4"
             style={{
               gap: spacing.sm,
@@ -99,9 +106,11 @@ function ParentShell({ children }: { children: React.ReactNode }) {
             className="flex flex-col"
             style={{ gap: spacing.xs }}
           >
-            {NAV_ITEMS.map(({ label, Icon }) => (
+            {NAV_ITEMS.map(({ id, label, Icon }) => id === "children" ? (
+              <Link key={id} href="/parent" onClick={resetHome} className="flex items-center text-sm rounded-md focus-visible:outline focus-visible:outline-2" style={{ gap: spacing.sm, padding: `${spacing.sm} ${spacing.md}`, minHeight: sizing.tapTarget, color: colors.primary[300], outlineColor: colors.primary[400] }}><Icon /><span>{label}</span></Link>
+            ) : (
               <span
-                key={label}
+                key={id}
                 aria-disabled="true"
                 title="Coming soon"
                 className="flex items-center text-sm"
@@ -143,7 +152,7 @@ function ParentShell({ children }: { children: React.ReactNode }) {
           </div>
         </aside>
 
-        <div className="flex-1 min-w-0">
+        <div key={`${user.schoolId}:${user.id}:${homeVersion}`} className="flex-1 min-w-0">
           {children}
         </div>
       </div>

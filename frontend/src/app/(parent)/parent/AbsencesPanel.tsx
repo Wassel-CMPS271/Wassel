@@ -89,7 +89,7 @@ export function AbsencesPanel({ child, onBack }: { child: Child; onBack: () => v
   function dismiss(id: string) { returnFocus.current = id; setConfirm(null); }
   return <section aria-label={`Absences for ${child.firstName} ${child.lastName}`} className="flex min-w-0 flex-col" style={{ gap: spacing.lg, color: darkTheme.text.primary }}>
     <Button variant="secondary" disabled={busy} style={{ minHeight: sizing.tapTarget }} onClick={onBack}>Choose another child / Back to children</Button>
-    <h2 ref={heading} tabIndex={-1} className="text-xl font-semibold focus:outline-none">Absences for {child.firstName} {child.lastName}</h2>
+    <h2 ref={heading} tabIndex={-1} className="min-w-0 text-xl font-semibold focus:outline-none" style={{ overflowWrap: "anywhere" }}>Absences for {child.firstName} {child.lastName}</h2>
     <p className="text-sm" style={{ color: darkTheme.text.secondary }}>Whole school days, including morning and afternoon transport. Dates use school time (Asia/Beirut).</p>
     {loadError && <Card><p role="alert">{loadError}</p>{loadError.includes("sign-in has expired") && <Link href="/login">Sign in</Link>}<Button onClick={() => setAttempt(value => value + 1)}>Retry loading absences</Button></Card>}
     {!items && !loadError && <p role="status">Loading absences…</p>}
