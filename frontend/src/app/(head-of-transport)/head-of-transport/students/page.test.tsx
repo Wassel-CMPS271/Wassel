@@ -725,6 +725,20 @@ it("hides a student from the current status filter once they change, and announc
     "role",
     "status",
   );
+  // The row that had focus is gone: focus is on the selected status filter, not <body>.
+  const statusFilters = screen.getByRole("group", { name: "Filter by status" });
+  await waitFor(() => expect(within(statusFilters).getByRole("button", { name: "Active" })).toHaveFocus());
+});
+
+it("leaves focus in the row when the student still matches the filter", async () => {
+  stubFetch(jsonResponse(200, { ...HADI, status: "paused" }));
+  await renderLoaded();
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+
+  await waitFor(() => expect(within(row("Hadi Rizk")).getByRole("button", { name: "Resume Hadi Rizk" })).toHaveFocus());
+  expect(screen.queryByText(/is hidden by the current filter/)).not.toBeInTheDocument();
 });
 
 it("keeps the old status and shows the bus-today 409 message, leaving the route line untouched", async () => {
@@ -780,42 +794,44 @@ it("does not offer Find a route for a paused student, even when pinned and unrou
   expect(screen.queryByRole("button", { name: "Find a route" })).not.toBeInTheDocument();
 });
 
+// Nora's best-route answer (GET) and her placement on Hamra (POST).
+const NORA_RECOMMENDED = {
+  routeId: HAMRA_ROUTE.id,
+  routeName: HAMRA_ROUTE.name,
+  position: 1,
+  extraMinutes: 2,
+  arrivalTime: "07:15",
+  seatsLeft: 3,
+};
+const NORA_BEST_ROUTE = { studentId: NORA.id, recommended: NORA_RECOMMENDED, options: [NORA_RECOMMENDED], skipped: [] };
+const NORA_PLACED_ROUTE = {
+  id: HAMRA_ROUTE.id,
+  name: HAMRA_ROUTE.name,
+  vehicle: { id: "v-1", plateNumber: "A 123456", capacity: 12 },
+  driver: { id: "d-1", firstName: "Karim", lastName: "Haddad" },
+  studentCount: 1,
+  seatsLeft: 2,
+  school: { latitude: 33.8938, longitude: 35.5018, arrivalTime: "07:30" },
+  stops: [
+    {
+      studentId: NORA.id,
+      position: 1,
+      firstName: NORA.firstName,
+      lastName: NORA.lastName,
+      address: NORA.address,
+      latitude: NORA.latitude,
+      longitude: NORA.longitude,
+      arrivalTime: "07:15",
+    },
+  ],
+};
+const NORA_PLACEMENT = { position: 1, extraMinutes: 2, arrivalTime: "07:15", route: NORA_PLACED_ROUTE };
+
 it("places a student on the best route: updates the route line and filter, and toasts, without a reload", async () => {
   vi.mocked(getStudents).mockResolvedValue([NORA]);
   vi.mocked(getRouteAssignments).mockResolvedValue({ routes: [HAMRA_ROUTE, VERDUN_ROUTE], byStudent: new Map() });
 
-  const recommended = {
-    routeId: HAMRA_ROUTE.id,
-    routeName: HAMRA_ROUTE.name,
-    position: 1,
-    extraMinutes: 2,
-    arrivalTime: "07:15",
-    seatsLeft: 3,
-  };
-  const bestRoute = { studentId: NORA.id, recommended, options: [recommended], skipped: [] };
-  const placedRoute = {
-    id: HAMRA_ROUTE.id,
-    name: HAMRA_ROUTE.name,
-    vehicle: { id: "v-1", plateNumber: "A 123456", capacity: 12 },
-    driver: { id: "d-1", firstName: "Karim", lastName: "Haddad" },
-    studentCount: 1,
-    seatsLeft: 2,
-    school: { latitude: 33.8938, longitude: 35.5018, arrivalTime: "07:30" },
-    stops: [
-      {
-        studentId: NORA.id,
-        position: 1,
-        firstName: NORA.firstName,
-        lastName: NORA.lastName,
-        address: NORA.address,
-        latitude: NORA.latitude,
-        longitude: NORA.longitude,
-        arrivalTime: "07:15",
-      },
-    ],
-  };
-  const placement = { position: 1, extraMinutes: 2, arrivalTime: "07:15", route: placedRoute };
-  stubFetch(jsonResponse(200, bestRoute), jsonResponse(201, placement));
+  stubFetch(jsonResponse(200, NORA_BEST_ROUTE), jsonResponse(201, NORA_PLACEMENT));
 
   render(<StudentsPage />);
   await screen.findByText("Nora Fakhoury");
@@ -834,3 +850,92 @@ it("places a student on the best route: updates the route line and filter, and t
   fireEvent.change(screen.getByLabelText("Route"), { target: { value: HAMRA_ROUTE.id } });
   expect(screen.getByText("Nora Fakhoury")).toBeInTheDocument();
 });
+
+// A promise the test settles when it wants, to hold a request in flight.
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+it("takes a paused student off the route that loaded while the PUT was in flight", async () => {
+  const routes = deferred<RouteAssignments>();
+  vi.mocked(getRouteAssignments).mockReturnValue(routes.promise);
+  const put = deferred<Response>();
+  stubFetch(put.promise);
+  render(<StudentsPage />);
+  await screen.findByText("Hadi Rizk");
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+
+  // The routes arrive first, still listing Hadi on Hamra.
+  routes.resolve(routeData());
+  await waitFor(() => expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument());
+
+  put.resolve(jsonResponse(200, { ...HADI, status: "paused" }));
+
+  await waitFor(() => expect(within(row("Hadi Rizk")).getByText("Paused")).toBeInTheDocument());
+  expect(within(row("Hadi Rizk")).getByText("No route")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Route"), { target: { value: HAMRA_ROUTE.id } });
+  await waitFor(() => expect(screen.queryByText("Hadi Rizk")).not.toBeInTheDocument());
+});
+
+it("keeps a placement on another row that lands together with a status change", async () => {
+  vi.mocked(getStudents).mockResolvedValue([HADI, NORA]);
+  const put = deferred<Response>();
+  const post = deferred<Response>();
+  stubFetch(jsonResponse(200, NORA_BEST_ROUTE), put.promise, post.promise);
+  render(<StudentsPage />);
+  await screen.findByText("Nora Fakhoury");
+  await waitFor(() => expect(screen.getByLabelText("Route")).toBeEnabled());
+
+  fireEvent.click(within(row("Nora Fakhoury")).getByRole("button", { name: "Find a route" }));
+  const placeButton = await screen.findByRole("button", { name: `Place on ${HAMRA_ROUTE.name}` });
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+  fireEvent.click(placeButton);
+
+  // The placement lands, then the pause answer right behind it.
+  post.resolve(jsonResponse(201, NORA_PLACEMENT));
+  put.resolve(jsonResponse(200, { ...HADI, status: "paused" }));
+
+  await waitFor(() => expect(within(row("Hadi Rizk")).getByText("Paused")).toBeInTheDocument());
+  await waitFor(() => expect(within(row("Nora Fakhoury")).getByText(`Route: ${HAMRA_ROUTE.name}`)).toBeInTheDocument());
+  expect(within(row("Hadi Rizk")).getByText("No route")).toBeInTheDocument();
+});
+
+it("closes the best-route panel when the student is paused from the same row, and resuming doesn't reopen it", async () => {
+  vi.mocked(getStudents).mockResolvedValue([NORA]);
+  vi.mocked(getRouteAssignments).mockResolvedValue({ routes: [HAMRA_ROUTE, VERDUN_ROUTE], byStudent: new Map() });
+  stubFetch(
+    jsonResponse(200, NORA_BEST_ROUTE),
+    jsonResponse(200, { ...NORA, status: "paused" }),
+    jsonResponse(200, NORA),
+  );
+  render(<StudentsPage />);
+  await screen.findByText("Nora Fakhoury");
+  await waitFor(() => expect(screen.getByLabelText("Route")).toBeEnabled());
+
+  fireEvent.click(screen.getByRole("button", { name: "Find a route" }));
+  await screen.findByRole("button", { name: `Place on ${HAMRA_ROUTE.name}` });
+
+  fireEvent.click(screen.getByRole("button", { name: "Pause Nora Fakhoury" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm pause Nora Fakhoury" }));
+
+  await waitFor(() => expect(within(row("Nora Fakhoury")).getByText("Paused")).toBeInTheDocument());
+  expect(screen.queryByRole("button", { name: `Place on ${HAMRA_ROUTE.name}` })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Best route for Nora Fakhoury" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Hide best route|Find a route/ })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Resume Nora Fakhoury" })).toHaveFocus());
+
+  fireEvent.click(screen.getByRole("button", { name: "Resume Nora Fakhoury" }));
+
+  const findRoute = await screen.findByRole("button", { name: "Find a route" });
+  expect(findRoute).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByRole("heading", { name: "Best route for Nora Fakhoury" })).not.toBeInTheDocument();
+});
+

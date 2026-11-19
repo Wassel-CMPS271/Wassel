@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, MotionConfig } from "framer-motion";
 import { addressRequestsApi } from "@/lib/api/addressRequests";
 import { getParents, type Parent } from "@/lib/api/parents";
@@ -49,10 +49,14 @@ export default function StudentsPage() {
   const [routeData, setRouteData] = useState<RouteAssignments>({ routes: [], byStudent: new Map() });
   const [routesStatus, setRoutesStatus] = useState<RoutesStatus>("loading");
 
-  // Announces a student leaving the filtered list after a status change, so
-  // a head of transport who just paused/archived someone isn't left
-  // wondering where the row went.
-  const [filterAnnouncement, setFilterAnnouncement] = useState("");
+  // The student whose status changed last. Whether the current filters now
+  // hide them is worked out at render time from the latest students and
+  // routes, so an answer that lands while the routes load can't go stale.
+  const [lastStatusChange, setLastStatusChange] = useState<{ studentId: string } | null>(null);
+  // Set by a status change, so the hidden row's focus moves once, not on
+  // every later filter change.
+  const focusAfterStatusChangeRef = useRef(false);
+  const selectedStatusFilterRef = useRef<HTMLButtonElement>(null);
 
   // null until the parents load; stays null if they fail, so the rows keep
   // saying "Linked"/"Not assigned" instead of an email.
@@ -77,6 +81,27 @@ export default function StudentsPage() {
         .filter((s) => matchesRouteFilter(s, routeFilter, routeData.byStudent)),
     [students, debouncedQuery, statusFilter, gradeFilter, routeFilter, routeData],
   );
+
+  // Announces a student leaving the filtered list after a status change, so
+  // a head of transport who just paused/archived someone isn't left
+  // wondering where the row went.
+  const changedStudent = lastStatusChange
+    ? students.find((s) => s.id === lastStatusChange.studentId)
+    : undefined;
+  const changedStudentHidden =
+    changedStudent !== undefined && !filteredStudents.some((s) => s.id === changedStudent.id);
+  const filterAnnouncement =
+    changedStudent && changedStudentHidden
+      ? `${changedStudent.firstName} ${changedStudent.lastName} is now ${STUDENT_STATUS_LABELS[changedStudent.status]} and is hidden by the current filter.`
+      : "";
+
+  // The row (and the button that had focus) is gone: put focus on the
+  // selected status filter, which is always there, instead of <body>.
+  useEffect(() => {
+    if (!focusAfterStatusChangeRef.current) return;
+    focusAfterStatusChangeRef.current = false;
+    if (changedStudentHidden) selectedStatusFilterRef.current?.focus();
+  }, [lastStatusChange, changedStudentHidden]);
 
   const isFiltering =
     debouncedQuery.trim() !== "" ||
@@ -173,25 +198,21 @@ export default function StudentsPage() {
   // this only reconciles local state, no reload. Pausing or archiving also
   // takes the student off their route (in the same backend transaction), so
   // their entry in routeData.byStudent is dropped right here, same as the
-  // route line updates after a removeStudent elsewhere in the app.
+  // route line updates after a removeStudent elsewhere in the app. Both
+  // updates are functional: this runs after the PUT, by when the routes may
+  // have loaded or another row may have been placed.
   function handleStatusChanged(updated: Student) {
     setStudents((prev) => prev.map((student) => (student.id === updated.id ? updated : student)));
-
-    let nextByStudent = routeData.byStudent;
-    if (updated.status !== "active" && routeData.byStudent.has(updated.id)) {
-      nextByStudent = new Map(routeData.byStudent);
-      nextByStudent.delete(updated.id);
-      setRouteData((prev) => ({ ...prev, byStudent: nextByStudent }));
+    if (updated.status !== "active") {
+      setRouteData((prev) => {
+        if (!prev.byStudent.has(updated.id)) return prev;
+        const byStudent = new Map(prev.byStudent);
+        byStudent.delete(updated.id);
+        return { ...prev, byStudent };
+      });
     }
-
-    const stillMatches =
-      matchesFilters(updated, { query: debouncedQuery, status: statusFilter, grade: gradeFilter }) &&
-      matchesRouteFilter(updated, routeFilter, nextByStudent);
-    setFilterAnnouncement(
-      stillMatches
-        ? ""
-        : `${updated.firstName} ${updated.lastName} is now ${STUDENT_STATUS_LABELS[updated.status]} and is hidden by the current filter.`,
-    );
+    focusAfterStatusChangeRef.current = true;
+    setLastStatusChange({ studentId: updated.id });
   }
 
   // A best-route placement: update the row's route line in place and keep
@@ -308,6 +329,7 @@ export default function StudentsPage() {
               routes={routeData.routes}
               routesStatus={routesStatus}
               onRetryRoutes={() => loadRouteData("retrying")}
+              selectedStatusRef={selectedStatusFilterRef}
             />
           )}
 

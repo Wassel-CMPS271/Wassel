@@ -54,6 +54,14 @@ export function StudentListItem({
   const canFindRoute = isActive && routeAssignment === null;
 
   const [bestRoutePanelOpen, setBestRoutePanelOpen] = useState(false);
+  // Pausing or archiving from this row closes the panel: its "Place on ..."
+  // would only get a 409 now. Adjusted while rendering, not in an effect, so
+  // the stale panel never shows; resuming later doesn't reopen it.
+  const [shownStatus, setShownStatus] = useState(student.status);
+  if (shownStatus !== student.status) {
+    setShownStatus(student.status);
+    if (!isActive) setBestRoutePanelOpen(false);
+  }
   const bestRouteButtonRef = useRef<HTMLButtonElement>(null);
   const wasPanelOpenRef = useRef(false);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import type { RouteAssignments } from "@/lib/api/routes";
@@ -26,6 +26,9 @@ interface StudentFiltersProps {
   routes: RouteAssignments["routes"];
   routesStatus: RoutesStatus;
   onRetryRoutes: () => void;
+  // Points at the pressed status button, so the page can move focus there
+  // when a status change hides the row that had it.
+  selectedStatusRef?: RefObject<HTMLButtonElement | null>;
 }
 
 const STATUS_OPTIONS: { value: StatusFilterValue; label: string }[] = [
@@ -54,6 +57,7 @@ export function StudentFilters({
   routes,
   routesStatus,
   onRetryRoutes,
+  selectedStatusRef,
 }: StudentFiltersProps) {
   const gradeSelectId = useId();
   const routeSelectId = useId();
@@ -204,6 +208,7 @@ export function StudentFilters({
         {STATUS_OPTIONS.map((option) => (
           <Button
             key={option.value}
+            ref={status === option.value ? selectedStatusRef : undefined}
             type="button"
             variant={status === option.value ? "primary" : "ghost"}
             aria-pressed={status === option.value}
