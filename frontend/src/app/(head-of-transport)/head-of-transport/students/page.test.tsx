@@ -64,6 +64,8 @@ const LINA: Student = {
   createdAt: "",
 };
 const HADI: Student = { ...LINA, id: "st-2", firstName: "Hadi", lastName: "Rizk", latitude: 33.886, longitude: 35.485 };
+// Active, pinned, on no route: the one shape that offers Find a route.
+const NORA: Student = { ...LINA, id: "st-4", firstName: "Nora", lastName: "Fakhoury", latitude: 33.9, longitude: 35.5 };
 
 const RAMI_PARENT: Parent = { id: "p-1", email: "rami@example.com", status: "active", createdAt: "" };
 const REVOKED_PARENT: Parent = { id: "p-2", email: "nour@example.com", status: "revoked", createdAt: "" };
@@ -87,10 +89,29 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 function row(name: string) {
   return screen.getByText(name).closest("li")!;
+}
+
+// StudentStatusControl and BestRoutePanel call the real roster API
+// (request() under them), so these stub the actual fetch instead of mocking
+// the roster module, the same pattern as roster.test.ts and the two
+// components' own test files.
+function jsonResponse(status: number, body?: unknown): Response {
+  return new Response(body === undefined ? null : JSON.stringify(body), { status });
+}
+
+function stubFetch(...answers: (Response | Promise<Response> | Error)[]) {
+  const fetchMock = vi.fn();
+  for (const answer of answers) {
+    if (answer instanceof Error) fetchMock.mockRejectedValueOnce(answer);
+    else fetchMock.mockReturnValueOnce(Promise.resolve(answer));
+  }
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
 }
 
 it("shows a loading status while the students load", () => {
@@ -239,10 +260,64 @@ it("filters the roster by status", async () => {
   render(<StudentsPage />);
   await screen.findByText("Lina Daher");
 
-  fireEvent.click(screen.getByRole("button", { name: "Inactive" }));
+  fireEvent.click(screen.getByRole("button", { name: "Archived" }));
 
   await waitFor(() => expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument());
   expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
+});
+
+it("offers All, Active, Paused and Archived as the status filters", async () => {
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+
+  const group = screen.getByRole("group", { name: "Filter by status" });
+  expect(within(group).getAllByRole("button").map((b) => b.textContent)).toEqual([
+    "All",
+    "Active",
+    "Paused",
+    "Archived",
+  ]);
+  expect(within(group).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+});
+
+it("labels each row Active, Paused or Archived", async () => {
+  vi.mocked(getStudents).mockResolvedValue([
+    LINA,
+    { ...HADI, status: "paused" },
+    { ...LINA, id: "st-3", firstName: "Maya", lastName: "Saad", status: "inactive" },
+  ]);
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+
+  expect(within(row("Lina Daher")).getByText("Active")).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByText("Paused")).toBeInTheDocument();
+  expect(within(row("Maya Saad")).getByText("Archived")).toBeInTheDocument();
+  expect(screen.queryByText("Inactive")).not.toBeInTheDocument();
+});
+
+it("filters the roster to paused students, apart from active and archived ones", async () => {
+  vi.mocked(getStudents).mockResolvedValue([
+    LINA,
+    { ...HADI, status: "paused" },
+    { ...LINA, id: "st-3", firstName: "Maya", lastName: "Saad", status: "inactive" },
+  ]);
+  render(<StudentsPage />);
+  await screen.findByText("Lina Daher");
+
+  fireEvent.click(screen.getByRole("button", { name: "Paused" }));
+  await waitFor(() => expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument());
+  expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
+  expect(screen.queryByText("Maya Saad")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Paused" })).toHaveAttribute("aria-pressed", "true");
+
+  fireEvent.click(screen.getByRole("button", { name: "Archived" }));
+  await waitFor(() => expect(screen.queryByText("Hadi Rizk")).not.toBeInTheDocument());
+  expect(screen.getByText("Maya Saad")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Active" }));
+  await waitFor(() => expect(screen.queryByText("Maya Saad")).not.toBeInTheDocument());
+  expect(screen.getByText("Lina Daher")).toBeInTheDocument();
+  expect(screen.queryByText("Hadi Rizk")).not.toBeInTheDocument();
 });
 
 it("flags students without coordinates as needing a pin", async () => {
@@ -440,10 +515,10 @@ it("still filters by search, status and grade as before", async () => {
   ]);
   await renderLoaded();
 
-  fireEvent.click(screen.getByRole("button", { name: "Inactive" }));
+  fireEvent.click(screen.getByRole("button", { name: "Archived" }));
   await waitFor(() => expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument());
   expect(screen.getByText("Maya Saad")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Inactive" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Archived" })).toHaveAttribute("aria-pressed", "true");
 
   fireEvent.click(screen.getByRole("button", { name: "All" }));
   fireEvent.change(screen.getByLabelText("Grade"), { target: { value: "Grade 5" } });
@@ -465,7 +540,7 @@ it("still filters by search, status and grade when the routes fail", async () =>
   render(<StudentsPage />);
   await screen.findByRole("alert");
 
-  fireEvent.click(screen.getByRole("button", { name: "Inactive" }));
+  fireEvent.click(screen.getByRole("button", { name: "Archived" }));
   await waitFor(() => expect(screen.queryByText("Lina Daher")).not.toBeInTheDocument());
   expect(screen.getByText("Hadi Rizk")).toBeInTheDocument();
 
@@ -582,4 +657,377 @@ it("says 'Linked' when the linked parent isn't in the parents list", async () =>
     within(row("Lina Daher")).getByText("Parent account: Linked. Manage in Edit pickup details."),
   ).toBeInTheDocument();
   expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument();
+});
+
+// --- SCRUM-287: pause/archive/resume/restore and best-route placement -----
+// StudentStatusControl and BestRoutePanel call the real roster API, so these
+// stub fetch directly rather than mocking @/lib/api/roster.
+
+it("pauses a routed student in place: Paused, No route, and no roster reload", async () => {
+  const fetchMock = stubFetch(jsonResponse(200, { ...HADI, status: "paused" }));
+  await renderLoaded();
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+
+  await waitFor(() => expect(within(row("Hadi Rizk")).getByText("Paused")).toBeInTheDocument());
+  expect(within(row("Hadi Rizk")).getByText("No route")).toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(getStudents).toHaveBeenCalledTimes(1);
+});
+
+it("archives a routed student in place: Archived, No route, and only a Restore button", async () => {
+  stubFetch(jsonResponse(200, { ...HADI, status: "inactive" }));
+  await renderLoaded();
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Archive Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm archive Hadi Rizk" }));
+
+  await waitFor(() => expect(within(row("Hadi Rizk")).getByText("Archived")).toBeInTheDocument());
+  expect(within(row("Hadi Rizk")).getByText("No route")).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByRole("button", { name: "Restore Hadi Rizk" })).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).queryByRole("button", { name: "Pause Hadi Rizk" })).not.toBeInTheDocument();
+});
+
+it("resumes a paused student back to active, with no route", async () => {
+  vi.mocked(getStudents).mockResolvedValue([{ ...LINA, status: "paused" }, HADI]);
+  stubFetch(jsonResponse(200, { ...LINA, status: "active" }));
+  await renderLoaded();
+
+  fireEvent.click(within(row("Lina Daher")).getByRole("button", { name: "Resume Lina Daher" }));
+
+  await waitFor(() => expect(within(row("Lina Daher")).getByText("Active")).toBeInTheDocument());
+  expect(within(row("Lina Daher")).getByText("No route")).toBeInTheDocument();
+});
+
+it("restores an archived student back to active", async () => {
+  vi.mocked(getStudents).mockResolvedValue([{ ...LINA, status: "inactive" }, HADI]);
+  stubFetch(jsonResponse(200, { ...LINA, status: "active" }));
+  await renderLoaded();
+
+  fireEvent.click(within(row("Lina Daher")).getByRole("button", { name: "Restore Lina Daher" }));
+
+  await waitFor(() => expect(within(row("Lina Daher")).getByText("Active")).toBeInTheDocument());
+});
+
+it("hides a student from the current status filter once they change, and announces it", async () => {
+  stubFetch(jsonResponse(200, { ...HADI, status: "paused" }));
+  await renderLoaded();
+
+  fireEvent.click(screen.getByRole("button", { name: "Active" }));
+  await screen.findByText("Hadi Rizk");
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+
+  await waitFor(() => expect(screen.queryByText("Hadi Rizk")).not.toBeInTheDocument());
+  expect(screen.getByText("Hadi Rizk is now Paused and is hidden by the current filter.")).toHaveAttribute(
+    "role",
+    "status",
+  );
+  // The row that had focus is gone: focus is on the selected status filter, not <body>.
+  const statusFilters = screen.getByRole("group", { name: "Filter by status" });
+  await waitFor(() => expect(within(statusFilters).getByRole("button", { name: "Active" })).toHaveFocus());
+});
+
+it("clears the hidden-by-filter announcement once the head of transport moves the filter on, even to a filter that still hides him", async () => {
+  stubFetch(jsonResponse(200, { ...HADI, status: "paused" }));
+  await renderLoaded();
+
+  fireEvent.click(screen.getByRole("button", { name: "Active" }));
+  await screen.findByText("Hadi Rizk");
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+  await screen.findByText("Hadi Rizk is now Paused and is hidden by the current filter.");
+
+  // Archived still doesn't show a paused student, but this is the head of
+  // transport's own next filter choice: the earlier announcement is stale.
+  fireEvent.click(screen.getByRole("button", { name: "Archived" }));
+
+  expect(screen.queryByText(/is hidden by the current filter/)).not.toBeInTheDocument();
+  expect(screen.queryByText("Hadi Rizk")).not.toBeInTheDocument();
+});
+
+it("clears the hidden-by-filter announcement when the search changes too", async () => {
+  stubFetch(jsonResponse(200, { ...HADI, status: "paused" }));
+  await renderLoaded();
+
+  fireEvent.click(screen.getByRole("button", { name: "Active" }));
+  await screen.findByText("Hadi Rizk");
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+  await screen.findByText("Hadi Rizk is now Paused and is hidden by the current filter.");
+
+  fireEvent.change(screen.getByLabelText("Search"), { target: { value: "Lina" } });
+
+  expect(screen.queryByText(/is hidden by the current filter/)).not.toBeInTheDocument();
+});
+
+it("leaves focus in the row when the student still matches the filter", async () => {
+  stubFetch(jsonResponse(200, { ...HADI, status: "paused" }));
+  await renderLoaded();
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+
+  await waitFor(() => expect(within(row("Hadi Rizk")).getByRole("button", { name: "Resume Hadi Rizk" })).toHaveFocus());
+  expect(screen.queryByText(/is hidden by the current filter/)).not.toBeInTheDocument();
+});
+
+it("keeps the old status and shows the bus-today 409 message, leaving the route line untouched", async () => {
+  const busToday = "Hadi Rizk is on Hamra morning run (A 123456 07:10). Move them after the run ends.";
+  stubFetch(jsonResponse(409, { status: 409, detail: busToday }));
+  await renderLoaded();
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+
+  expect(await within(row("Hadi Rizk")).findByRole("alert")).toHaveTextContent(busToday);
+  expect(within(row("Hadi Rizk")).getByText("Active")).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument();
+});
+
+it("shows a 403 on a status change and leaves the student as they were", async () => {
+  stubFetch(jsonResponse(403, { detail: "You do not have permission to change this student's status." }));
+  await renderLoaded();
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+
+  expect(await within(row("Hadi Rizk")).findByRole("alert")).toHaveTextContent(
+    "You do not have permission to change this student's status.",
+  );
+  expect(within(row("Hadi Rizk")).getByText("Active")).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" })).toBeEnabled();
+});
+
+it("shows a 404 on a status change and leaves the student as they were", async () => {
+  stubFetch(jsonResponse(404, { detail: "Student not found" }));
+  await renderLoaded();
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+
+  expect(await within(row("Hadi Rizk")).findByRole("alert")).toHaveTextContent(
+    "This student could not be found. They may have been removed; refresh the list.",
+  );
+  expect(within(row("Hadi Rizk")).getByText("Active")).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument();
+  expect(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" })).toBeEnabled();
+});
+
+it("returns focus to the Pause button after Cancel", async () => {
+  await renderLoaded();
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Cancel" }));
+
+  expect(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" })).toHaveFocus();
+});
+
+it("offers Find a route only for an active, pinned student with no route", async () => {
+  await renderLoaded();
+
+  // Lina: active, no route, but unpinned.
+  expect(within(row("Lina Daher")).queryByRole("button", { name: "Find a route" })).not.toBeInTheDocument();
+  expect(within(row("Lina Daher")).getByText("Set a pin to find a route")).toBeInTheDocument();
+
+  // Hadi: active and pinned, but already on a route.
+  expect(within(row("Hadi Rizk")).queryByRole("button", { name: "Find a route" })).not.toBeInTheDocument();
+});
+
+it("shows Find a route for an active, pinned student with no route", async () => {
+  vi.mocked(getStudents).mockResolvedValue([NORA]);
+  vi.mocked(getRouteAssignments).mockResolvedValue({ routes: [HAMRA_ROUTE, VERDUN_ROUTE], byStudent: new Map() });
+  render(<StudentsPage />);
+  await screen.findByText("Nora Fakhoury");
+  await waitFor(() => expect(screen.getByLabelText("Route")).toBeEnabled());
+
+  expect(screen.getByRole("button", { name: "Find a route" })).toBeInTheDocument();
+});
+
+it("does not offer Find a route for a paused student, even when pinned and unrouted", async () => {
+  vi.mocked(getStudents).mockResolvedValue([{ ...NORA, status: "paused" }]);
+  vi.mocked(getRouteAssignments).mockResolvedValue({ routes: [HAMRA_ROUTE, VERDUN_ROUTE], byStudent: new Map() });
+  render(<StudentsPage />);
+  await screen.findByText("Nora Fakhoury");
+  await waitFor(() => expect(screen.getByLabelText("Route")).toBeEnabled());
+
+  expect(screen.queryByRole("button", { name: "Find a route" })).not.toBeInTheDocument();
+});
+
+// Nora's best-route answer (GET) and her placement on Hamra (POST).
+const NORA_RECOMMENDED = {
+  routeId: HAMRA_ROUTE.id,
+  routeName: HAMRA_ROUTE.name,
+  position: 1,
+  extraMinutes: 2,
+  arrivalTime: "07:15",
+  seatsLeft: 3,
+};
+const NORA_BEST_ROUTE = { studentId: NORA.id, recommended: NORA_RECOMMENDED, options: [NORA_RECOMMENDED], skipped: [] };
+const NORA_PLACED_ROUTE = {
+  id: HAMRA_ROUTE.id,
+  name: HAMRA_ROUTE.name,
+  vehicle: { id: "v-1", plateNumber: "A 123456", capacity: 12 },
+  driver: { id: "d-1", firstName: "Karim", lastName: "Haddad" },
+  studentCount: 1,
+  seatsLeft: 2,
+  school: { latitude: 33.8938, longitude: 35.5018, arrivalTime: "07:30" },
+  stops: [
+    {
+      studentId: NORA.id,
+      position: 1,
+      firstName: NORA.firstName,
+      lastName: NORA.lastName,
+      address: NORA.address,
+      latitude: NORA.latitude,
+      longitude: NORA.longitude,
+      arrivalTime: "07:15",
+    },
+  ],
+};
+const NORA_PLACEMENT = { position: 1, extraMinutes: 2, arrivalTime: "07:15", route: NORA_PLACED_ROUTE };
+
+it("places a student on the best route: updates the route line and filter, and toasts, without a reload", async () => {
+  vi.mocked(getStudents).mockResolvedValue([NORA]);
+  vi.mocked(getRouteAssignments).mockResolvedValue({ routes: [HAMRA_ROUTE, VERDUN_ROUTE], byStudent: new Map() });
+
+  stubFetch(jsonResponse(200, NORA_BEST_ROUTE), jsonResponse(201, NORA_PLACEMENT));
+
+  render(<StudentsPage />);
+  await screen.findByText("Nora Fakhoury");
+  await waitFor(() => expect(screen.getByLabelText("Route")).toBeEnabled());
+
+  fireEvent.click(screen.getByRole("button", { name: "Find a route" }));
+  const placeButton = await screen.findByRole("button", { name: `Place on ${HAMRA_ROUTE.name}` });
+  fireEvent.click(placeButton);
+
+  await waitFor(() => expect(within(row("Nora Fakhoury")).getByText(`Route: ${HAMRA_ROUTE.name}`)).toBeInTheDocument());
+  const toast = await screen.findByText(`Placed on ${HAMRA_ROUTE.name} as stop 1, pickup 07:15.`);
+  expect(toast.closest('[role="status"]')).toBeInTheDocument();
+  expect(getStudents).toHaveBeenCalledTimes(1);
+
+  // The route filter is consistent with the placement: filtering by Hamra still shows her.
+  fireEvent.change(screen.getByLabelText("Route"), { target: { value: HAMRA_ROUTE.id } });
+  expect(screen.getByText("Nora Fakhoury")).toBeInTheDocument();
+});
+
+// A promise the test settles when it wants, to hold a request in flight.
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+it("takes a paused student off the route that loaded while the PUT was in flight", async () => {
+  const routes = deferred<RouteAssignments>();
+  vi.mocked(getRouteAssignments).mockReturnValue(routes.promise);
+  const put = deferred<Response>();
+  stubFetch(put.promise);
+  render(<StudentsPage />);
+  await screen.findByText("Hadi Rizk");
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+
+  // The routes arrive first, still listing Hadi on Hamra.
+  routes.resolve(routeData());
+  await waitFor(() => expect(within(row("Hadi Rizk")).getByText("Route: Hamra morning run")).toBeInTheDocument());
+
+  put.resolve(jsonResponse(200, { ...HADI, status: "paused" }));
+
+  await waitFor(() => expect(within(row("Hadi Rizk")).getByText("Paused")).toBeInTheDocument());
+  expect(within(row("Hadi Rizk")).getByText("No route")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Route"), { target: { value: HAMRA_ROUTE.id } });
+  await waitFor(() => expect(screen.queryByText("Hadi Rizk")).not.toBeInTheDocument());
+});
+
+it("keeps a placement on another row that lands together with a status change", async () => {
+  vi.mocked(getStudents).mockResolvedValue([HADI, NORA]);
+  const put = deferred<Response>();
+  const post = deferred<Response>();
+  stubFetch(jsonResponse(200, NORA_BEST_ROUTE), put.promise, post.promise);
+  render(<StudentsPage />);
+  await screen.findByText("Nora Fakhoury");
+  await waitFor(() => expect(screen.getByLabelText("Route")).toBeEnabled());
+
+  fireEvent.click(within(row("Nora Fakhoury")).getByRole("button", { name: "Find a route" }));
+  const placeButton = await screen.findByRole("button", { name: `Place on ${HAMRA_ROUTE.name}` });
+
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Pause Hadi Rizk" }));
+  fireEvent.click(within(row("Hadi Rizk")).getByRole("button", { name: "Confirm pause Hadi Rizk" }));
+  fireEvent.click(placeButton);
+
+  // The placement lands, then the pause answer right behind it.
+  post.resolve(jsonResponse(201, NORA_PLACEMENT));
+  put.resolve(jsonResponse(200, { ...HADI, status: "paused" }));
+
+  await waitFor(() => expect(within(row("Hadi Rizk")).getByText("Paused")).toBeInTheDocument());
+  await waitFor(() => expect(within(row("Nora Fakhoury")).getByText(`Route: ${HAMRA_ROUTE.name}`)).toBeInTheDocument());
+  expect(within(row("Hadi Rizk")).getByText("No route")).toBeInTheDocument();
+});
+
+it("closes the best-route panel when the student is paused from the same row, and resuming doesn't reopen it", async () => {
+  vi.mocked(getStudents).mockResolvedValue([NORA]);
+  vi.mocked(getRouteAssignments).mockResolvedValue({ routes: [HAMRA_ROUTE, VERDUN_ROUTE], byStudent: new Map() });
+  stubFetch(
+    jsonResponse(200, NORA_BEST_ROUTE),
+    jsonResponse(200, { ...NORA, status: "paused" }),
+    jsonResponse(200, NORA),
+  );
+  render(<StudentsPage />);
+  await screen.findByText("Nora Fakhoury");
+  await waitFor(() => expect(screen.getByLabelText("Route")).toBeEnabled());
+
+  fireEvent.click(screen.getByRole("button", { name: "Find a route" }));
+  await screen.findByRole("button", { name: `Place on ${HAMRA_ROUTE.name}` });
+
+  fireEvent.click(screen.getByRole("button", { name: "Pause Nora Fakhoury" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm pause Nora Fakhoury" }));
+
+  await waitFor(() => expect(within(row("Nora Fakhoury")).getByText("Paused")).toBeInTheDocument());
+  expect(screen.queryByRole("button", { name: `Place on ${HAMRA_ROUTE.name}` })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Best route for Nora Fakhoury" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Hide best route|Find a route/ })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Resume Nora Fakhoury" })).toHaveFocus());
+
+  fireEvent.click(screen.getByRole("button", { name: "Resume Nora Fakhoury" }));
+
+  const findRoute = await screen.findByRole("button", { name: "Find a route" });
+  expect(findRoute).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByRole("heading", { name: "Best route for Nora Fakhoury" })).not.toBeInTheDocument();
+});
+
+it("ignores Escape on the best-route panel while a placement is in flight, same as the status control", async () => {
+  vi.mocked(getStudents).mockResolvedValue([NORA]);
+  vi.mocked(getRouteAssignments).mockResolvedValue({ routes: [HAMRA_ROUTE, VERDUN_ROUTE], byStudent: new Map() });
+  const post = deferred<Response>();
+  stubFetch(jsonResponse(200, NORA_BEST_ROUTE), post.promise);
+  render(<StudentsPage />);
+  await screen.findByText("Nora Fakhoury");
+  await waitFor(() => expect(screen.getByLabelText("Route")).toBeEnabled());
+
+  fireEvent.click(screen.getByRole("button", { name: "Find a route" }));
+  const placeButton = await screen.findByRole("button", { name: `Place on ${HAMRA_ROUTE.name}` });
+  fireEvent.click(placeButton);
+  await waitFor(() => expect(placeButton).toBeDisabled());
+
+  fireEvent.keyDown(placeButton, { key: "Escape" });
+
+  // Still here and still placing: Escape did nothing while the POST was in flight.
+  expect(screen.getByRole("heading", { name: "Best route for Nora Fakhoury" })).toBeInTheDocument();
+  expect(placeButton).toBeDisabled();
+
+  post.resolve(jsonResponse(201, NORA_PLACEMENT));
+  await waitFor(() => expect(within(row("Nora Fakhoury")).getByText(`Route: ${HAMRA_ROUTE.name}`)).toBeInTheDocument());
+
+  // Once it's settled, Escape closes the panel as usual.
+  fireEvent.keyDown(screen.getByRole("heading", { name: "Best route for Nora Fakhoury" }), { key: "Escape" });
+  expect(screen.queryByRole("heading", { name: "Best route for Nora Fakhoury" })).not.toBeInTheDocument();
 });

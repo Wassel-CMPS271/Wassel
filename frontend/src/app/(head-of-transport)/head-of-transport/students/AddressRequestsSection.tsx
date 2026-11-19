@@ -134,7 +134,7 @@ function AddressRequestRow({ request, isDeciding, onApprove, onReject }: RowProp
       await onApprove();
     } catch (err) {
       if (err instanceof ApiValidationError && err.errors.studentId) {
-        setRowError("This student is inactive, so the new address can't be saved. Reject the request instead.");
+        setRowError("This student is paused or archived, so the new address can't be saved. Reject the request instead.");
         return;
       }
       setRowError(fallbackErrorMessage(err));

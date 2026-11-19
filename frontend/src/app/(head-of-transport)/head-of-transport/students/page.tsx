@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, MotionConfig } from "framer-motion";
 import { addressRequestsApi } from "@/lib/api/addressRequests";
 import { getParents, type Parent } from "@/lib/api/parents";
-import { getRouteAssignments, type RouteAssignment, type RouteAssignments } from "@/lib/api/routes";
-import { addStudentWithAddress, getStudents, importStudents, matchesFilters, setStudentLocation, updateStudentAddress, type ImportRowResult, type NewStudent, type NewStudentWithAddress, type Student } from "@/lib/api/students";
+import type { BestRoutePlacement } from "@/lib/api/roster";
+import { getRouteAssignments, type Route, type RouteAssignment, type RouteAssignments } from "@/lib/api/routes";
+import { addStudentWithAddress, getStudents, importStudents, matchesFilters, setStudentLocation, updateStudentAddress, STUDENT_STATUS_LABELS, type ImportRowResult, type NewStudent, type NewStudentWithAddress, type Student } from "@/lib/api/students";
 import { AddStudentForm } from "./AddStudentForm";
 import { AddressRequestsSection } from "./AddressRequestsSection";
 import { ImportStudentsForm } from "./ImportStudentsForm";
@@ -48,6 +49,15 @@ export default function StudentsPage() {
   const [routeData, setRouteData] = useState<RouteAssignments>({ routes: [], byStudent: new Map() });
   const [routesStatus, setRoutesStatus] = useState<RoutesStatus>("loading");
 
+  // The student whose status changed last. Whether the current filters now
+  // hide them is worked out at render time from the latest students and
+  // routes, so an answer that lands while the routes load can't go stale.
+  const [lastStatusChange, setLastStatusChange] = useState<{ studentId: string } | null>(null);
+  // Set by a status change, so the hidden row's focus moves once, not on
+  // every later filter change.
+  const focusAfterStatusChangeRef = useRef(false);
+  const selectedStatusFilterRef = useRef<HTMLButtonElement>(null);
+
   // null until the parents load; stays null if they fail, so the rows keep
   // saying "Linked"/"Not assigned" instead of an email.
   const [parentsById, setParentsById] = useState<Map<string, Parent> | null>(null);
@@ -71,6 +81,27 @@ export default function StudentsPage() {
         .filter((s) => matchesRouteFilter(s, routeFilter, routeData.byStudent)),
     [students, debouncedQuery, statusFilter, gradeFilter, routeFilter, routeData],
   );
+
+  // Announces a student leaving the filtered list after a status change, so
+  // a head of transport who just paused/archived someone isn't left
+  // wondering where the row went.
+  const changedStudent = lastStatusChange
+    ? students.find((s) => s.id === lastStatusChange.studentId)
+    : undefined;
+  const changedStudentHidden =
+    changedStudent !== undefined && !filteredStudents.some((s) => s.id === changedStudent.id);
+  const filterAnnouncement =
+    changedStudent && changedStudentHidden
+      ? `${changedStudent.firstName} ${changedStudent.lastName} is now ${STUDENT_STATUS_LABELS[changedStudent.status]} and is hidden by the current filter.`
+      : "";
+
+  // The row (and the button that had focus) is gone: put focus on the
+  // selected status filter, which is always there, instead of <body>.
+  useEffect(() => {
+    if (!focusAfterStatusChangeRef.current) return;
+    focusAfterStatusChangeRef.current = false;
+    if (changedStudentHidden) selectedStatusFilterRef.current?.focus();
+  }, [lastStatusChange, changedStudentHidden]);
 
   const isFiltering =
     debouncedQuery.trim() !== "" ||
@@ -161,6 +192,67 @@ export default function StudentsPage() {
     const updated = await setStudentLocation(id, latitude, longitude);
     setStudents((prev) => prev.map((student) => student.id === id ? updated : student));
     pushToast(`Pickup location updated for ${updated.firstName} ${updated.lastName}.`);
+  }
+
+  // Pause/archive/resume/restore: the server already applied the change, so
+  // this only reconciles local state, no reload. Pausing or archiving also
+  // takes the student off their route (in the same backend transaction), so
+  // their entry in routeData.byStudent is dropped right here, same as the
+  // route line updates after a removeStudent elsewhere in the app. Both
+  // updates are functional: this runs after the PUT, by when the routes may
+  // have loaded or another row may have been placed.
+  function handleStatusChanged(updated: Student) {
+    setStudents((prev) => prev.map((student) => (student.id === updated.id ? updated : student)));
+    if (updated.status !== "active") {
+      setRouteData((prev) => {
+        if (!prev.byStudent.has(updated.id)) return prev;
+        const byStudent = new Map(prev.byStudent);
+        byStudent.delete(updated.id);
+        return { ...prev, byStudent };
+      });
+    }
+    focusAfterStatusChangeRef.current = true;
+    setLastStatusChange({ studentId: updated.id });
+  }
+
+  // A filter or the search moving on is the head of transport's own next
+  // action: the announcement about the student the *previous* action hid is
+  // no longer about what's on screen, so it goes. Changing status doesn't
+  // call this, so the announcement survives the student's own row leaving.
+  function clearStatusChangeAnnouncement() {
+    focusAfterStatusChangeRef.current = false;
+    setLastStatusChange(null);
+  }
+
+  function handleQueryChange(value: string) {
+    setSearchInput(value);
+    clearStatusChangeAnnouncement();
+  }
+
+  function handleStatusFilterChange(value: StatusFilterValue) {
+    setStatusFilter(value);
+    clearStatusChangeAnnouncement();
+  }
+
+  function handleGradeFilterChange(value: string) {
+    setGradeFilter(value);
+    clearStatusChangeAnnouncement();
+  }
+
+  function handleRouteFilterChange(value: RouteFilterValue) {
+    setRouteFilter(value);
+    clearStatusChangeAnnouncement();
+  }
+
+  // A best-route placement: update the row's route line in place and keep
+  // the route filter's assignments consistent, without refetching anything.
+  function handlePlaced(studentId: string, route: Route, placement: BestRoutePlacement) {
+    setRouteData((prev) => {
+      const byStudent = new Map(prev.byStudent);
+      byStudent.set(studentId, { routeId: route.id, routeName: route.name });
+      return { ...prev, byStudent };
+    });
+    pushToast(`Placed on ${route.name} as stop ${placement.position}, pickup ${placement.arrivalTime}.`);
   }
 
   async function handleImport(rows: NewStudent[]): Promise<ImportRowResult[]> {
@@ -255,19 +347,24 @@ export default function StudentsPage() {
           {!isLoading && !loadError && students.length > 0 && (
             <StudentFilters
               query={searchInput}
-              onQueryChange={setSearchInput}
+              onQueryChange={handleQueryChange}
               status={statusFilter}
-              onStatusChange={setStatusFilter}
+              onStatusChange={handleStatusFilterChange}
               grade={gradeFilter}
-              onGradeChange={setGradeFilter}
+              onGradeChange={handleGradeFilterChange}
               grades={grades}
               route={routeFilter}
-              onRouteChange={setRouteFilter}
+              onRouteChange={handleRouteFilterChange}
               routes={routeData.routes}
               routesStatus={routesStatus}
               onRetryRoutes={() => loadRouteData("retrying")}
+              selectedStatusRef={selectedStatusFilterRef}
             />
           )}
+
+          <p role="status" className="text-sm" style={{ color: darkTheme.text.secondary }}>
+            {filterAnnouncement}
+          </p>
 
           {!isLoading && !loadError && students.length === 0 && (
             <div
@@ -330,6 +427,7 @@ export default function StudentsPage() {
                     setStatusFilter("all");
                     setGradeFilter("all");
                     setRouteFilter("all");
+                    clearStatusChangeAnnouncement();
                   }}
                   style={{ marginTop: spacing.sm }}
                 >
@@ -358,6 +456,8 @@ export default function StudentsPage() {
                     }}
                     onUpdateAddress={handleUpdateAddress}
                     onUpdateLocation={handleUpdateLocation}
+                    onStatusChanged={handleStatusChanged}
+                    onPlaced={handlePlaced}
                   />
                 ))}
               </AnimatePresence>

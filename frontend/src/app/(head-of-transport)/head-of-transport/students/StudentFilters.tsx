@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import type { RouteAssignments } from "@/lib/api/routes";
-import type { Student } from "@/lib/api/students";
+import { STUDENT_STATUS_LABELS, type StudentStatus } from "@/lib/api/students";
 import { colors, darkTheme, radius, spacing, typography } from "@/styles/tokens";
 
-export type StatusFilterValue = Student["status"] | "all";
+export type StatusFilterValue = StudentStatus | "all";
 // "all" (no filter), "none" (students on no route), or a route's id.
 export type RouteFilterValue = string;
 // "retrying" is a load started from the Retry button, after an "error".
@@ -26,12 +26,16 @@ interface StudentFiltersProps {
   routes: RouteAssignments["routes"];
   routesStatus: RoutesStatus;
   onRetryRoutes: () => void;
+  // Points at the pressed status button, so the page can move focus there
+  // when a status change hides the row that had it.
+  selectedStatusRef?: RefObject<HTMLButtonElement | null>;
 }
 
 const STATUS_OPTIONS: { value: StatusFilterValue; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "active", label: "Active" },
-  { value: "inactive", label: "Inactive" },
+  { value: "active", label: STUDENT_STATUS_LABELS.active },
+  { value: "paused", label: STUDENT_STATUS_LABELS.paused },
+  { value: "inactive", label: STUDENT_STATUS_LABELS.inactive },
 ];
 
 // Search + status/grade/route filters for the roster (SCRUM-162, route SCRUM-66). Search and the
@@ -53,6 +57,7 @@ export function StudentFilters({
   routes,
   routesStatus,
   onRetryRoutes,
+  selectedStatusRef,
 }: StudentFiltersProps) {
   const gradeSelectId = useId();
   const routeSelectId = useId();
@@ -203,6 +208,7 @@ export function StudentFilters({
         {STATUS_OPTIONS.map((option) => (
           <Button
             key={option.value}
+            ref={status === option.value ? selectedStatusRef : undefined}
             type="button"
             variant={status === option.value ? "primary" : "ghost"}
             aria-pressed={status === option.value}

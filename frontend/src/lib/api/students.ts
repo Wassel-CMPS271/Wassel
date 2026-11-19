@@ -6,6 +6,16 @@
 import { request } from "./client";
 import { ApiError, ApiValidationError } from "./errors";
 
+// docs/contracts/roster.md: "inactive" means archived (it kept its name), and
+// only an active student can be on a route.
+export type StudentStatus = "active" | "paused" | "inactive";
+
+export const STUDENT_STATUS_LABELS: Record<StudentStatus, string> = {
+  active: "Active",
+  paused: "Paused",
+  inactive: "Archived",
+};
+
 export interface Student {
   id: string;
   firstName: string;
@@ -13,7 +23,7 @@ export interface Student {
   grade: string;
   guardianName: string;
   guardianPhone: string;
-  status: "active" | "inactive";
+  status: StudentStatus;
   address: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -46,7 +56,7 @@ export type ImportRowResult =
 
 export interface StudentFilters {
   query?: string;
-  status?: Student["status"] | "all";
+  status?: StudentStatus | "all";
   grade?: string | "all";
   route?: string | "all";
 }
@@ -60,6 +70,8 @@ export function linkStudentParent(id: string, parentUserId: string): Promise<Stu
 }
 
 // Optional server-side filters use the exact StudentController parameter names.
+// The backend reads `status` in any letter case (paused included); an unknown
+// one is no filter at all, so only the three statuses are ever sent.
 // The current roster also filters locally after an initial GET for instant UI
 // response; its data still comes exclusively from the real backend.
 export function getStudents(filters?: StudentFilters): Promise<Student[]> {

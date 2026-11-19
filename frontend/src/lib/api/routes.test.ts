@@ -3,13 +3,14 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FleetProposal, Proposal, Route, RouteSummary } from "./routes";
+import type { Student } from "./students";
 import fleetProposalFixture from "./__fixtures__/routing/fleet-proposal.json";
 import fleetProposalNothingFixture from "./__fixtures__/routing/fleet-proposal-nothing.json";
 
 const FLEET_PROPOSAL = fleetProposalFixture as FleetProposal;
 const FLEET_PROPOSAL_NOTHING = fleetProposalNothingFixture as FleetProposal;
 
-function student(id: string, firstName: string, pin: boolean, status: "active" | "inactive" = "active") {
+function student(id: string, firstName: string, pin: boolean, status: Student["status"] = "active") {
   return {
     id,
     firstName,
@@ -247,12 +248,13 @@ describe("httpRoutes", () => {
     }
   });
 
-  it("excludes inactive students, even when they're on no route", async () => {
+  it("excludes paused and archived students, even when they're on no route", async () => {
     const { httpRoutes } = await loadRoutes();
     const { getStudents } = await import("./students");
     vi.mocked(getStudents).mockResolvedValueOnce([
       student("s-free", "Lara", true),
       student("s-inactive", "Nora", true, "inactive"),
+      student("s-paused", "Tarek", true, "paused"),
     ]);
     mockFetchOnce(200, []); // no routes, so neither student is a stop anywhere
 
