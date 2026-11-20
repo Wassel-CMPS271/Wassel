@@ -124,7 +124,9 @@ export function useOfflineQueue({
       refetch: async (item) => refetchRunRef.current?.(item),
     });
     setQueue(created);
-    void created.drain(); // Whatever was left over from a previous visit.
+    // Whatever was left over from a previous visit (or from before signing in again):
+    // a tap that got no answer goes now, not after a backoff stored before the reload.
+    void created.sendWaitingNow();
     return () => created.dispose();
   }, [userId, api]);
 
@@ -136,6 +138,21 @@ export function useOfflineQueue({
     if (!queue || !connectivity) return;
     return connectivity.onRetry(() => {
       if (!queue.getSnapshot().paused) void queue.drain();
+    });
+  }, [queue, connectivity]);
+
+  // The connection coming back (the browser's online event, or the server answering
+  // after a failure) sends taps that got no answer at all now, not after their
+  // backoff. Not on the periodic tick: that's for when no event says it's back.
+  // While paused (401) this only moves their due time; nothing is sent until resume.
+  useEffect(() => {
+    if (!queue || !connectivity) return;
+    let last = connectivity.getState();
+    return connectivity.subscribe(() => {
+      const next = connectivity.getState();
+      const back = last === "offline" && next !== "offline";
+      last = next;
+      if (back) void queue.sendWaitingNow();
     });
   }, [queue, connectivity]);
 

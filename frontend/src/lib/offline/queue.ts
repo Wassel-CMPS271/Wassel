@@ -55,6 +55,9 @@ export interface QueueItemError {
   // answer drops the item instead of keeping it.)
   kind: "retryable" | "rejected" | "conflict";
   message: string;
+  // Retryable only: the request got no answer at all (offline, timeout), so the tap is
+  // shown as waiting to send rather than as a failure.
+  network?: boolean;
 }
 
 export interface QueueItem {
@@ -321,6 +324,23 @@ export class OfflineQueue {
     return true;
   }
 
+  // The connection is back, or the driver pressed Send now: a retryable item whose
+  // send got no answer at all (offline, timeout) is due now instead of after its
+  // backoff. A 5xx/408/429 keeps its backoff. Only the due time changes: same item,
+  // same state, same clientRequestId.
+  async sendWaitingNow(): Promise<void> {
+    if (this.disposed) return;
+    const now = Date.now();
+    await this.mutate((items) =>
+      items.map((i) =>
+        isAutoRetryable(i) && i.lastError?.network === true && (i.nextAttemptAt ?? 0) > now
+          ? { ...i, nextAttemptAt: now }
+          : i,
+      ),
+    );
+    return this.drain();
+  }
+
   // Removes one item that failed (error or conflict), on the driver's say-so.
   async discard(id: string): Promise<boolean> {
     let discarded = false;
@@ -476,7 +496,7 @@ export class OfflineQueue {
         await this.record(item.id, {
           state: "error",
           serverStatus: failure.status,
-          lastError: { kind: "retryable", message: failure.message },
+          lastError: { kind: "retryable", message: failure.message, network: failure.network },
           nextAttemptAt:
             Date.now() + backoffDelay(item.attempts, this.backoffBaseMs, this.backoffMaxMs),
         });

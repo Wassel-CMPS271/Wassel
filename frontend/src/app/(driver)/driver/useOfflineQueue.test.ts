@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConfirmationReplayInput } from "@/lib/api/confirmationReplay";
 import { ApiError } from "@/lib/api/errors";
 import type { Run } from "@/lib/api/runs";
-import type { Connectivity } from "@/lib/offline/connectivity";
+import type { Connectivity, ConnectivityState } from "@/lib/offline/connectivity";
 import { queueStorageKey } from "@/lib/offline/storage";
 import { todayInBeirut } from "@/lib/offline/queue";
 import { useOfflineQueue } from "./useOfflineQueue";
@@ -48,11 +48,19 @@ function fakeApi() {
   };
 }
 
-function fakeConnectivity(): Connectivity & { retry: () => void } {
+function fakeConnectivity(): Connectivity & {
+  retry: () => void;
+  setState: (next: ConnectivityState) => void;
+} {
   const retryListeners = new Set<() => void>();
+  const stateListeners = new Set<() => void>();
+  let state: ConnectivityState = "online";
   return {
-    getState: () => "online",
-    subscribe: () => () => {},
+    getState: () => state,
+    subscribe(listener) {
+      stateListeners.add(listener);
+      return () => stateListeners.delete(listener);
+    },
     onRetry(listener) {
       retryListeners.add(listener);
       return () => retryListeners.delete(listener);
@@ -62,6 +70,14 @@ function fakeConnectivity(): Connectivity & { retry: () => void } {
     dispose: () => {},
     retry() {
       for (const listener of [...retryListeners]) listener();
+    },
+    // The real Connectivity's own state changes (an "online" event, or the server
+    // answering after a failure): what the new effect in useOfflineQueue.ts listens
+    // for, as opposed to retry() (the periodic tick, or the tab becoming visible).
+    setState(next) {
+      if (next === state) return;
+      state = next;
+      for (const listener of [...stateListeners]) listener();
     },
   };
 }
@@ -332,5 +348,130 @@ describe("useOfflineQueue", () => {
     await vi.advanceTimersByTimeAsync(60_000); // past the backoff that would have retried it
 
     expect(failing.confirm).toHaveBeenCalledTimes(1);
+  });
+
+  // SCRUM-298: a tap that got no answer at all (offline, a timeout) must not sit out
+  // its backoff once connectivity itself says the connection is back — not only on
+  // the shared retry signal (the tick, visibility), which already drains whatever is
+  // due without speeding anything up.
+  it.each<[string, ConnectivityState]>([
+    ["unknown (the browser's online event)", "unknown"],
+    ["online (the server answering after a failure)", "online"],
+  ])(
+    "sends a network-waiting tap at once when connectivity goes from offline to %s",
+    async (_label, next) => {
+      const failing = fakeApi();
+      failing.failNext(new TypeError("Failed to fetch"));
+      const { result, connectivity } = await setUp({ api: failing });
+      act(() => {
+        result.current.queue!.enqueue({
+          runId: RUN_ID,
+          runDate: RUN_DATE,
+          studentId: "dana",
+          status: "PICKED_UP",
+        });
+      });
+      await act(() => result.current.queue!.drain());
+      expect(failing.calls).toHaveLength(1);
+      expect(result.current.queue!.getSnapshot().items[0]).toMatchObject({
+        state: "error",
+        lastError: { kind: "retryable", network: true },
+      });
+
+      // The periodic tick / visibility signal (onRetry) alone drains what's due,
+      // without skipping the backoff: still only the one call so far.
+      act(() => connectivity.retry());
+      await flush();
+      expect(failing.calls).toHaveLength(1);
+
+      act(() => connectivity.setState("offline"));
+      act(() => connectivity.setState(next));
+      await flush();
+
+      expect(failing.calls).toHaveLength(2);
+      expect(failing.calls[1].clientRequestId).toBe(failing.calls[0].clientRequestId);
+      expect(result.current.queue!.getSnapshot().items[0].state).toBe("synced");
+    },
+  );
+
+  it("keeps a 5xx's own backoff on the same connectivity change that speeds up a network-waiting tap", async () => {
+    const failing = fakeApi();
+    failing.failNext(new ApiError(503, "Unavailable"));
+    const { result, connectivity } = await setUp({ api: failing });
+    act(() => {
+      result.current.queue!.enqueue({
+        runId: RUN_ID,
+        runDate: RUN_DATE,
+        studentId: "dana",
+        status: "PICKED_UP",
+      });
+    });
+    await act(() => result.current.queue!.drain());
+    expect(result.current.queue!.getSnapshot().items[0]).toMatchObject({
+      state: "error",
+      lastError: { kind: "retryable", network: false },
+    });
+    const dueAt = result.current.queue!.getSnapshot().items[0].nextAttemptAt!;
+
+    act(() => connectivity.setState("offline"));
+    act(() => connectivity.setState("online"));
+    await flush();
+
+    expect(failing.calls).toHaveLength(1); // not sent early
+    expect(result.current.queue!.getSnapshot().items[0].nextAttemptAt).toBe(dueAt); // backoff untouched
+
+    // It still goes once its own backoff ends, same key.
+    await act(() => vi.advanceTimersByTimeAsync(dueAt - Date.now()));
+
+    expect(failing.calls).toHaveLength(2);
+    expect(failing.calls[1].clientRequestId).toBe(failing.calls[0].clientRequestId);
+    expect(result.current.queue!.getSnapshot().items[0].state).toBe("synced");
+  });
+
+  it("on mount, sends a stored no-answer tap at once but keeps a stored 5xx tap's own backoff", async () => {
+    const future = Date.now() + 30_000;
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        v: 1,
+        items: [
+          {
+            id: "i-network",
+            clientRequestId: "6f1c2a4e-8b3d-4e5f-9a7b-1c2d3e4f5a6b",
+            runId: RUN_ID,
+            runDate: RUN_DATE,
+            studentId: "dana",
+            status: "PICKED_UP",
+            occurredAt: "2026-11-09T05:00:00.000Z",
+            createdAt: 0,
+            attempts: 1,
+            state: "error",
+            lastError: { kind: "retryable", message: "Failed to fetch", network: true },
+            nextAttemptAt: future,
+          },
+          {
+            id: "i-5xx",
+            clientRequestId: "7f1c2a4e-8b3d-4e5f-9a7b-1c2d3e4f5a6c",
+            runId: RUN_ID,
+            runDate: RUN_DATE,
+            studentId: "tarek",
+            status: "PICKED_UP",
+            occurredAt: "2026-11-09T05:00:00.000Z",
+            createdAt: 1,
+            attempts: 1,
+            state: "error",
+            lastError: { kind: "retryable", message: "Unavailable" },
+            serverStatus: 503,
+            nextAttemptAt: future,
+          },
+        ],
+      }),
+    );
+
+    const { api } = await setUp({ keepMountCalls: true });
+
+    // The network-waiting tap (dana) is sent on mount, before its stored backoff
+    // would have elapsed; the 5xx tap (tarek) is left waiting for its own.
+    expect(api.calls.map((call) => call.studentId)).toEqual(["dana"]);
   });
 });

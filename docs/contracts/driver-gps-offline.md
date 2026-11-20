@@ -93,7 +93,10 @@ replay rules. The request, the checks and the answers are `runs.md`'s and are no
 - The key never changes after that. The automatic retry, the driver's Try again, a reload (an item
   left `sending` by a tab that closed mid-send goes back to `queued` with the same key) and a drain
   by another tab all read the stored item's key. No code path makes a key for an item that already
-  exists.
+  exists. Whenever `/driver` loads (a reload, not only after signing in again), a tap that got no
+  answer at all is sent at once rather than waiting out the backoff it had before: the connection
+  may well be back by then, and there is no reason to make the driver wait on a stored delay that is
+  stale the moment the page loads.
 - A stored item whose `clientRequestId` is not a UUID makes the stored queue unreadable (treated as
   storage failure, so taps use the fallback above) instead of becoming a request the server would
   refuse with 400 forever.
@@ -126,7 +129,8 @@ replay rules. The request, the checks and the answers are `runs.md`'s and are no
 | **422**: the key was used for a different confirmation (a client bug, logged with `console.error`) | `error` (rejected); never resent | The message, and **Dismiss only**. Try again would resend the same key and get the same answer |
 | **400** (including field errors) | `error` (rejected); never resent | Message, **Dismiss only** |
 | **403** | `error` (rejected); never resent | Message, **Dismiss only** |
-| **5xx**, 429, 408, network error, timeout, or an unexpected failure | `error` (retryable), resent automatically after a backoff (2 s, 4 s, 8 s … at most 60 s) and on the connectivity tick, always with the **same** key. The drain stops at the first one (most likely offline) | "Couldn't send" with **Try again** (same key) |
+| **Network error or timeout** (no answer at all) | `error` (retryable, marked `network`), resent automatically after a backoff (2 s, 4 s, 8 s … at most 60 s) and on the connectivity tick (which sends only what is already due, never skipping a backoff), and **at once** (without waiting for the backoff) when the connection comes back (the browser's `online` event, or the server answering after a failure) or the driver taps the banner's **Send now** (paused or not), or the queue resumes after a 401 (see [Sign-in expiry](#sign-in-expiry-401)), always with the **same** key. The drain stops at the first one (most likely offline) | "Saved on phone" in the neutral pill, **no Try again**: the tap is waiting to be sent, not failed, as the offline banner says |
+| **5xx**, 429, 408, or an unexpected failure | `error` (retryable), resent automatically after a backoff (2 s, 4 s, 8 s … at most 60 s) and on the connectivity tick (which sends only what is already due, never skipping a backoff), always with the **same** key. The backoff is kept when the connection comes back, on Send now and after a 401: the server did answer. The drain stops at the first one | "Couldn't send" with **Try again** (same key) |
 | **401** | Back to `queued` with the same key. The whole queue **pauses** and keeps every item; nothing else is sent | The [sign-in expiry flow](#sign-in-expiry-401) |
 | An item from an earlier day | Never sent (`runs.md`: it would be 404). Shown as `conflict` | "Conflict" with "This confirmation is from an earlier day and wasn't sent.", **Dismiss** only |
 
@@ -154,14 +158,16 @@ on the page:
      and has a "Sign in again" link to the same page, in case the redirect does not happen. Until
      `me()` has said 401, a paused banner only says sending is paused while the sign-in is checked.
    - **`me()` answers:** the session is fine. A 401 from another call changes nothing. After the
-     queue's own 401 the queue resumes once; a second queue 401 before anything has synced leaves
+     queue's own 401 the queue resumes once (a tap that got no answer goes at once, not after its
+     backoff); a second queue 401 before anything has synced leaves
      it paused, so a 401 that keeps coming back cannot loop. The banner's Send now still resumes it
      by hand.
    - **`me()` cannot answer** (offline, 5xx): it asks again on the next connectivity tick (every
      30 s). A queue paused by its own 401 stays paused meanwhile, and no tick resumes it.
 3. After signing in (`/login`, then `/verify-2fa`), the driver lands on `/driver`, their home. The
    page builds a new queue for the same user and storage key. It starts unpaused and **drains
-   everything left, with the original keys**. If the server had already applied one of them, it
+   everything left, with the original keys**; a tap that got no answer goes at once, not after the
+   backoff it had before. If the server had already applied one of them, it
    answers 200.
 4. The 401 path never clears storage. Items stay until they are sent or dismissed, even if
    another driver signs in on the phone in between.
