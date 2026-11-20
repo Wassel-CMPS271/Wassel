@@ -1,0 +1,36 @@
+{
+  "created": 0,
+  "rejected": 6,
+  "results": [
+    {
+      "row": 2,
+      "status": "rejected",
+      "errors": { "guardianPhone": "A student named Zeina Fakhoury with guardian phone +961 3 222 111 already exists." }
+    },
+    {
+      "row": 3,
+      "status": "rejected",
+      "errors": { "guardianPhone": "A student named Hadi Bou Saab with guardian phone +961 70 333 222 already exists." }
+    },
+    {
+      "row": 5,
+      "status": "rejected",
+      "errors": { "guardianPhone": "Use a format like \"+961 3 123 456\" or \"+961 70 234 567\"" }
+    },
+    {
+      "row": 6,
+      "status": "rejected",
+      "errors": { "guardianPhone": "Same student and guardian phone as row 2." }
+    },
+    {
+      "row": 7,
+      "status": "rejected",
+      "errors": { "guardianPhone": "A student named Tarek Mansour with guardian phone +961 3 411 001 already exists." }
+    },
+    {
+      "row": 8,
+      "status": "rejected",
+      "errors": { "firstName": "First name is required", "grade": "Grade is required" }
+    }
+  ]
+}
