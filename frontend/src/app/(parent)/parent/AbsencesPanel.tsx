@@ -34,7 +34,8 @@ export function AbsencesPanel({ child, onBack }: { child: Child; onBack: () => v
     ? "Your sign-in has expired. Sign in again."
     : cause instanceof ApiError && cause.status === 403 ? "You don't have permission to manage these absences."
       : cause instanceof ApiError && cause.status === 404 ? "This child or absence is no longer available. Refresh your children's details."
-        : "Couldn't complete the request. Please try again.";
+        : cause instanceof ApiError && cause.status === 409 ? cause.message
+          : "Couldn't complete the request. Please try again.";
 
   useEffect(() => { mounted.current = true; heading.current?.focus(); return () => { mounted.current = false; }; }, []);
   useEffect(() => {
