@@ -1,0 +1,44 @@
+{
+  "created": 2,
+  "rejected": 0,
+  "results": [
+    {
+      "row": 2,
+      "status": "created",
+      "student": {
+        "id": "5c1e8a40-2b7d-4f19-9c3a-6d2f0e8b4a11",
+        "firstName": "Zeina",
+        "lastName": "Fakhoury",
+        "grade": "Grade 3",
+        "guardianName": "Nabil Fakhoury",
+        "guardianPhone": "+961 3 222 111",
+        "status": "active",
+        "address": null,
+        "latitude": null,
+        "longitude": null,
+        "route": null,
+        "parentUserId": null,
+        "createdAt": "2026-11-20T09:30:00Z"
+      }
+    },
+    {
+      "row": 3,
+      "status": "created",
+      "student": {
+        "id": "9a4d2f17-6e3b-4c85-b1f0-2e7a9c3d5b22",
+        "firstName": "Hadi",
+        "lastName": "Bou Saab",
+        "grade": "Grade 5",
+        "guardianName": "Lina Bou Saab",
+        "guardianPhone": "+961 70 333 222",
+        "status": "active",
+        "address": null,
+        "latitude": null,
+        "longitude": null,
+        "route": null,
+        "parentUserId": null,
+        "createdAt": "2026-11-20T09:30:00Z"
+      }
+    }
+  ]
+}
