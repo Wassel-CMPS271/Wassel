@@ -541,6 +541,139 @@ describe("the same key on every resend", () => {
   });
 });
 
+// SCRUM-298: a tap that got no answer at all (offline, a timeout) is shown waiting,
+// not failed (StopCard.tsx), and must not sit out its backoff once the connection is
+// back or the driver presses Send now. sendWaitingNow() only moves such an item's own
+// due time to now and joins the normal drain; the key, the state machine, blocking and
+// the 401/404/409 handling are exactly as drain()/retry() already leave them.
+describe("sendWaitingNow", () => {
+  it.each([
+    ["a network failure", new TypeError("Failed to fetch")],
+    ["a timeout", new DOMException("The operation was aborted.", "AbortError")],
+  ])("sends %s at once instead of waiting for its backoff, with the same key", async (_label, error) => {
+    const server = fakeServer();
+    const queue = makeQueue({ api: server.api });
+    queue.enqueue(DANA_PICKED);
+    server.failNext(error);
+
+    await queue.drain();
+    const failed = only(queue);
+    expect(failed).toMatchObject({ state: "error", lastError: { kind: "retryable", network: true } });
+    expect(failed.nextAttemptAt).toBeGreaterThan(Date.now()); // still backing off
+
+    await queue.sendWaitingNow();
+
+    expect(server.calls).toHaveLength(2);
+    expect(server.calls[1].clientRequestId).toBe(failed.clientRequestId);
+    expect(only(queue)).toMatchObject({ state: "synced" });
+  });
+
+  it.each([
+    ["a 5xx", new ApiError(503, "Unavailable")],
+    ["a 429", new ApiError(429, "Slow down")],
+    ["a 408", new ApiError(408, "Timed out")],
+  ])("keeps the backoff for %s instead of sending it early", async (_label, error) => {
+    const server = fakeServer();
+    const queue = makeQueue({ api: server.api });
+    queue.enqueue(DANA_PICKED);
+    server.failNext(error);
+
+    await queue.drain();
+    const failed = only(queue);
+    expect(failed).toMatchObject({ state: "error", lastError: { kind: "retryable", network: false } });
+    const dueAt = failed.nextAttemptAt!;
+
+    await queue.sendWaitingNow();
+
+    expect(server.calls).toHaveLength(1); // not sent early
+    expect(only(queue).nextAttemptAt).toBe(dueAt); // backoff untouched
+
+    await vi.advanceTimersByTimeAsync(dueAt - Date.now());
+    expect(server.calls).toHaveLength(2); // sent once its own backoff ends, same key
+    expect(server.calls[1].clientRequestId).toBe(failed.clientRequestId);
+  });
+
+  it("does not send an item already in flight twice, and keeps its key", async () => {
+    const server = fakeServer();
+    const queue = makeQueue({ api: server.api });
+    queue.enqueue(DANA_PICKED);
+    server.failNext(new TypeError("Failed to fetch"));
+    await queue.drain();
+    const failed = only(queue);
+    expect(failed.state).toBe("error");
+
+    const hold = server.holdNext(); // the retry hangs mid-send
+    const first = queue.sendWaitingNow();
+    await flush();
+    expect(only(queue).state).toBe("sending");
+    expect(server.calls).toHaveLength(2);
+
+    // Send now again (or the connection reporting back a second time) while the
+    // retry is still in flight: isAutoRetryable requires "error", so a "sending"
+    // item is left alone, and drain() shares the one run already in progress.
+    const second = queue.sendWaitingNow();
+    await flush();
+    expect(server.calls).toHaveLength(2); // no third call yet
+
+    hold.resolve();
+    await Promise.all([first, second]);
+
+    expect(server.calls).toHaveLength(2);
+    expect(server.calls[1].clientRequestId).toBe(failed.clientRequestId);
+    expect(only(queue)).toMatchObject({ state: "synced" });
+  });
+
+  it("leaves a rejected, conflict or blocked (non-network) item alone, and does nothing once disposed", async () => {
+    // Rejected (400): never resent by anything, sendWaitingNow included.
+    const rejectedServer = fakeServer();
+    const rejectedQueue = makeQueue({ api: rejectedServer.api });
+    rejectedQueue.enqueue(DANA_PICKED);
+    rejectedServer.failNext(new ApiError(400, "Bad status"));
+    await rejectedQueue.drain();
+    expect(only(rejectedQueue).state).toBe("error");
+
+    await rejectedQueue.sendWaitingNow();
+    expect(rejectedServer.calls).toHaveLength(1);
+    expect(only(rejectedQueue).state).toBe("error");
+
+    // Conflict (an earlier day's item): never sent either.
+    const staleServer = fakeServer();
+    const staleQueue = makeQueue({ api: staleServer.api });
+    staleQueue.enqueue({ ...DANA_PICKED, runDate: YESTERDAY });
+    expect(only(staleQueue).state).toBe("conflict");
+
+    await staleQueue.sendWaitingNow();
+    expect(staleServer.calls).toHaveLength(0);
+    expect(only(staleQueue).state).toBe("conflict");
+
+    // Blocked: a tap queued behind a non-network (5xx) failure stays blocked.
+    // sendWaitingNow only moves a network-waiting item's own due time, and the
+    // head of this group isn't one, so the one behind it isn't unblocked either.
+    const blockedServer = fakeServer();
+    const blockedQueue = makeQueue({ api: blockedServer.api });
+    blockedQueue.enqueue(DANA_PICKED);
+    blockedServer.failNext(new ApiError(503, "Unavailable"));
+    await blockedQueue.drain();
+    blockedQueue.enqueue(DANA_DROPPED);
+    expect(items(blockedQueue).map((i) => i.state)).toEqual(["error", "blocked"]);
+
+    await blockedQueue.sendWaitingNow();
+    expect(blockedServer.calls).toHaveLength(1);
+    expect(items(blockedQueue).map((i) => i.state)).toEqual(["error", "blocked"]);
+
+    // Disposed: resolves without throwing or sending anything.
+    const disposedServer = fakeServer();
+    const disposedQueue = makeQueue({ api: disposedServer.api });
+    disposedQueue.enqueue(DANA_PICKED);
+    disposedServer.failNext(new TypeError("Failed to fetch"));
+    await disposedQueue.drain();
+    disposedQueue.dispose();
+
+    await expect(disposedQueue.sendWaitingNow()).resolves.toBeUndefined();
+    expect(disposedServer.calls).toHaveLength(1);
+  });
+});
+
 describe("order per student", () => {
   it("sends one student's taps in the order they were made, one at a time", async () => {
     const server = fakeServer();

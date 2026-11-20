@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, expect, it, vi } from "vitest";
 import type { ConfirmationStatus, RunStop } from "@/lib/api/runs";
 import type { QueueItem, QueueItemState } from "@/lib/offline/queue";
+import { queuePill } from "@/styles/tokens";
 import { StopCard, type StopCardProps } from "./StopCard";
 
 afterEach(() => {
@@ -155,6 +156,36 @@ it("shows Couldn't send with Try again for an error item, and calls onRetryQueue
   fireEvent.click(within(card()).getByRole("button", { name: "Try again" }));
 
   expect(onRetryQueueItem).toHaveBeenCalledTimes(1);
+});
+
+it("shows Saved on phone in the neutral pill, with no Try again, for a network-failed retryable item", () => {
+  renderCard({
+    queueItem: queueItem({
+      state: "error",
+      lastError: { kind: "retryable", message: "Failed to fetch", network: true },
+    }),
+  });
+
+  const group = within(card()).getByRole("group", { name: "Confirm Dana Fares" });
+  const pill = within(group).getByText(/Saved on phone/);
+  expect(pill).toBeInTheDocument();
+  // The plain neutral pill (queuePillStyle returns undefined for a waiting item), not
+  // the red error tint a "Couldn't send" item gets.
+  expect(pill).not.toHaveStyle({ backgroundColor: queuePill.errorBg });
+  expect(within(card()).queryByText(/Couldn't send/)).not.toBeInTheDocument();
+  expect(within(card()).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+});
+
+it("still shows Couldn't send with Try again for a retryable item without the network flag (5xx/408/429)", () => {
+  renderCard({
+    queueItem: queueItem({
+      state: "error",
+      lastError: { kind: "retryable", message: "Unavailable", network: false },
+    }),
+  });
+
+  expect(within(card()).getByText(/Couldn't send/)).toBeInTheDocument();
+  expect(within(card()).getByRole("button", { name: "Try again" })).toBeInTheDocument();
 });
 
 it("shows Waiting to send for a blocked item, with nothing to press", () => {
