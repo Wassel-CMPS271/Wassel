@@ -107,6 +107,37 @@ The script fails closed on missing config and requires every metric to be presen
 finite and nonnegative. A green smoke test alone **does not** prove counters are
 accurate: controlled deltas, p95 distribution and redeploy resets require X2-02.
 
+## Independent k6 result audit (X2-07)
+
+Prepared, **not executed against the real SCRUM-293 script**.
+
+- `scripts/scrum295-load-audit.mjs` inspects k6's exported `handleSummary(data)` JSON,
+  without generating traffic. It checks actual p95 latency (strictly under 1000 ms),
+  an explicitly configured custom 5xx counter equal to zero, measured 40–50
+  requests/second, peak active VUs of at least 300, and a measured run lasting
+  at least 600 seconds.
+- The audit deliberately fails if the custom 5xx metric is absent: the standard
+  `http_req_failed` measurement alone cannot establish *zero 5xx* if 4xx are
+  also counted.
+- The checks have positive and negative fixtures in
+  `scripts/scrum295-load-audit.test.mjs`. Passing these fixtures only validates
+  the audit logic; it does not prove the teammate's k6 script or deployment.
+
+Once SCRUM-293 provides the actual script, require its `handleSummary` to write
+a JSON file, and identify the author's actual **5xx Counter metric name**.
+Run only on the disposable stack:
+
+```bash
+node --test scripts/scrum295-load-audit.test.mjs
+node scripts/scrum295-load-audit.mjs path/to/k6-summary.json actual_5xx_counter_name
+```
+
+The 100 sign-ins in one minute (after SCRUM-289), the 1,000-student /
+40-bus / 800-parent seed, slow fake Brevo, road routing stub, resource caps
+and host comparison require separate independent evidence. Never claim those
+passed from a k6 summary alone; do not run a new load test against the live
+Railway host.
+
 ## Evidence record — fill after each real run
 
 | Field | Observed value |
