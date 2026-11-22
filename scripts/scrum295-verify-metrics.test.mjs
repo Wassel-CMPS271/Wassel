@@ -62,6 +62,9 @@ async function runVerifier(origin, envExtra = {}) {
     SCRUM295_FIELDS: JSON.stringify(fields),
     ...envExtra,
   };
+  // Node's test runner injects NODE_TEST_CONTEXT; propagating it makes a nested
+  // --test subprocess silently skip tests and return 0, masking negative controls.
+  delete env.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, ["--test", verifier], {
     env, stdio: ["ignore", "pipe", "pipe"],
   });
