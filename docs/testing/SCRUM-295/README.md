@@ -138,6 +138,54 @@ and host comparison require separate independent evidence. Never claim those
 passed from a k6 summary alone; do not run a new load test against the live
 Railway host.
 
+## Independent uptime observation (X2-04)
+
+Prepared on 22 Nov 2026; **not real monitoring acceptance evidence**.
+The actual SCRUM-291 external monitor must be configured by its owner and must
+record **both** frontend and backend uptime at its free-plan's finest probe
+interval. Our script cannot access monitor vendor incidents or notify the team.
+
+`scripts/scrum295-monitor-probe.mjs` is a read-only, two-target observation
+tool for an **isolated, disposable** test stack. It uses GET only and NEVER
+stops services, restarts deployments, changes monitor settings, or sends alerts.
+It refuses the known production Railway URL. Remote disposable test hosts
+need HTTPS and explicit `SCRUM295_ALLOW_REMOTE_TEST=1`.
+
+Perform the following **only when an authorized operator has a disposable
+stack and the owner's external monitors are active**:
+
+1. Set `SCRUM295_MONITOR_BACKEND_ORIGIN` and
+   `SCRUM295_MONITOR_FRONTEND_ORIGIN` to their test **origins**, without paths.
+   Set `SCRUM295_EXPECT_BACKEND=up` and
+   `SCRUM295_EXPECT_FRONTEND=up`. Run
+   `node scripts/scrum295-monitor-probe.mjs` and save the JSON output.
+2. Have the authorized operator stop **only the disposable stack**, without
+   touching the live Railway deployment or real school. Set both expected
+   states to `down` and run the probe again. If only one component is
+   intentionally stopped, record its intended expectation separately.
+3. Let the external monitor detect the outage. Capture the monitor's genuine
+   incident details, probe timestamps, configured cadence, evidence of
+   alert delivery to the team (not just an attempted notification), recorded
+   downtime duration, and screenshots/links proving the event included
+   planned deployment downtime. Never simulate an alert and present it as real.
+4. Restore the disposable stack, set both expected states back to `up`,
+   collect a third observation, and confirm the monitor shows recovery.
+5. Compare monitoring incident start/end timestamps, alerts and observed
+   downtime against the independent probe records. Record discrepancies as
+   defects on SCRUM-291. Attach artifact links and the candidate SHA to the
+   evidence table below.
+
+```bash
+node --test scripts/scrum295-monitor-probe.test.mjs
+# For each observation, configure origins and expectations in the process
+# environment, then:
+node scripts/scrum295-monitor-probe.mjs
+```
+
+The unit tests validate the probe against **synthetic** responses; their
+success is NOT evidence that the real monitor detected an outage. A controlled
+outage and genuine external monitor alert remain required to complete X2-04.
+
 ## Evidence record — fill after each real run
 
 | Field | Observed value |
