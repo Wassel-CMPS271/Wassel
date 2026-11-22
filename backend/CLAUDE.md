@@ -772,8 +772,10 @@ anymore: don't add it back, and don't add a test that depends on a table or colu
 
 **Coverage (SCRUM-151).** JaCoCo (`jacoco-maven-plugin` in `pom.xml`) records coverage during the tests and writes an
 HTML report to `backend/target/site/jacoco/index.html` at the `verify` phase, so `./mvnw verify` produces it (plain
-`test` does not). CI uploads the folder as the `backend-coverage` artifact. It is a report only: there are no
-thresholds, so a low number never fails the build.
+`test` does not). CI uploads the folder as the `backend-coverage` artifact and prints the number in the job summary.
+**Floor (SCRUM-292):** the `check` execution of the same plugin fails `verify` when line coverage of the whole
+backend is under 94.7% (two points below the 96.72% of 2026-11-22). The floor is never lowered; if a change drops
+coverage, add tests. Definitions and daily readings are in `docs/quality/`.
 
 **Independent tests of Moustafa's Sprint 3 work (SCRUM-236, by Hashem)**, written from the tickets and `docs/contracts/runs.md`,
 not from the authors' own suites: `AbsenceCriteriaTests` (238), `AbsentOnRunCriteriaTests` (239),

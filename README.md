@@ -320,7 +320,8 @@ or `main`:
 | `frontend-build` | `npm ci`, `npm audit --audit-level=high`, `npm run lint`, `npm run test:coverage`, `npm run build` in `/frontend`, uploads `frontend-coverage` |
 
 Both jobs upload a coverage report as a build artifact (open the run on GitHub, **Artifacts** at the bottom, download
-and open `index.html`). It is a report only: no minimum is enforced.
+and open `index.html`), and print their line-coverage number in the run's Summary page. Each job fails below a floor
+(backend 94.7%, front end 86.6%) that is never lowered; see `docs/quality/`.
 
 **Dependency scanning (SCRUM-253).** `frontend-build` fails on a high or critical known vulnerability in any npm
 package (`npm audit --audit-level=high`, dev packages included), so a newly published advisory can turn an
