@@ -1,0 +1,30 @@
+name: SCRUM-295 independent audit self-tests
+
+on:
+  push:
+    branches:
+      - test/SCRUM-295-independent-s5-checks
+  pull_request:
+    paths:
+      - 'scripts/scrum295-coverage-audit.mjs'
+      - 'scripts/scrum295-coverage-audit.test.mjs'
+      - '.github/workflows/scrum295-independent.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  coverage-audit-selftests:
+    name: Coverage audit positive and negative controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify read-only independent coverage audit
+        run: node --test scripts/scrum295-coverage-audit.test.mjs
+
+# This validates our verifier's synthetic controls only.
+# It does NOT certify the SCRUM-292 owner's real backend/frontend CI gate.
