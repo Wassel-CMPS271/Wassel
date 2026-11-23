@@ -20,11 +20,24 @@ function event(value: unknown, allowLate: boolean): InboxEvent {
     || (r.readAt !== null && (typeof r.readAt !== "string" || !Number.isFinite(Date.parse(r.readAt))))) throw new Error("Invalid inbox entry");
   return r as unknown as InboxEvent;
 }
-export function createParentInboxApi({ allowLate = true }: { allowLate?: boolean } = {}) { return {
+export function createParentInboxApi({ allowLate = false }: { allowLate?: boolean } = {}) { return {
   async list(unread = false): Promise<InboxEvent[]> {
     const result = await request<unknown>(`/api/parent/inbox${unread ? "?unread=true" : ""}`);
     if (!Array.isArray(result)) throw new Error("Invalid inbox list");
-    const rows = result.map(value => event(value, allowLate));
+    const knownTypes = ["PICKED_UP", "DROPPED_OFF", "NOT_PRESENT", "LATE"];
+    let omitted = false;
+    const rows: InboxEvent[] = [];
+    for (const value of result) {
+      // An additive future type must not hide supported events. Known types
+      // still undergo full validation, including the explicit LATE opt-in.
+      if (value && typeof value === "object" && typeof value.type === "string" && value.type !== "" && !knownTypes.includes(value.type)) {
+        omitted = true;
+        continue;
+      }
+      rows.push(event(value, allowLate));
+    }
+    // No payload, type, id, child or parent data is written to the console.
+    if (omitted) console.warn("Unsupported transport update types were omitted from the list.");
     if (new Set(rows.map(r => r.id)).size !== rows.length) throw new Error("Duplicate inbox entry");
     return rows;
   },
@@ -40,5 +53,6 @@ export function createParentInboxApi({ allowLate = true }: { allowLate?: boolean
   },
   async markAllRead(): Promise<void> { await request("/api/parent/inbox/read-all", { method: "POST" }); },
 }; }
-export const parentInboxApi = createParentInboxApi();
+// SCRUM-268 is accepted: the production composition deliberately enables LATE.
+export const parentInboxApi = createParentInboxApi({ allowLate: true });
 export type ParentInboxApi = typeof parentInboxApi;

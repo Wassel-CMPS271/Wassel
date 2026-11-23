@@ -49,7 +49,7 @@ it("preference authorization loss also clears the parent-wide inbox", async () =
  const f = vi.fn(async (url: string) => url.endsWith("/children") ? Response.json(family) : url.endsWith("/notification-preferences") ? new Response(null, { status: 401 }) : url.endsWith("/unread-count") ? Response.json({ count: 1 }) : Response.json([base])); vi.stubGlobal("fetch", f);
  render(<ParentInboxHome api={parentInboxApi} preferencesApi={notificationPreferencesApi} />); await screen.findByText("Lina Navigation"); fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
  await waitFor(() => expect(screen.queryByText("Lina: Picked up")).not.toBeInTheDocument()); await screen.findAllByText("Your sign-in has expired.");
- expect(screen.queryByText("1 unread updates")).not.toBeInTheDocument();
+ expect(screen.queryByText("1 unread update")).not.toBeInTheDocument();
 });
 
 it("does not restore a late inbox response after preferences reject the session", async () => {
@@ -57,5 +57,5 @@ it("does not restore a late inbox response after preferences reject the session"
  const pending = new Promise<Response>(resolve => { finish = resolve; });
  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/children") ? Response.json(family) : url.endsWith("/notification-preferences") ? new Response(null, { status: 401 }) : url.endsWith("/unread-count") ? Response.json({ count: 1 }) : pending));
  render(<ParentInboxHome api={parentInboxApi} preferencesApi={notificationPreferencesApi} />); await screen.findByText("Lina Navigation"); fireEvent.click(screen.getByRole("button", { name: "Inbox" })); await screen.findAllByText("Your sign-in has expired.");
- await act(async () => finish(Response.json([base]))); expect(screen.queryByText("Lina: Picked up")).not.toBeInTheDocument(); expect(screen.queryByText("1 unread updates")).not.toBeInTheDocument();
+ await act(async () => finish(Response.json([base]))); expect(screen.queryByText("Lina: Picked up")).not.toBeInTheDocument(); expect(screen.queryByText("1 unread update")).not.toBeInTheDocument();
 });

@@ -3,8 +3,9 @@ on:
   push:
     branches: [feature/SCRUM-280-parent-notifications, develop]
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
     branches: [develop]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

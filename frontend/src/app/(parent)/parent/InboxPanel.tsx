@@ -68,9 +68,9 @@ function InboxContent({ api, preferencesApi }: { api: ParentInboxApi | null; pre
       {loading && <p role="status">Loading inbox…</p>}
       {error !== null && <div role="alert" style={{ color: colors.error[500] }}><p>{error === 401 ? "Your sign-in has expired." : error === 403 ? "You do not have access to this inbox." : "Could not update the inbox. Please refresh and try again."}</p>{error === 401 && <Link href="/login" className="inline-flex items-center focus-visible:outline focus-visible:outline-2" style={{ minHeight: sizing.tapTarget, outlineColor: colors.primary[400] }}>Sign in</Link>}</div>}
       {visible && <>
-        <p role="status">{visible.count} unread updates</p>
+        <p role="status">{visible.count} unread {visible.count === 1 ? "update" : "updates"}</p>
         <Button disabled={busy || visible.count === 0} style={{ minHeight: sizing.tapTarget }} onClick={() => void mark()}>Mark all as read</Button>
-        {visible.rows.length === 0 ? <p>{unreadOnly ? "No unread updates." : "No transport updates yet."}</p>
+        {visible.rows.length === 0 ? <p>{visible.count > 0 ? "No transport updates to display here. Your unread total includes updates not shown in this list." : unreadOnly ? "No unread updates." : "No transport updates yet."}</p>
           : <ul className="flex min-w-0 flex-col" style={{ gap: spacing.md }}>{visible.rows.map(row => <li key={row.id} className="min-w-0 list-none"><Card className="flex min-w-0 flex-col" style={{ gap: spacing.sm }}>
             <h3 className="text-lg font-semibold">{row.studentName}: {wording[row.type]}</h3>
             <p>{row.direction === "MORNING" ? "Morning run" : "Afternoon run"} · <time dateTime={row.createdAt}>{time(row.createdAt)}</time></p>

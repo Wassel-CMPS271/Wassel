@@ -1,5 +1,72 @@
 # SCRUM-280 — Parent inbox and notification preferences
 
+## After PR #149 merged — 17 November 2026
+
+PR #149 is confirmed merged as develop **dec60bcb3f3de01a4e27c548f3e2f80bef3ca808**. Normally merged that accepted base into the existing #150 branch without conflicts. All earlier Inbox, preferences, GPS/ETA, navigation, account-reset code and evidence remain. The #149 merge dependency is resolved; no teammate branch, Jira status or Draft state was changed.
+
+### New independently executable coverage
+
+Added **ParentInbox.recovery.integration.test.tsx**, four separate owned regressions through the production page/layout, real RoleGuard and request() client with test-only HTTP fixtures. **4/4 passed**. They exercise the functional paths that #169's incorrect text assertions abort before reaching:
+
+1. A failed mark-read 404 keeps the single unread entry, sends no fake receipt/decrement, exposes no private server detail and permits retry.
+2. A mid-session 401 clears Inbox data, preferences and mutation controls, leaves backend read state unchanged and offers Sign in.
+3. A successful mark-read refetches the authoritative two-to-one count; correct singular wording and separate sibling read state persist through full layout/page remount and authentication.
+4. A list-500 failure exposes no server detail; refresh recovers the single unread entry and preferences without a stale alert.
+
+These cases supplement the existing acceptance suite. They do not replace, patch, skip or reclassify any original test. Correct production **1 unread update** wording is unchanged. Initial typing mistakes in the new query options were corrected using exact anchored accessible-name matchers; the final four cases pass with their original functional assertions intact.
+
+### Executed post-merge validation
+
+| Check | Actual result |
+| --- | --- |
+| New owned recovery/privacy/persistence cases | **4/4 passed** |
+| Original #169 snapshot da61dfb6a7951221ceb38092a5c117eaa9216d6e | **76 passed / 4 failed / 0 skipped**; all four test files and shared harness byte-identical |
+| Full frontend including all raw external tests | **1,482 passed / 4 failed / 1 existing expected failure / 5 existing skips** (1,492; 93 files); only the four known text matchers fail |
+| ESLint / production build / full PR whitespace check | Passed |
+| Standalone TypeScript after correcting the new tests | Same **13 accepted-develop diagnostics**, zero introduced; compiler remains nonzero |
+| Fresh real Inbox/preferences Chromium + PostgreSQL/Flyway | **2/2 passed**, 17 migrations; real login/2FA, read/read-all/reload, ownership, revocation, muting, late-alert scheduling/deduplication, errors/retry and 360px |
+| Fresh real GPS/ETA Chromium + PostgreSQL/Flyway | **1/1 passed**, server stale cutoff, withdrawal, child switching, morning/afternoon, privacy, actual Leaflet and 360px |
+
+The integrated actual Driver-to-Parent browser workflow remains enabled as an additional current-head CI gate. All business API responses in real-stack browser tests remain real; device GPS alone is simulated where stated. This is not physical-device or deployed-production certification. Windows junction standalone-copy warnings remain disclosed; production Next build/server/browser execution succeeds, without certifying Windows standalone packaging.
+
+**Exact remaining blocker:** #169 still has six plural text matchers across four cases, while its own singular-wording case requires the opposite for count one. Original expectations and strict red CI are preserved. #169's owner must align those matchers with its singular criterion while retaining authorization, ownership, read receipts, server counts, reload and retry assertions. The complete six-line map is in SCRUM-169-wording-conflict.md. No remaining backend or #149 dependency was found; this PR is not represented as merge-ready while independent acceptance is 76/80. Current-head hosted checks are authoritative after push.
+
+New evidence is ignored under tmp/SCRUM-280-20261117-post149/ and preserved e2e-artifacts histories. All older dated sections below remain historical evidence.
+
+## 17 November 2026 — review fixes, unchanged independent tests and final real APIs
+
+Accepted develop **ed4736d64b402a02cb30a3f1253a97109b4f3b7e** is merged, including Driver #144, roster #142, Inbox #146 and preferences/late alerts #158. Verified #149 tracking fixes through **b0c809c** are merged normally into this existing branch; GPS and Inbox remain mounted together. Historical sections below are retained with their original dates.
+
+### Completed fixes
+
+- Inbox is usable while the unrelated children request is loading or fails with a generic/network/server error. Child 401/403 still denies private access. Navigation, child selection, logout, account reset and GPS remain intact.
+- All preference field errors, including each boolean, appear beside their accessible controls. Failed saves preserve the draft; authorization failures clear private state and pending receipts.
+- Singular count is **1 unread update**. Unknown future event types are omitted with one generic, payload-free warning while known events remain strictly validated; authoritative unread count is retained. Unknown-only lists explain that updates are not displayed rather than falsely claiming no updates exist. LATE defaults off in the client factory and is explicitly enabled in production because #158 is merged. Mark-read receipts remain strict.
+- Corrected the stale composition comment and title/body-only CI triggers. Inherited the accepted-source Driver/Parent browser workflow from #149; no obsolete moving candidate reference remains.
+- Added an immutable #169 snapshot runner and strict independent CI job. It refuses different existing files and copies original bytes only; no expectation is patched, no test is skipped or expected-failed, and full regression still executes after the focused failure.
+
+### Actual final verification
+
+| Check | Result |
+| --- | --- |
+| Own focused Inbox/preferences/navigation/auth/client/integration cases | **121/121 passed** |
+| Raw Majd #169 acceptance, exact da61dfb6a7951221ceb38092a5c117eaa9216d6e | **76 passed / 4 failed / 0 skipped** (80); all five files verified byte-identical |
+| Raw tracking / preferences subsets | **43/43** and **13/13 passed** |
+| Full frontend including all unchanged external acceptance cases | **1,478 passed / 4 failed / 1 existing expected failure / 5 existing skips** (1,488; 92 files); the same four failures only |
+| ESLint / production build / git diff --check | Passed |
+| Standalone TypeScript | Same **13 accepted-develop diagnostics**, zero introduced |
+| Final real Inbox + preferences, PostgreSQL/Flyway + Chromium | **2/2 passed**, runner exit 0; **17 migrations** applied |
+| Final real full GPS/ETA/staleness/privacy, same combined source | **1/1 passed**, runner exit 0 |
+| Integrated Driver -> Parent automatic start/end without reload | **1/1 passed** in #149 before this final fixture/report merge; same implementation inherited |
+
+All nine originally reported product-failure cases now pass. Four other cases still require **1 unread updates**, contradicting the suite's singular-wording case: foreign/unknown mark-read 404, mid-session 401 clearing, mark-read/refetch/reload persistence, and list-500 refresh recovery. Their early wording assertions fail, so this is not an 80/80 acceptance claim. Separate own API/component and real-browser tests cover their functional/privacy paths. The user explicitly chose **Preserve all original expectations and report 76/80**; the proposed six wording corrections were not applied. See SCRUM-169-wording-conflict.md. These remain real nonzero failures in CI and block claiming merge readiness.
+
+The real browser scenarios verify actual password/2FA, three driver confirmation types, counts/read/read-all/reload, foreign-parent 404, 401/403, historical ownership, offline retry, logout/account reset/revocation, all five preference GET/PUT fields, strict invalid-input 400, muting without suppressing confirmations, no backfill, scheduled LATE without GPS and deduplication, persisted choices and 360px. GPS verifies real Leaflet, server countdown and 60-second STALE cutoff, withdrawal/null estimate, child/confirmation privacy and afternoon null planned pickup. Only device GPS is simulated where explicitly stated; no business API response is fabricated. The older scenario console mentions V15; current Flyway logs apply all 17 migrations.
+
+Evidence remains ignored under tmp/SCRUM-280-20261117{,-review,-accepted,-final-browser}/ and e2e-artifacts histories. Prior failures, screenshots, traces and logs are preserved and excluded from Git. The raw acceptance files are local validation overlays, not staged as edits to Majd's work; CI fetches their immutable original snapshot. Windows junction standalone-copy warnings remain disclosed; successful Next server/browser execution does not certify Windows standalone packaging.
+
+**Readiness:** all available own implementation/review fixes are complete and real APIs are verified; #149 must land first. #150 is **not ready to merge** while the unchanged external suite remains 76/80. Current-head CI must be checked after push. Draft/Ready state was left unchanged (already Ready externally); no PR merge, Jira status change or teammate source/branch modification occurred.
+
 ## 16 November 2026 — real preferences and scheduled late alerts integrated
 
 ### Current implementation and accepted dependency

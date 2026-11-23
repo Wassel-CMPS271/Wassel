@@ -1,0 +1,36 @@
+name: Parent independent acceptance
+on:
+  push:
+    branches: [feature/SCRUM-280-parent-notifications, develop]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [develop]
+permissions:
+  contents: read
+concurrency:
+  group: parent-independent-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  parent-independent-acceptance:
+    if: github.event_name == 'push' || github.head_ref == 'feature/SCRUM-280-parent-notifications'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - name: Fetch immutable independent test snapshot, without merging its branch
+        run: git fetch --depth=1 origin da61dfb6a7951221ceb38092a5c117eaa9216d6e
+      - name: All 80 unchanged independent acceptance tests
+        run: node e2e/review-parent-acceptance.mjs
+        working-directory: frontend
+      - name: Full frontend regression including independent tests
+        if: ${{ !cancelled() }}
+        run: npm test -- --maxWorkers=2
+        working-directory: frontend
+      # Normal failures remain failures: no skips, xfails or continue-on-error.
