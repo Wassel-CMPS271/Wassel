@@ -5,14 +5,18 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
+import { focusRingClass, focusRingStyle } from "@/components/ui/focusRing";
 import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import { schoolToday } from "@/lib/api/absences";
 import { getMyChildren, type Child } from "@/lib/api/myChildren";
 import {
-  addressInputErrors, attendanceRangeErrors, getParentAttendance,
-  listParentAddressRequests, submitParentAddressRequest,
-  type ParentAddressRequest, type ParentAttendance, type AttendanceRange,
-} from "@/lib/api/parentTransportRecords";
+  addressInputErrors, listParentAddressRequests, submitParentAddressRequest,
+  type AddressRequest,
+} from "@/lib/api/addressRequests";
+import {
+  attendanceRangeErrors, getParentAttendance,
+  type ParentAttendance, type AttendanceRange,
+} from "@/lib/api/attendance";
 import { colors, darkTheme, sizing, spacing } from "@/styles/tokens";
 
 type Access = "loading" | "ready" | "expired" | "forbidden" | "missing" | "unavailable";
@@ -20,6 +24,8 @@ type Denied = (cause: unknown) => boolean;
 const minTarget = { minHeight: sizing.tapTarget };
 const sectionGap = { gap: spacing.md };
 const zone = "Asia/Beirut";
+// Fields the address form renders itself; any other key in a validation error is about the form as a whole.
+const addressFieldKeys = ["address", "latitude", "longitude"];
 
 function timestamp(value: string | null): string {
   return value ? new Intl.DateTimeFormat("en-GB", {
@@ -60,8 +66,8 @@ export function ParentTransportRecordsPage({ studentId }: { studentId: string })
   return <main className="mx-auto flex w-full min-w-0 flex-col p-4 sm:p-8" style={{
     maxWidth: sizing.pageMaxWidth, gap: spacing.lg, color: darkTheme.text.primary,
   }}>
-    <Link href="/parent" className="inline-flex w-fit items-center rounded-md text-sm underline focus-visible:outline-2"
-      style={{ color: colors.primary[300], minHeight: sizing.tapTarget }}>Back to My children</Link>
+    <Link href="/parent" className={`inline-flex w-fit items-center rounded-md text-sm underline ${focusRingClass}`}
+      style={{ ...focusRingStyle, color: colors.primary[300], minHeight: sizing.tapTarget }}>Back to My children</Link>
     <h1 className="text-2xl font-semibold">Address requests &amp; attendance</h1>
     {access === "loading" && <p role="status">Loading linked child…</p>}
     {access !== "loading" && access !== "ready" && <Card className="flex flex-col items-start" style={sectionGap}>
@@ -69,7 +75,8 @@ export function ParentTransportRecordsPage({ studentId }: { studentId: string })
         access === "forbidden" ? "You cannot view these records." :
         access === "missing" ? "This child is not linked to your account." :
         "Couldn't load your children. Please try again."}</p>
-      {access === "expired" ? <Link href="/login" style={{ color: colors.primary[300], minHeight: sizing.tapTarget }}>Sign in</Link> :
+      {access === "expired" ? <Link href="/login" className={`inline-flex items-center rounded-md underline ${focusRingClass}`}
+        style={{ ...focusRingStyle, color: colors.primary[300], minHeight: sizing.tapTarget }}>Sign in</Link> :
         <Button variant="secondary" style={minTarget} onClick={() => setRetry(value => value + 1)}>Retry loading child</Button>}
     </Card>}
     {access === "ready" && child && <>
@@ -83,7 +90,7 @@ export function ParentTransportRecordsPage({ studentId }: { studentId: string })
 }
 
 function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string; onAccessError: Denied }) {
-  const [items, setItems] = useState<ParentAddressRequest[] | null>(null);
+  const [items, setItems] = useState<AddressRequest[] | null>(null);
   const [reload, setReload] = useState(0);
   const [loadFailed, setLoadFailed] = useState(false);
   const [draft, setDraft] = useState({ address: "", latitude: "", longitude: "" });
@@ -91,16 +98,32 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const locked = useRef(false);
   const alive = useRef(true);
+  const messageRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  // The panel remounts per child (key), so items start null; a reload keeps the rows and the form
+  // mounted instead of blanking them, which would also drop keyboard focus.
   useEffect(() => {
     let active = true;
-    setItems(null); setLoadFailed(false);
-    listParentAddressRequests(studentId).then(rows => { if (active) setItems(rows); })
-      .catch(cause => { if (active && !onAccessError(cause)) setLoadFailed(true); });
+    setLoadFailed(false); setRefreshing(true);
+    listParentAddressRequests(studentId).then(rows => { if (active) { setItems(rows); setRefreshing(false); } })
+      .catch(cause => {
+        if (!active) return;
+        setRefreshing(false);
+        if (!onAccessError(cause)) setLoadFailed(true);
+      });
     return () => { active = false; };
   }, [studentId, reload, onAccessError]);
+  // The form is replaced by the pending notice after a successful send, so the focused button
+  // unmounts; move focus to the confirmation instead of letting it fall back to the page.
+  useEffect(() => { if (message) messageRef.current?.focus(); }, [message]);
+  function reloadRequests() {
+    if (refreshing) return;
+    setError(""); setMessage(""); setFields({});
+    setReload(value => value + 1);
+  }
 
   const pending = items?.some(item => item.status === "pending") ?? false;
   async function submit() {
@@ -122,10 +145,15 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
     } catch (cause) {
       if (!alive.current || onAccessError(cause)) return;
       if (cause instanceof ApiValidationError) {
+        // 400 puts messages on the address/pin fields; the inactive-child 409 is { studentId: message },
+        // which no input renders, so show that text itself.
+        const general = Object.entries(cause.errors)
+          .filter(([key]) => !addressFieldKeys.includes(key)).map(([, text]) => text);
         setFields(cause.errors);
-        setError("Check the address or optional pin below.");
+        setError(general.length ? general.join(" ") : "Check the address or optional pin below.");
       } else if (cause instanceof ApiError && cause.status === 409) {
-        setError("A request may already be pending, or this child is inactive. Refresh the requests before trying again.");
+        // The pending request may belong to another parent of this child, so it won't appear in this list.
+        setError("The school already has a pending request for this child, so a new one can't be sent yet.");
       } else setError("Couldn't submit the request. Please retry.");
     } finally { locked.current = false; if (alive.current) setBusy(false); }
   }
@@ -138,10 +166,12 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
     {items === null && !loadFailed && <p role="status">Loading address requests…</p>}
     {loadFailed && <Card className="flex flex-col items-start" style={sectionGap}>
       <p role="alert">Couldn&apos;t load address requests. No request has been changed.</p>
-      <Button variant="secondary" style={minTarget} onClick={() => setReload(value => value + 1)}>Retry address requests</Button>
+      <Button variant="secondary" style={minTarget} onClick={reloadRequests}>Retry address requests</Button>
     </Card>}
     {items && <>
-      <Button variant="secondary" style={minTarget} onClick={() => setReload(value => value + 1)} disabled={busy}>Refresh request status</Button>
+      <Button variant="secondary" style={minTarget} onClick={reloadRequests} disabled={busy} aria-disabled={refreshing || undefined}>
+        {refreshing ? "Refreshing…" : "Refresh request status"}
+      </Button>
       {items.length === 0 ? <p>No address-change requests yet.</p> : <ul className="flex min-w-0 flex-col" style={sectionGap}>
         {items.map(item => <li key={item.id} className="min-w-0 list-none">
           <Card className="flex min-w-0 flex-col" style={{ ...sectionGap, overflowWrap: "anywhere" }}>
@@ -185,7 +215,7 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
         </Card>}
     </>}
     {error && <p role="alert" style={{ color: colors.error[500] }}>{error}</p>}
-    {message && <p role="status">{message}</p>}
+    {message && <p ref={messageRef} tabIndex={-1} role="status" className="outline-none">{message}</p>}
   </section>;
 }
 

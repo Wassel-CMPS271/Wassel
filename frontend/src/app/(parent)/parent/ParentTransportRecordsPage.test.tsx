@@ -1,15 +1,19 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as childrenApi from "@/lib/api/myChildren";
-import * as records from "@/lib/api/parentTransportRecords";
-import { ApiError } from "@/lib/api/errors";
+import * as requests from "@/lib/api/addressRequests";
+import * as attendanceApi from "@/lib/api/attendance";
+import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import { ParentTransportRecordsPage } from "./ParentTransportRecordsPage";
 
 vi.mock("@/lib/api/myChildren", () => ({ getMyChildren: vi.fn() }));
-vi.mock("@/lib/api/parentTransportRecords", async importOriginal => ({
-  ...await importOriginal<typeof records>(),
+vi.mock("@/lib/api/addressRequests", async importOriginal => ({
+  ...await importOriginal<typeof requests>(),
   listParentAddressRequests: vi.fn(),
   submitParentAddressRequest: vi.fn(),
+}));
+vi.mock("@/lib/api/attendance", async importOriginal => ({
+  ...await importOriginal<typeof attendanceApi>(),
   getParentAttendance: vi.fn(),
 }));
 const studentId = "0b6f2d9a-7c11-4f3e-8a52-3e9d4c7b1a20";
@@ -17,16 +21,16 @@ const linked: childrenApi.Child = {
   studentId, firstName: "Tarek", lastName: "Mansour",
   route: null, driver: null, vehicle: null, expectedPickupTime: null, todayRun: null,
 };
-const pending: records.ParentAddressRequest = {
+const pending: requests.AddressRequest = {
   id: "request-one", studentId, studentName: "Tarek Mansour",
   currentAddress: "Original address", requestedAddress: "New address",
   requestedLat: null, requestedLng: null, requestedBy: { parentUserId: "parent", email: "parent@example.com" },
   status: "pending", createdAt: "2026-11-09T07:30:00Z", decidedAt: null, rejectionReason: null,
 };
 const children = vi.mocked(childrenApi.getMyChildren);
-const list = vi.mocked(records.listParentAddressRequests);
-const post = vi.mocked(records.submitParentAddressRequest);
-const attendance = vi.mocked(records.getParentAttendance);
+const list = vi.mocked(requests.listParentAddressRequests);
+const post = vi.mocked(requests.submitParentAddressRequest);
+const attendance = vi.mocked(attendanceApi.getParentAttendance);
 const fill = (name: string, value: string) =>
   fireEvent.change(screen.getByLabelText(name), { target: { value } });
 
@@ -96,11 +100,46 @@ describe("SCRUM-281 parent linked-child UI", () => {
     await open();
     fill("New pickup address", "New address");
     fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/may already be pending/);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/already has a pending request/);
     expect(screen.getByText("No address-change requests yet.")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
     await screen.findByText("Pending school decision");
     expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the inactive-child 409 message, which has no field of its own", async () => {
+    post.mockRejectedValueOnce(new ApiValidationError({ studentId: "This child is not active." }));
+    await open();
+    fill("New pickup address", "New address");
+    fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("This child is not active.");
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/Check the address/);
+  });
+
+  it("keeps the form mounted and clears the old message while refreshing", async () => {
+    post.mockRejectedValueOnce(new ApiError(409));
+    await open();
+    fill("New pickup address", "New address");
+    fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
+    await screen.findByRole("alert");
+    let finish: (rows: requests.AddressRequest[]) => void = () => {};
+    list.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const refresh = screen.getByRole("button", { name: "Refresh request status" });
+    refresh.focus();
+    fireEvent.click(refresh);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("New pickup address")).toBeVisible();
+    expect(refresh).toHaveFocus();
+    await act(async () => finish([]));
+    expect(screen.getByRole("button", { name: "Refresh request status" })).toBeVisible();
+  });
+
+  it("moves focus to the confirmation after a successful send", async () => {
+    await open();
+    fill("New pickup address", "New address");
+    fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
+    const confirmation = await screen.findByText(/Request sent to the school/);
+    expect(confirmation).toHaveFocus();
   });
 
   it("allows a corrected inclusive attendance date range and rejects 63 days", async () => {

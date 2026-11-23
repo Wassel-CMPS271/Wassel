@@ -21,7 +21,7 @@ Sources: docs/contracts/address-requests.md and docs/contracts/attendance.md and
 
 ## Added tests
 
-- parentTransportRecords.test.ts: authenticated paths, optional pin, invalid/malformed data, 400/409/401/403/404/500, date boundaries, empty state, recorded correction.
+- addressRequests.parent.test.ts and attendance.test.ts: authenticated paths, optional pin, invalid/malformed data, 400/409/401/403/404/500, date boundaries, empty state, recorded correction.
 - ParentTransportRecordsPage.test.tsx: owned and unlinked child, pending status, submission/retry, invalid coordinates, inclusive date range, recorded correction, authorization loss, sign-in, empty/error states.
 
 ## Validation and remaining gates

@@ -1,5 +1,6 @@
 // Address change requests (SCRUM-269): docs/contracts/address-requests.md. The head of
-// transportation's side only; the parent's submit/list endpoints have no screen yet.
+// transportation's side (list/approve/reject) and the parent's side (submit/list for one
+// child, SCRUM-281).
 
 import { request } from "./client";
 
@@ -53,3 +54,77 @@ export const addressRequestsApi: AddressRequestsApi = {
   approve: approveAddressRequest,
   reject: rejectAddressRequest,
 };
+
+// ---- Parent side (SCRUM-281) ----
+
+export interface AddressRequestInput {
+  address: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+const parentChildPath = (studentId: string) =>
+  "/api/parent/children/" + encodeURIComponent(studentId) + "/address-requests";
+
+function obj(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+const nullableText = (x: unknown) => x === null || typeof x === "string";
+const moment = (x: unknown) =>
+  typeof x === "string" && /^\d{4}-\d{2}-\d{2}T.+Z$/.test(x) && Number.isFinite(Date.parse(x));
+function validPin(lat: unknown, lng: unknown): boolean {
+  return (lat === null && lng === null) ||
+    (typeof lat === "number" && Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
+      typeof lng === "number" && Number.isFinite(lng) && lng >= -180 && lng <= 180);
+}
+function parseRequest(value: unknown, studentId: string): AddressRequest {
+  if (!obj(value) || typeof value.id !== "string" || value.studentId !== studentId ||
+    typeof value.studentName !== "string" || !nullableText(value.currentAddress) ||
+    typeof value.requestedAddress !== "string" || !validPin(value.requestedLat, value.requestedLng) ||
+    !obj(value.requestedBy) || typeof value.requestedBy.parentUserId !== "string" ||
+    typeof value.requestedBy.email !== "string" ||
+    !["pending", "approved", "rejected"].includes(String(value.status)) ||
+    !moment(value.createdAt) || (value.decidedAt !== null && !moment(value.decidedAt)) ||
+    !nullableText(value.rejectionReason)) {
+    throw new Error("Invalid address-request response");
+  }
+  return value as unknown as AddressRequest;
+}
+
+export function addressInputErrors(input: { address: string; latitude: string; longitude: string }) {
+  const errors: Record<string, string> = {};
+  const address = input.address.trim();
+  if (!address || address.length > 255) errors.address = "Enter an address of 1 to 255 characters.";
+  const lat = input.latitude.trim(), lng = input.longitude.trim();
+  if (!!lat !== !!lng) {
+    errors.latitude = "Enter both coordinates or leave both blank.";
+    errors.longitude = "Enter both coordinates or leave both blank.";
+  } else if (lat && lng) {
+    if (!Number.isFinite(Number(lat)) || Number(lat) < -90 || Number(lat) > 90)
+      errors.latitude = "Latitude must be between -90 and 90.";
+    if (!Number.isFinite(Number(lng)) || Number(lng) < -180 || Number(lng) > 180)
+      errors.longitude = "Longitude must be between -180 and 180.";
+  }
+  return errors;
+}
+
+export async function listParentAddressRequests(studentId: string): Promise<AddressRequest[]> {
+  const value = await request<unknown>(parentChildPath(studentId));
+  if (!Array.isArray(value)) throw new Error("Invalid address-request list");
+  return value.map(item => parseRequest(item, studentId));
+}
+
+export async function submitParentAddressRequest(
+  studentId: string, input: AddressRequestInput,
+): Promise<AddressRequest> {
+  const address = input.address.trim();
+  const body: AddressRequestInput = { address };
+  if (input.latitude !== undefined && input.longitude !== undefined) {
+    body.latitude = input.latitude;
+    body.longitude = input.longitude;
+  }
+  return parseRequest(
+    await request<unknown>(parentChildPath(studentId), { method: "POST", body }),
+    studentId,
+  );
+}
