@@ -161,6 +161,16 @@ export function ArrowDownIcon(props: IconProps) {
   );
 }
 
+// A bus pin for the live-tracking nav item (SCRUM-274).
+export function LiveIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 21s7-6.5 7-11.5a7 7 0 0 0-14 0C5 14.5 12 21 12 21z" />
+      <circle cx="12" cy="9.5" r="2.5" />
+    </Icon>
+  );
+}
+
 // A map pin: the driver GPS sharing card (SCRUM-273).
 export function LocationIcon(props: IconProps) {
   return (
