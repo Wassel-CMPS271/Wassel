@@ -192,7 +192,7 @@ report a slow first screen.
 Before I changed the script to sign the 300 users in first, an early smoke run had all of them sign in in the same
 second. Result (90 s run, then stopped): sign-in p95 **52 s**, other requests p95 12 s, **8 answers of 500**. The
 backend log shows why: `Connection is not available, request timed out after 30000ms (total=10, active=10, idle=0,
-waiting=183)`, then `CannotCreateTransactionException`. The sign-in sends its email inside the database transaction
+waiting=183)`, then `CannotCreateTransactionException`. Before SCRUM-289, the sign-in sent its email inside the database transaction
 (5 s timeout), so each login holds one of the 10 connections for as long as the mail provider takes to answer.
 
 The modelled burst (100 sign-ins in a minute, under 2 a second) does **not** do this: sign-in stayed at about 0.9 s.
