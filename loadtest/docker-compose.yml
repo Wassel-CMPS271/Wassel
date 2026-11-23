@@ -1,0 +1,90 @@
+# Throwaway stack for the load test (SCRUM-293). Never point the test at the live school: this builds its own
+# backend and database, replaces the mail provider with a slow stand-in and sends no road-routing requests.
+# The CPU and memory limits below are what the report states as the host.
+#
+#   docker compose up -d --build postgres mail-stub backend      (then see README.md for seeding and the run)
+#   docker compose down -v                                         (throws everything away)
+name: wassel-loadtest
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: wassel
+      POSTGRES_USER: loadtest
+      POSTGRES_PASSWORD: loadtest-throwaway
+    volumes:
+      - ./seed.sql:/seed/seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loadtest -d wassel"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    cpus: 1.0
+    mem_limit: 1g
+
+  # A slow stand-in for Brevo's HTTPS API: answers after MAIL_DELAY_MS and remembers each sign-in code so the
+  # test can finish the two-step sign-in. No email is ever sent.
+  mail-stub:
+    image: node:24-alpine
+    working_dir: /app
+    volumes:
+      - ./mail-stub.mjs:/app/mail-stub.mjs:ro
+    command: ["node", "mail-stub.mjs"]
+    environment:
+      MAIL_DELAY_MS: ${MAIL_DELAY_MS:-800}
+    cpus: 0.25
+    mem_limit: 128m
+
+  backend:
+    build:
+      context: ../backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mail-stub:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: staging
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70
+      DB_URL: jdbc:postgresql://postgres:5432/wassel
+      DB_USERNAME: loadtest
+      DB_PASSWORD: loadtest-throwaway
+      JWT_SECRET: throwaway-load-test-secret-0123456789abcdef
+      JWT_COOKIE_SECURE: "false"
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      FRONTEND_BASE_URL: http://localhost:3000
+      # Sign-in emails go to the stand-in. The base URL is a property of BrevoMailer (wassel.mail.brevo.base-url).
+      MAIL_PROVIDER: brevo
+      BREVO_API_KEY: load-test-key
+      BREVO_SENDER_EMAIL: loadtest@wassel.test
+      WASSEL_MAIL_BREVO_BASE_URL: http://mail-stub:9000
+      # No key: the road client never calls out and every route time is straight-line, so no quota is spent.
+      ORS_API_KEY: ""
+      SCHOOL_LATITUDE: "33.8938"
+      SCHOOL_LONGITUDE: "35.5018"
+    ports:
+      - "127.0.0.1:18080:8080" # this machine only: the seeded accounts share one known password
+    cpus: 1.0
+    mem_limit: 1g
+
+  # Run with: docker compose run --rm --no-deps k6   (see README.md). --no-deps matters: without it a run can
+  # recreate the database container and throw the seed away.
+  k6:
+    image: grafana/k6:1.0.0
+    profiles: ["run"]
+    depends_on:
+      - backend
+    volumes:
+      - ./:/work
+    working_dir: /work
+    environment:
+      BASE_URL: http://backend:8080
+      MAIL_STUB: http://mail-stub:9000
+      DURATION: ${DURATION:-10m}
+      BURST_START: ${BURST_START:-5m}
+      PARENT_VUS: ${PARENT_VUS:-260}
+      DRIVER_VUS: ${DRIVER_VUS:-40}
+      BURST_SIGNINS: ${BURST_SIGNINS:-100}
+      DEBUG_FAILURES: ${DEBUG_FAILURES:-}
+    command: ["run", "--summary-export", "/work/results/summary.json", "/work/load.js"]
