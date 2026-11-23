@@ -23,6 +23,8 @@ type Access = "loading" | "ready" | "expired" | "forbidden" | "missing" | "unava
 type Denied = (cause: unknown) => boolean;
 const minTarget = { minHeight: sizing.tapTarget };
 const sectionGap = { gap: spacing.md };
+// Notices that aren't errors (frontend/CLAUDE.md): role="status" in the secondary text colour.
+const noticeStyle = { color: darkTheme.text.secondary };
 const zone = "Asia/Beirut";
 // Fields the address form renders itself; any other key in a validation error is about the form as a whole.
 const addressFieldKeys = ["address", "latitude", "longitude"];
@@ -69,7 +71,7 @@ export function ParentTransportRecordsPage({ studentId }: { studentId: string })
     <Link href="/parent" className={`inline-flex w-fit items-center rounded-md text-sm underline ${focusRingClass}`}
       style={{ ...focusRingStyle, color: colors.primary[300], minHeight: sizing.tapTarget }}>Back to My children</Link>
     <h1 className="text-2xl font-semibold">Address requests &amp; attendance</h1>
-    {access === "loading" && <p role="status">Loading linked child…</p>}
+    {access === "loading" && <p role="status" style={noticeStyle}>Loading linked child…</p>}
     {access !== "loading" && access !== "ready" && <Card className="flex flex-col items-start" style={sectionGap}>
       <p role="alert">{access === "expired" ? "Your sign-in has expired." :
         access === "forbidden" ? "You cannot view these records." :
@@ -105,6 +107,7 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
   const locked = useRef(false);
   const alive = useRef(true);
   const messageRef = useRef<HTMLParagraphElement>(null);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   // The panel remounts per child (key), so items start null; a reload keeps the rows and the form
   // mounted instead of blanking them, which would also drop keyboard focus.
@@ -126,6 +129,8 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
   // The form is replaced by the pending notice after a successful send, so the focused button
   // unmounts; move focus to the confirmation instead of letting it fall back to the page.
   useEffect(() => { if (message) messageRef.current?.focus(); }, [message]);
+  // Same for the 409 that swaps the form for the pending notice.
+  useEffect(() => { if (blocked) noticeRef.current?.focus(); }, [blocked]);
   function reloadRequests() {
     if (refreshing) return;
     setError(""); setMessage(""); setFields({}); setBlocked(false);
@@ -175,11 +180,11 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
   }
 
   return <section aria-label="Pickup address requests" className="flex min-w-0 flex-col" style={sectionGap}>
-    <h2 className="text-xl font-semibold">Pickup address changes</h2>
+    <h2 className="text-lg font-semibold">Pickup address changes</h2>
     <p className="text-sm" style={{ color: darkTheme.text.secondary }}>
       The school decides whether to approve your request. A proposed address does not replace the saved pickup address until approval.
     </p>
-    {items === null && !loadFailed && <p role="status">Loading address requests…</p>}
+    {items === null && !loadFailed && <p role="status" style={noticeStyle}>Loading address requests…</p>}
     {loadFailed && <Card className="flex flex-col items-start" style={sectionGap}>
       <p role="alert">Couldn&apos;t load address requests. No request has been changed.</p>
       <Button variant="secondary" style={minTarget} onClick={reloadRequests}>Retry address requests</Button>
@@ -205,7 +210,7 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
           </Card>
         </li>)}
       </ul>}
-      {pending || blocked ? <p role="status">{pending ?
+      {pending || blocked ? <p ref={noticeRef} tabIndex={-1} role="status" className="outline-none" style={noticeStyle}>{pending ?
         "You already have a pending request for this child. You can send a new one after the school decides." :
         "You can send a new request after the school decides on the one already pending."}</p> :
         <Card>
@@ -233,7 +238,7 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
         </Card>}
     </>}
     {error && <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>{error}</p>}
-    {message && <p ref={messageRef} tabIndex={-1} role="status" className="outline-none">{message}</p>}
+    {message && <p ref={messageRef} tabIndex={-1} role="status" className="outline-none" style={noticeStyle}>{message}</p>}
   </section>;
 }
 
@@ -250,12 +255,21 @@ function AttendancePanel({ studentId, onAccessError }: { studentId: string; onAc
   const [fields, setFields] = useState<Record<string, string>>({});
   const [items, setItems] = useState<ParentAttendance[] | null>(null);
   const [failed, setFailed] = useState(false);
+  // The server refused the range (400/409 with a field message); the old rows no longer match it.
+  const [rejected, setRejected] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [reload, setReload] = useState(0);
+  // Rows stay mounted while a reload runs, so the focused Refresh button isn't unmounted.
   useEffect(() => {
     let active = true;
-    setItems(null); setFailed(false);
-    getParentAttendance(studentId, range).then(rows => { if (active) setItems(rows); })
-      .catch(cause => { if (active && !onAccessError(cause)) setFailed(true); });
+    setFailed(false); setRejected(false); setRefreshing(true);
+    getParentAttendance(studentId, range).then(rows => { if (active) { setItems(rows); setRefreshing(false); } })
+      .catch(cause => {
+        if (!active) return;
+        setRefreshing(false);
+        if (cause instanceof ApiValidationError) { setFields(cause.errors); setRejected(true); }
+        else if (!onAccessError(cause)) setFailed(true);
+      });
     return () => { active = false; };
   }, [studentId, range, reload, onAccessError]);
   function apply() {
@@ -267,7 +281,7 @@ function AttendancePanel({ studentId, onAccessError }: { studentId: string; onAc
   }
 
   return <section aria-label="Attendance history" className="flex min-w-0 flex-col" style={sectionGap}>
-    <h2 className="text-xl font-semibold">Recorded attendance history</h2>
+    <h2 className="text-lg font-semibold">Recorded attendance history</h2>
     <p className="text-sm" style={{ color: darkTheme.text.secondary }}>
       School-local run dates (Asia/Beirut). Times show when the server recorded a driver&apos;s confirmation, including offline syncs.
       Reported absences are separate from these driver records.
@@ -285,15 +299,18 @@ function AttendancePanel({ studentId, onAccessError }: { studentId: string; onAc
         <Button type="submit" style={minTarget}>Show attendance</Button>
       </form>
     </Card>
-    {items === null && !failed && <p role="status">Loading attendance…</p>}
+    {items === null && !failed && !rejected && <p role="status" style={noticeStyle}>Loading attendance…</p>}
     {failed && <Card className="flex flex-col items-start" style={sectionGap}>
       <p role="alert">Couldn&apos;t load attendance. No records have been changed.</p>
       <Button variant="secondary" style={minTarget} onClick={() => setReload(value => value + 1)}>Retry attendance</Button>
     </Card>}
-    {items && <>
-      <Button variant="secondary" style={minTarget} onClick={() => setReload(value => value + 1)}>Refresh attendance</Button>
+    {items && !rejected && <>
+      <Button variant="secondary" style={minTarget} aria-disabled={refreshing || undefined}
+        onClick={() => { if (!refreshing) setReload(value => value + 1); }}>
+        {refreshing ? "Refreshing…" : "Refresh attendance"}
+      </Button>
       {items.length === 0 ? <p>No driver confirmations recorded for this period.</p> :
-        <ul className="flex min-w-0 flex-col" style={sectionGap}>
+        <ul className="flex min-w-0 flex-col" style={sectionGap} aria-busy={refreshing}>
           {items.map((item, index) => <li key={item.date + "-" + item.direction + "-" + index} className="list-none">
             <Card className="flex min-w-0 flex-col" style={sectionGap}>
               <h3 className="font-semibold">{item.date} — {item.direction === "MORNING" ? "Morning" : "Afternoon"}</h3>

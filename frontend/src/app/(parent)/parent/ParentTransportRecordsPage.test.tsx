@@ -192,6 +192,42 @@ describe("SCRUM-281 parent linked-child UI", () => {
     expect(confirmation).toHaveFocus();
   });
 
+  it("moves focus to the notice when a 409 swaps the form out", async () => {
+    post.mockRejectedValueOnce(new ApiError(409));
+    await open();
+    fill("New pickup address", "New address");
+    fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
+    expect(await screen.findByText(/after the school decides on the one already pending/)).toHaveFocus();
+  });
+
+  it("keeps attendance rows and the focused Refresh button mounted while reloading", async () => {
+    attendance.mockResolvedValue([{
+      date: "2026-11-03", direction: "MORNING", status: "PICKED_UP",
+      notPresentAt: null, pickedUpAt: "2026-11-03T05:40:00Z", droppedOffAt: null,
+    }]);
+    render(<ParentTransportRecordsPage studentId={studentId} />);
+    expect(await screen.findByText("Picked up")).toBeVisible();
+    let finish: (rows: attendanceApi.ParentAttendance[]) => void = () => {};
+    attendance.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const refresh = screen.getByRole("button", { name: "Refresh attendance" });
+    refresh.focus();
+    fireEvent.click(refresh);
+    expect(screen.getByText("Picked up")).toBeVisible();
+    expect(screen.queryByText("Loading attendance…")).not.toBeInTheDocument();
+    expect(refresh).toHaveFocus();
+    await act(async () => finish([]));
+    expect(await screen.findByText("No driver confirmations recorded for this period.")).toBeVisible();
+  });
+
+  it("shows the server's date-range message instead of a generic load failure", async () => {
+    await open();
+    attendance.mockRejectedValueOnce(new ApiValidationError({ to: "Range is longer than the school allows." }));
+    fireEvent.click(screen.getByRole("button", { name: "Show attendance" }));
+    expect(await screen.findByText("Range is longer than the school allows.")).toBeVisible();
+    expect(screen.queryByText(/Couldn't load attendance/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry attendance" })).not.toBeInTheDocument();
+  });
+
   it("allows a corrected inclusive attendance date range and rejects 63 days", async () => {
     await open();
     fill("From date", "2026-01-01");

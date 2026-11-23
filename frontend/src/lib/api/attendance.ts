@@ -3,6 +3,7 @@
 
 import { request } from "./client";
 import { isSchoolDate } from "./absences";
+import { isMoment, isRecord } from "./shape";
 
 export interface ParentAttendance {
   date: string;
@@ -15,17 +16,12 @@ export interface ParentAttendance {
 
 export interface AttendanceRange { from: string; to: string }
 
-function obj(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-const moment = (x: unknown) =>
-  typeof x === "string" && /^\d{4}-\d{2}-\d{2}T.+Z$/.test(x) && Number.isFinite(Date.parse(x));
 
 function parseAttendance(value: unknown): ParentAttendance {
-  if (!obj(value) || !isSchoolDate(String(value.date)) ||
+  if (!isRecord(value) || !isSchoolDate(String(value.date)) ||
     !["MORNING", "AFTERNOON"].includes(String(value.direction)) ||
     !["NOT_PRESENT", "PICKED_UP", "DROPPED_OFF"].includes(String(value.status)) ||
-    !["notPresentAt", "pickedUpAt", "droppedOffAt"].every(k => value[k] === null || moment(value[k]))) {
+    !["notPresentAt", "pickedUpAt", "droppedOffAt"].every(k => value[k] === null || isMoment(value[k]))) {
     throw new Error("Invalid attendance response");
   }
   return value as unknown as ParentAttendance;

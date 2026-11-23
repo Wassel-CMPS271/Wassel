@@ -3,6 +3,7 @@
 // child, SCRUM-281).
 
 import { request } from "./client";
+import { isMoment, isRecord } from "./shape";
 
 export interface AddressRequest {
   /** The request's own id, not the student's. */
@@ -66,14 +67,9 @@ export interface AddressRequestInput {
 const parentChildPath = (studentId: string) =>
   "/api/parent/children/" + encodeURIComponent(studentId) + "/address-requests";
 
-function obj(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
 const nullableText = (x: unknown) => x === null || typeof x === "string";
 // Plain decimal text only, so "abc", "33.8e" or "0x10" can't pass as a number (or as a blank field).
 const decimalText = /^[+-]?(\d+\.?\d*|\.\d+)$/;
-const moment = (x: unknown) =>
-  typeof x === "string" && /^\d{4}-\d{2}-\d{2}T.+Z$/.test(x) && Number.isFinite(Date.parse(x));
 function validPin(lat: unknown, lng: unknown): boolean {
   return (lat === null && lng === null) ||
     (typeof lat === "number" && Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
@@ -87,13 +83,13 @@ export class InvalidAddressRequestResponse extends Error {
   }
 }
 function parseRequest(value: unknown, studentId: string): AddressRequest {
-  if (!obj(value) || typeof value.id !== "string" || value.studentId !== studentId ||
+  if (!isRecord(value) || typeof value.id !== "string" || value.studentId !== studentId ||
     typeof value.studentName !== "string" || !nullableText(value.currentAddress) ||
     typeof value.requestedAddress !== "string" || !validPin(value.requestedLat, value.requestedLng) ||
-    !obj(value.requestedBy) || typeof value.requestedBy.parentUserId !== "string" ||
+    !isRecord(value.requestedBy) || typeof value.requestedBy.parentUserId !== "string" ||
     typeof value.requestedBy.email !== "string" ||
     !["pending", "approved", "rejected"].includes(String(value.status)) ||
-    !moment(value.createdAt) || (value.decidedAt !== null && !moment(value.decidedAt)) ||
+    !isMoment(value.createdAt) || (value.decidedAt !== null && !isMoment(value.decidedAt)) ||
     !nullableText(value.rejectionReason)) {
     throw new InvalidAddressRequestResponse();
   }
