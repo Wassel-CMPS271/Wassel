@@ -56,7 +56,8 @@ A shorter smoke run: `DURATION=90s BURST_START=30s docker compose run --rm --no-
 
 k6 prints the summary and writes it to `results/summary.json`. The exit code is 0 only when every threshold passed.
 On Linux, run `chmod 777 results` first: the k6 image runs as user 12345 and cannot otherwise write the file (Docker
-Desktop on Windows and Mac does not need this).
+Desktop on Windows and Mac does not need this). Afterwards, copy what you need out of `results/`, delete the files k6
+wrote and put the folder back with `chmod 755 results`.
 
 **Run it on a weekday.** The backend treats Saturday and Sunday as holidays (a school day is decided by the
 `Asia/Beirut` clock, which cannot be moved), so on a weekend there are no runs: the drivers only poll their list and
