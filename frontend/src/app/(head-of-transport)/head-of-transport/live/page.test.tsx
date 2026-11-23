@@ -382,6 +382,46 @@ describe("Live runs page: errors", () => {
     await advance(LOCATIONS_POLL_MS);
     expect(screen.getByRole("alert")).toHaveTextContent("You don't have permission to view live runs.");
   });
+
+  it("once polling has stopped (403), rows stop reading as live and say when the positions are from", async () => {
+    const t0 = Date.UTC(2026, 10, 16, 5, 20, 0);
+    vi.setSystemTime(t0);
+    const backend = defaultBackend();
+    backend.runsDay.body = { date: "2026-11-16", dayType: "SCHOOL_DAY", runs: [run()] };
+    backend.locations.body = [location()];
+    stubBackend(backend);
+    const { container } = render(<LiveRunsPage />);
+    await flush();
+    expect(screen.getByText("Live")).toBeInTheDocument();
+
+    backend.locations.status = 403;
+    backend.locations.body = { detail: "Access denied" };
+    await advance(LOCATIONS_POLL_MS);
+
+    const row = screen.getByRole("listitem");
+    expect(within(row).getByText(`Position as of ${clock(t0)} (not refreshing)`)).toBeInTheDocument();
+    expect(within(row).queryByText("Live")).not.toBeInTheDocument();
+    expect(container.querySelector(".animate-ping")).toBeNull();
+    expect(within(row).queryByText(/Live estimate/)).not.toBeInTheDocument();
+  });
+
+  it("keeps both live regions mounted from the start, so a later failure is announced", async () => {
+    const backend = defaultBackend();
+    backend.runsDay.body = { date: "2026-11-16", dayType: "SCHOOL_DAY", runs: [run()] };
+    backend.locations.body = [location()];
+    stubBackend(backend);
+    render(<LiveRunsPage />);
+    await flush();
+    const status = screen.getAllByRole("status").find((el) => el.textContent === "");
+    expect(status).toBeDefined();
+    expect(screen.getAllByRole("alert").some((el) => el.textContent === "")).toBe(true);
+
+    backend.locations.status = 503;
+    backend.locations.body = {};
+    await advance(LOCATIONS_POLL_MS * 2);
+    // The same element that was already in the page now holds the text.
+    expect(status).toHaveTextContent("Couldn't refresh bus positions.");
+  });
 });
 
 describe("Live runs page: opening the reassign panel", () => {

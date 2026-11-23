@@ -45,6 +45,7 @@ export function ReassignDriverPanel({ run, refreshRuns, reportUnauthorized, onCl
   const headingId = useId();
   const reasonId = `${headingId}-reason`;
   const reasonCountId = `${headingId}-reason-count`;
+  const reasonErrorId = `${headingId}-reason-error`;
   const panelRef = useRef<HTMLDivElement>(null);
   const driverSelectRef = useRef<HTMLSelectElement>(null);
   const alertRef = useRef<HTMLParagraphElement>(null);
@@ -63,6 +64,25 @@ export function ReassignDriverPanel({ run, refreshRuns, reportUnauthorized, onCl
       panelRef.current?.focus();
     }
   }, [panel.candidates, panel.candidatesFailed]);
+
+  // Keeps focus inside the dialog. A control can disappear or turn disabled while it holds focus (the
+  // "Try again" button once the candidates load, Submit after a success, everything while saving), which drops
+  // focus to the page behind: Escape and the Tab trap then stop working, because the key handler sits on this
+  // overlay. Runs after every render; does nothing while focus is still on something usable. Declared before
+  // the failure effect below so, after a failed submit, the alert is what ends up focused.
+  useEffect(() => {
+    if (panel.submitting) return;
+    const container = panelRef.current;
+    if (!container) return;
+    const active = document.activeElement;
+    // Focus parked on the dialog itself (while the drivers loaded) moves to the picker once it exists.
+    const lost =
+      !active ||
+      !container.contains(active) ||
+      active.matches(":disabled") ||
+      (active === container && driverSelectRef.current !== null);
+    if (lost) (driverSelectRef.current ?? container).focus();
+  });
 
   // A submit failure moves focus to the banner that explains it, instead of leaving it on Submit or
   // jumping back to the picker when the failure also reloads the eligible list.
@@ -97,9 +117,9 @@ export function ReassignDriverPanel({ run, refreshRuns, reportUnauthorized, onCl
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!driverId || panel.submitting) return;
+    if (!canSubmit) return;
     setJustSucceeded(false);
-    const ok = await panel.submit(driverId, reason);
+    const ok = await panel.submit(selectedDriverId, reason);
     if (ok) {
       setJustSucceeded(true);
       setDriverId("");
@@ -107,8 +127,16 @@ export function ReassignDriverPanel({ run, refreshRuns, reportUnauthorized, onCl
     }
   }
 
+  // The picked driver only counts while they're still on the eligible list: after a refused submit the list
+  // reloads without them, and sending the same id again would only be refused the same way.
+  const selectedDriverId = panel.candidates?.some((candidate) => candidate.id === driverId) ? driverId : "";
   const noCandidates = panel.candidates !== null && panel.candidates.length === 0;
-  const canSubmit = !panel.submitting && Boolean(driverId) && !noCandidates && !panel.candidatesFailed;
+  const canSubmit =
+    !panel.submitting &&
+    Boolean(selectedDriverId) &&
+    !noCandidates &&
+    !panel.candidatesFailed &&
+    !panel.failure?.reopenNeeded;
 
   return (
     <motion.div
@@ -174,7 +202,7 @@ export function ReassignDriverPanel({ run, refreshRuns, reportUnauthorized, onCl
                 <Select
                   ref={driverSelectRef}
                   label="New driver"
-                  value={driverId}
+                  value={selectedDriverId}
                   onChange={(event) => setDriverId(event.target.value)}
                   error={panel.failure?.fieldErrors.driverId}
                   disabled={panel.submitting}
@@ -205,7 +233,10 @@ export function ReassignDriverPanel({ run, refreshRuns, reportUnauthorized, onCl
                   maxLength={REASON_MAX_LENGTH}
                   rows={3}
                   disabled={panel.submitting}
-                  aria-describedby={reasonCountId}
+                  aria-invalid={Boolean(panel.failure?.fieldErrors.reason)}
+                  aria-describedby={
+                    panel.failure?.fieldErrors.reason ? `${reasonErrorId} ${reasonCountId}` : reasonCountId
+                  }
                   className="w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                   style={{
                     borderRadius: radius.md,
@@ -223,7 +254,7 @@ export function ReassignDriverPanel({ run, refreshRuns, reportUnauthorized, onCl
                   {reason.length}/{REASON_MAX_LENGTH}
                 </span>
                 {panel.failure?.fieldErrors.reason && (
-                  <span role="alert" className="text-sm" style={{ color: colors.error[500] }}>
+                  <span id={reasonErrorId} role="alert" className="text-sm" style={{ color: colors.error[500] }}>
                     {panel.failure.fieldErrors.reason}
                   </span>
                 )}

@@ -33,10 +33,13 @@ export interface ReassignFailure {
   reloadRuns: boolean;
   // The eligible list was wrong (driver gone, revoked, taken): read drivers and routes again.
   reloadDrivers: boolean;
+  // The head's view of the run's driver is out of date (someone else changed it) and fromDriverId would be
+  // refused again: the panel must be closed and reopened, so Submit stays off until then.
+  reopenNeeded: boolean;
 }
 
 function failure(message: string, options: Partial<Omit<ReassignFailure, "message">> = {}): ReassignFailure {
-  return { message, fieldErrors: {}, reloadRuns: false, reloadDrivers: false, ...options };
+  return { message, fieldErrors: {}, reloadRuns: false, reloadDrivers: false, reopenNeeded: false, ...options };
 }
 
 // Maps every answer of POST .../reassignments the contract lists (docs/contracts/runs.md, errors table) to
@@ -81,8 +84,8 @@ export function reassignFailure(error: unknown): ReassignFailure {
       const now = /^The driver of this run is now (.+?)\. Reload and try again\.$/.exec(detail);
       if (now) {
         return failure(
-          `Someone else already changed this run's driver to ${now[1]}. The list has been refreshed; check it before trying again.`,
-          { reloadRuns: true, reloadDrivers: true },
+          `Someone else already changed this run's driver to ${now[1]}. The list has been refreshed. Close this window and reopen it to see the current driver before trying again.`,
+          { reloadRuns: true, reloadDrivers: true, reopenNeeded: true },
         );
       }
       return failure(detail, { reloadRuns: true });

@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
 import { useReducedMotion } from "framer-motion";
 import type { LocationStatus } from "@/lib/api/runs";
 import { formatClockTime, type UnavailableReason } from "./liveRuns";
-import { colors, darkTheme, spacing } from "@/styles/tokens";
+import { colors, darkTheme, iconSize, spacing } from "@/styles/tokens";
 
 export interface FreshnessStatusProps {
   // Null before /locations has a row for this run yet (not UNAVAILABLE).
@@ -34,7 +34,7 @@ function unavailableLabel(reason: UnavailableReason | null): string {
 
 function Shape({ children }: { children: ReactNode }) {
   return (
-    <svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 12 12">
+    <svg aria-hidden="true" focusable="false" width={iconSize.status} height={iconSize.status} viewBox="0 0 12 12">
       {children}
     </svg>
   );
@@ -42,12 +42,12 @@ function Shape({ children }: { children: ReactNode }) {
 
 function LiveDot({ pulsing }: { pulsing: boolean }) {
   return (
-    <span className="relative inline-flex" style={{ width: "12px", height: "12px" }}>
+    <span className="relative inline-flex" style={{ width: iconSize.status, height: iconSize.status }}>
       {pulsing && (
         <span
           aria-hidden="true"
           className="absolute inline-flex rounded-full animate-ping"
-          style={{ width: "12px", height: "12px", backgroundColor: colors.success[500], opacity: 0.5 }}
+          style={{ width: iconSize.status, height: iconSize.status, backgroundColor: colors.success[500], opacity: 0.5 }}
         />
       )}
       <Shape>

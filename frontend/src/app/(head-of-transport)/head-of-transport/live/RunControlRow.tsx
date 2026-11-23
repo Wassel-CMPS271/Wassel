@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/Card";
 import type { RunSummary } from "@/lib/api/runs";
 import { darkTheme, sizing, spacing } from "@/styles/tokens";
 import { FreshnessStatus } from "./FreshnessStatus";
-import { runLabel, type ActiveRunView } from "./liveRuns";
+import { formatClockTime, runLabel, type ActiveRunView } from "./liveRuns";
 
 export interface RunControlRowProps {
   view: ActiveRunView;
@@ -76,6 +76,9 @@ function remainingStopsLabel(remainingStops: number | null): string {
 export function RunControlRow({ view, onReassign, positionsNotRefreshingSince = null }: RunControlRowProps) {
   const { run, nextStop, remainingStops } = view;
   const notRefreshing = positionsNotRefreshingSince !== null;
+  // The remaining stops and the next stop come from the same /locations answer as the freshness, so while
+  // it isn't refreshing they are labelled with its time instead of reading as current.
+  const asOf = positionsNotRefreshingSince ? `(as of ${formatClockTime(positionsNotRefreshingSince)})` : null;
   const liveEstimate = notRefreshing ? null : (nextStop?.liveEstimate ?? null);
 
   return (
@@ -116,14 +119,16 @@ export function RunControlRow({ view, onReassign, positionsNotRefreshingSince = 
         </div>
 
         <div className="flex flex-col md:flex-row md:items-start" style={{ gap: spacing.md }}>
-          <p className="text-sm flex-shrink-0" style={{ color: darkTheme.text.secondary, minWidth: "120px" }}>
+          <p className="text-sm flex-shrink-0" style={{ color: darkTheme.text.secondary, minWidth: sizing.runStatColumn }}>
             {remainingStopsLabel(remainingStops)}
+            {asOf && ` ${asOf}`}
           </p>
 
           {nextStop && (
             <div className="flex flex-col" style={{ gap: spacing.xs }}>
               <p className="text-sm font-medium" style={{ color: darkTheme.text.primary }}>
                 Next stop: {nextStop.firstName} {nextStop.lastName}
+                {asOf && ` ${asOf}`}
               </p>
               <div className="flex flex-col sm:flex-row sm:flex-wrap" style={{ gap: spacing.sm }}>
                 {nextStop.plannedTime && <LabelledItem label="Planned" value={nextStop.plannedTime} />}

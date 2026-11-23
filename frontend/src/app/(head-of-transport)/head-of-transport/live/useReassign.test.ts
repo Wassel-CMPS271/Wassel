@@ -123,6 +123,7 @@ describe("reassignFailure: the contract's error table", () => {
       fieldErrors: { reason: "size must be between 0 and 200" },
       reloadRuns: false,
       reloadDrivers: false,
+      reopenNeeded: false,
     });
   });
 
@@ -132,6 +133,7 @@ describe("reassignFailure: the contract's error table", () => {
       fieldErrors: { fromDriverId: "must not be null" },
       reloadRuns: false,
       reloadDrivers: false,
+      reopenNeeded: false,
     });
   });
 
@@ -147,6 +149,7 @@ describe("reassignFailure: the contract's error table", () => {
       fieldErrors: {},
       reloadRuns: false,
       reloadDrivers: false,
+      reopenNeeded: false,
     });
   });
 
@@ -156,6 +159,7 @@ describe("reassignFailure: the contract's error table", () => {
       fieldErrors: {},
       reloadRuns: true,
       reloadDrivers: false,
+      reopenNeeded: false,
     });
   });
 
@@ -165,6 +169,7 @@ describe("reassignFailure: the contract's error table", () => {
       fieldErrors: { driverId: "That driver no longer exists. Pick another driver." },
       reloadRuns: false,
       reloadDrivers: true,
+      reopenNeeded: false,
     });
   });
 
@@ -176,6 +181,7 @@ describe("reassignFailure: the contract's error table", () => {
         fieldErrors: {},
         reloadRuns: true,
         reloadDrivers: false,
+        reopenNeeded: false,
       });
     },
   );
@@ -194,6 +200,7 @@ describe("reassignFailure: the contract's error table", () => {
       fieldErrors: {},
       reloadRuns: true,
       reloadDrivers: false,
+      reopenNeeded: false,
     });
   });
 
@@ -202,10 +209,11 @@ describe("reassignFailure: the contract's error table", () => {
       reassignFailure(new ApiError(409, "The driver of this run is now Walid Saad. Reload and try again.")),
     ).toEqual({
       message:
-        "Someone else already changed this run's driver to Walid Saad. The list has been refreshed; check it before trying again.",
+        "Someone else already changed this run's driver to Walid Saad. The list has been refreshed. Close this window and reopen it to see the current driver before trying again.",
       fieldErrors: {},
       reloadRuns: true,
       reloadDrivers: true,
+      reopenNeeded: true,
     });
   });
 
@@ -227,6 +235,7 @@ describe("reassignFailure: the contract's error table", () => {
       fieldErrors: { driverId: message },
       reloadRuns: false,
       reloadDrivers: true,
+      reopenNeeded: false,
     });
   });
 
@@ -245,6 +254,7 @@ describe("reassignFailure: the contract's error table", () => {
         fieldErrors: {},
         reloadRuns: false,
         reloadDrivers: false,
+        reopenNeeded: false,
       });
     },
   );

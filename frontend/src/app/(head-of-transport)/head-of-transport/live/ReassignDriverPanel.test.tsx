@@ -140,6 +140,15 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+async function pickAndSubmit(dialog: HTMLElement, driverId = "d-nadim", reason?: string) {
+  fireEvent.change(within(dialog).getByRole("combobox", { name: "New driver" }), { target: { value: driverId } });
+  if (reason !== undefined) {
+    fireEvent.change(within(dialog).getByLabelText("Reason (optional)"), { target: { value: reason } });
+  }
+  fireEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+  await flush();
+}
+
 describe("ReassignDriverPanel: loading", () => {
   it("lists eligible drivers (active, not on a route, not the current driver) and focuses the picker", async () => {
     const { dialog } = await renderPanel();
@@ -229,16 +238,82 @@ describe("ReassignDriverPanel: accessibility", () => {
   });
 });
 
-describe("ReassignDriverPanel: submit", () => {
-  async function pickAndSubmit(dialog: HTMLElement, driverId = "d-nadim", reason?: string) {
-    fireEvent.change(within(dialog).getByRole("combobox", { name: "New driver" }), { target: { value: driverId } });
-    if (reason !== undefined) {
-      fireEvent.change(within(dialog).getByLabelText("Reason (optional)"), { target: { value: reason } });
-    }
-    fireEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
-    await flush();
-  }
+describe("ReassignDriverPanel: review fixes", () => {
+  it("a refused driver who drops off the reloaded list is no longer selected, so Submit can't resend them", async () => {
+    const backend = defaultBackend();
+    backend.reassign = { status: 409, body: { errors: { driverId: "Driver is already on another route." } } };
+    (backend.drivers.body as Driver[]).push(driver("d-extra")); // someone left to pick once d-nadim is taken
+    const { dialog } = await renderPanel(backend);
+    // By the time the list reloads, d-nadim has been put on a route by someone else.
+    backend.routes.body = [route("route-1", "d-karim"), route("route-2", "d-busy"), route("route-3", "d-nadim")];
 
+    await pickAndSubmit(dialog);
+    const picker = within(dialog).getByRole("combobox", { name: "New driver" }) as HTMLSelectElement;
+    expect(within(dialog).queryByRole("option", { name: /d-nadim/ })).not.toBeInTheDocument();
+    expect(picker.value).toBe("");
+    expect(within(dialog).getByRole("button", { name: "Submit" })).toBeDisabled();
+  });
+
+  it("keeps focus inside the dialog when 'Try again' unmounts after the candidates load", async () => {
+    const backend = defaultBackend();
+    backend.drivers.status = 500;
+    backend.drivers.body = {};
+    const { dialog } = await renderPanel(backend);
+    const retry = within(dialog).getByRole("button", { name: "Try again" });
+    retry.focus();
+
+    backend.drivers.status = 200;
+    backend.drivers.body = [driver("d-nadim"), driver("d-karim")];
+    fireEvent.click(retry);
+    await flush();
+    expect(within(dialog).getByRole("combobox", { name: "New driver" })).toHaveFocus();
+  });
+
+  it("keeps focus inside the dialog after a successful submit disables the focused Submit button", async () => {
+    const { dialog } = await renderPanel();
+    await pickAndSubmit(dialog);
+    expect(within(dialog).getByRole("button", { name: "Submit" })).toBeDisabled();
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("Escape still closes the dialog after a successful submit", async () => {
+    const { dialog, onClose } = await renderPanel();
+    await pickAndSubmit(dialog);
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("after the 'driver is now X' 409, Submit stays off until the panel is reopened", async () => {
+    const backend = defaultBackend();
+    backend.reassign = {
+      status: 409,
+      body: { detail: "The driver of this run is now Walid Saad. Reload and try again." },
+    };
+    const { dialog } = await renderPanel(backend);
+
+    await pickAndSubmit(dialog);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(/reopen/);
+    fireEvent.change(within(dialog).getByRole("combobox", { name: "New driver" }), {
+      target: { value: "d-karim" },
+    });
+    expect(within(dialog).getByRole("button", { name: "Submit" })).toBeDisabled();
+  });
+
+  it("links the reason's field error to the textarea and marks it invalid", async () => {
+    const backend = defaultBackend();
+    backend.reassign = { status: 400, body: { errors: { reason: "size must be between 0 and 200" } } };
+    const { dialog } = await renderPanel(backend);
+
+    await pickAndSubmit(dialog, "d-nadim", "ok");
+    const reason = within(dialog).getByLabelText("Reason (optional)");
+    expect(reason).toHaveAttribute("aria-invalid", "true");
+    const error = within(dialog).getByText("size must be between 0 and 200");
+    expect(reason.getAttribute("aria-describedby")).toContain(error.id);
+  });
+});
+
+describe("ReassignDriverPanel: submit", () => {
   it("success: shows the message, both of today's runs note stays visible, and the history refreshes", async () => {
     const backend = defaultBackend();
     const { dialog, refreshRuns } = await renderPanel(backend);

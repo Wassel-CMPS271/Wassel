@@ -61,6 +61,19 @@ describe("RunControlRow", () => {
     expect(screen.getByText(/Hadi Rizk/)).toBeInTheDocument();
   });
 
+  it("while positions aren't refreshing, the remaining stops and next stop say when they are from", () => {
+    const since = new Date("2026-11-16T05:20:00Z");
+    render(<RunControlRow view={view()} onReassign={vi.fn()} positionsNotRefreshingSince={since} />);
+    // 05:20:00Z is 07:20:00 in Beirut (UTC+2 in November).
+    expect(screen.getByText(/3 stops left \(as of 07:20:00\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Next stop: Hadi Rizk \(as of 07:20:00\)/)).toBeInTheDocument();
+  });
+
+  it("when positions are refreshing, the remaining stops and next stop carry no 'as of'", () => {
+    render(<RunControlRow view={view()} onReassign={vi.fn()} />);
+    expect(screen.queryByText(/as of/)).not.toBeInTheDocument();
+  });
+
   it("the direction is part of the heading, not only readable elsewhere, so two runs of one route differ", () => {
     render(<RunControlRow view={view({ run: run({ direction: "AFTERNOON" }) })} onReassign={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "Hamra (afternoon)" })).toBeInTheDocument();

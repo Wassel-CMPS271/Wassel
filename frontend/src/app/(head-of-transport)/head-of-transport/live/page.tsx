@@ -114,12 +114,15 @@ export default function LiveRunsPage() {
   const views = polling.runsDay ? activeRunViews(polling.runsDay.runs, polling.locations) : [];
   const lastUpdated = laterOf(polling.runsUpdatedAt, polling.locationsUpdatedAt);
   const updatedAt = { runs: polling.runsUpdatedAt, locations: polling.locationsUpdatedAt };
-  // While /runs/locations is failing, every row's freshness and estimate are that old answer's.
-  const locationsFailing = polling.error?.kind === "failed" && polling.error.sources.includes("locations");
-  const positionsNotRefreshingSince = locationsFailing ? polling.locationsUpdatedAt : null;
+  // Every row's freshness, estimate and next stop are the last /runs/locations answer's. They stop being
+  // current when that call is failing, and also when polling has stopped altogether (403, an unconfirmed 401,
+  // expiry): nothing refreshes them any more. Only a runs-only failure leaves the positions fresh.
+  const positionsNotRefreshing =
+    polling.error !== null && (polling.error.kind !== "failed" || polling.error.sources.includes("locations"));
+  const positionsNotRefreshingSince = positionsNotRefreshing ? polling.locationsUpdatedAt : null;
   const errorInfo = polling.error ? errorParts(polling.error, updatedAt) : null;
-  // A "failed" poll with data already on screen is informational, not urgent: role="status" so it doesn't
-  // interrupt. First-load failure, 403, 401 and expiry have nothing else to show, so they stay role="alert".
+  // A "failed" poll with data already on screen is informational, not urgent: the polite status region, so it
+  // doesn't interrupt. First-load failure, 403, 401 and expiry have nothing else to show: the alert region.
   const errorIsAlert = polling.error ? polling.error.kind !== "failed" || !hasData : false;
 
   return (
@@ -128,7 +131,7 @@ export default function LiveRunsPage() {
         ref={mainRef}
         tabIndex={-1}
         className="mx-auto flex flex-col"
-        style={{ padding: spacing.xl, gap: spacing.xl, maxWidth: "1024px" }}
+        style={{ padding: spacing.xl, gap: spacing.xl, maxWidth: sizing.liveScreenMaxWidth }}
       >
         <header>
           <h1 className="text-2xl font-semibold" style={{ color: darkTheme.text.primary }}>
@@ -150,9 +153,17 @@ export default function LiveRunsPage() {
           </p>
         )}
 
+        {/* The two live regions stay mounted (empty until there is something to say), because a region that
+            is inserted already holding its text is often not announced. The visible headline below is
+            aria-hidden so it isn't read twice. sr-only is absolutely positioned, so it adds no layout gap. */}
+        <div className="sr-only">
+          <span role="alert">{errorInfo && errorIsAlert ? errorInfo.headline : ""}</span>
+          <span role="status">{errorInfo && !errorIsAlert ? errorInfo.headline : ""}</span>
+        </div>
+
         {polling.error && errorInfo && (
           <div className="flex items-center flex-wrap" style={{ gap: spacing.sm, color: colors.error[500] }}>
-            <span role={errorIsAlert ? "alert" : "status"} className="text-sm">
+            <span aria-hidden="true" className="text-sm">
               {errorInfo.headline}
             </span>
             {errorInfo.timestamp && (
