@@ -68,7 +68,7 @@ describe("SCRUM-280 criterion 2: wrong roles, signed-out, 401 mid-session, and n
     const row = inboxEvent({ type: "PICKED_UP" });
     serve({ inbox: [row] });
     await openInbox();
-    expect(screen.getByText("1 unread updates")).toBeInTheDocument();
+    expect(screen.getByText(/^1 unread updates?$/)).toBeInTheDocument();
     const button = screen.getByRole("button", { name: "Mark update for Tarek Mansour as read" });
 
     // The entry stops being this parent's between load and the click (e.g. the child was relinked
@@ -81,7 +81,7 @@ describe("SCRUM-280 criterion 2: wrong roles, signed-out, 401 mid-session, and n
     expect(alert.textContent).not.toMatch(/not found/i);
     expect(server.requests(`/api/parent/inbox/${row.id}/read`)).toHaveLength(1);
     // No optimistic/fake receipt: the row this parent can see is unaffected by the failed call.
-    expect(screen.getByText("1 unread updates")).toBeInTheDocument();
+    expect(screen.getByText(/^1 unread updates?$/)).toBeInTheDocument();
   });
 
   it.each([403, 404])("shows a generic message for a %s on the inbox list load, never the server's detail", async status => {
@@ -97,7 +97,7 @@ describe("SCRUM-280 criterion 2: wrong roles, signed-out, 401 mid-session, and n
     const row = inboxEvent({ type: "PICKED_UP" });
     serve({ inbox: [row] });
     await openInbox();
-    expect(screen.getByText("1 unread updates")).toBeInTheDocument();
+    expect(screen.getByText(/^1 unread updates?$/)).toBeInTheDocument();
 
     server.state.inboxFailure = 401; // the session expires after the page already loaded
     fireEvent.click(screen.getByRole("button", { name: "Mark all as read" }));

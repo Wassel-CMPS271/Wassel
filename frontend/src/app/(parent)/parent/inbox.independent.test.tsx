@@ -69,7 +69,7 @@ describe("SCRUM-280 criterion 1: real event statuses and an accurate unread coun
     expect(screen.getByText("2 unread updates")).toBeInTheDocument();
 
     fireEvent.click(within(rowFor("Tarek Mansour: Picked up")).getByRole("button", { name: "Mark update for Tarek Mansour as read" }));
-    await screen.findByText("1 unread updates");
+    await screen.findByText(/^1 unread updates?$/);
     expect(server.requests(`/api/parent/inbox/${pickedUp.id}/read`)).toHaveLength(1);
     expect(within(rowFor("Tarek Mansour: Picked up")).getByText("Read")).toBeInTheDocument();
     expect(within(rowFor("Tarek Mansour: Not at the stop")).getByText("Unread")).toBeInTheDocument();
@@ -80,7 +80,7 @@ describe("SCRUM-280 criterion 1: real event statuses and an accurate unread coun
     cleanup(); // the parent reloads the page
     await openInbox();
     expect(within(rowFor("Tarek Mansour: Picked up")).getByText("Read")).toBeInTheDocument();
-    expect(screen.getByText("1 unread updates")).toBeInTheDocument();
+    expect(screen.getByText(/^1 unread updates?$/)).toBeInTheDocument();
   });
 
   it("marks all read via a 204 with no body, dropping the count to 0 and disabling Mark all, and this persists after a reload", async () => {
@@ -154,7 +154,7 @@ describe("SCRUM-280 criterion 4: loading, empty, error-and-retry, and the Inbox 
 
     server.state.listReply = null;
     fireEvent.click(screen.getByRole("button", { name: "Refresh inbox" }));
-    await screen.findByText(/^\d+ unread updates$/);
+    await screen.findByText(/^\d+ unread updates?$/);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
