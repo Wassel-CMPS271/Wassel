@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as childrenApi from "@/lib/api/myChildren";
 import * as requests from "@/lib/api/addressRequests";
@@ -172,6 +172,9 @@ describe("SCRUM-281 parent linked-child UI", () => {
     fill("New pickup address", "New address");
     fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
     await screen.findByRole("alert");
+    // Wait for the focus move that follows the 409 (a passive effect) so it can't land after refresh.focus().
+    const notice = await screen.findByText(/after the school decides on the one already pending/);
+    await waitFor(() => expect(notice).toHaveFocus());
     let finish: (rows: requests.AddressRequest[]) => void = () => {};
     list.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
     const refresh = screen.getByRole("button", { name: "Refresh request status" });
@@ -189,7 +192,7 @@ describe("SCRUM-281 parent linked-child UI", () => {
     fill("New pickup address", "New address");
     fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
     const confirmation = await screen.findByText(/Request sent to the school/);
-    expect(confirmation).toHaveFocus();
+    await waitFor(() => expect(confirmation).toHaveFocus());
   });
 
   it("moves focus to the notice when a 409 swaps the form out", async () => {
@@ -197,7 +200,8 @@ describe("SCRUM-281 parent linked-child UI", () => {
     await open();
     fill("New pickup address", "New address");
     fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
-    expect(await screen.findByText(/after the school decides on the one already pending/)).toHaveFocus();
+    const notice = await screen.findByText(/after the school decides on the one already pending/);
+    await waitFor(() => expect(notice).toHaveFocus()); // focus is moved by a passive effect
   });
 
   it("keeps attendance rows and the focused Refresh button mounted while reloading", async () => {
@@ -226,6 +230,38 @@ describe("SCRUM-281 parent linked-child UI", () => {
     expect(await screen.findByText("Range is longer than the school allows.")).toBeVisible();
     expect(screen.queryByText(/Couldn't load attendance/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry attendance" })).not.toBeInTheDocument();
+  });
+
+  it("shows a server range error that no date input renders", async () => {
+    await open();
+    attendance.mockRejectedValueOnce(new ApiValidationError({ range: "That range is not available." }));
+    fireEvent.click(screen.getByRole("button", { name: "Show attendance" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("That range is not available.");
+    expect(screen.queryByText("Loading attendance…")).not.toBeInTheDocument();
+  });
+
+  it("never shows rows from an earlier range under a newly chosen one", async () => {
+    attendance.mockResolvedValue([{
+      date: "2026-11-03", direction: "MORNING", status: "PICKED_UP",
+      notPresentAt: null, pickedUpAt: "2026-11-03T05:40:00Z", droppedOffAt: null,
+    }]);
+    render(<ParentTransportRecordsPage studentId={studentId} />);
+    expect(await screen.findByText("Picked up")).toBeVisible();
+    let finish: (rows: attendanceApi.ParentAttendance[]) => void = () => {};
+    attendance.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    fill("From date", "2025-01-01");
+    fill("To date", "2025-02-15");
+    fireEvent.click(screen.getByRole("button", { name: "Show attendance" }));
+    expect(screen.queryByText("Picked up")).not.toBeInTheDocument(); // still loading the new range
+    expect(screen.getByText("Loading attendance…")).toBeVisible();
+    await act(async () => finish([]));
+    expect(await screen.findByText("No driver confirmations recorded for this period.")).toBeVisible();
+    attendance.mockRejectedValueOnce(new ApiError(500));
+    fill("To date", "2025-02-16");
+    fireEvent.click(screen.getByRole("button", { name: "Show attendance" }));
+    expect(await screen.findByText(/Couldn't load attendance/)).toBeVisible();
+    expect(screen.queryByText("Picked up")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Refresh attendance" })).not.toBeInTheDocument();
   });
 
   it("allows a corrected inclusive attendance date range and rejects 63 days", async () => {

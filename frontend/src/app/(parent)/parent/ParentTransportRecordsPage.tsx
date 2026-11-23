@@ -253,22 +253,31 @@ function AttendancePanel({ studentId, onAccessError }: { studentId: string; onAc
   const [draft, setDraft] = useState<AttendanceRange>(defaultRange);
   const [range, setRange] = useState<AttendanceRange>(defaultRange);
   const [fields, setFields] = useState<Record<string, string>>({});
-  const [items, setItems] = useState<ParentAttendance[] | null>(null);
+  // The rows are kept with the range they were fetched for, so rows for an earlier range are never
+  // shown under dates they don't belong to; a same-range reload keeps them mounted.
+  const [loaded, setLoaded] = useState<{ range: AttendanceRange; rows: ParentAttendance[] } | null>(null);
   const [failed, setFailed] = useState(false);
-  // The server refused the range (400/409 with a field message); the old rows no longer match it.
+  // The server refused the range (400/409); `rangeError` is the text no date input shows.
   const [rejected, setRejected] = useState(false);
+  const [rangeError, setRangeError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [reload, setReload] = useState(0);
-  // Rows stay mounted while a reload runs, so the focused Refresh button isn't unmounted.
+  const items = loaded && loaded.range.from === range.from && loaded.range.to === range.to ? loaded.rows : null;
+  // Rows for the same range stay mounted while a reload runs, so the focused Refresh button isn't unmounted.
   useEffect(() => {
     let active = true;
-    setFailed(false); setRejected(false); setRefreshing(true);
-    getParentAttendance(studentId, range).then(rows => { if (active) { setItems(rows); setRefreshing(false); } })
+    setFailed(false); setRejected(false); setRangeError(""); setRefreshing(true);
+    getParentAttendance(studentId, range).then(rows => { if (active) { setLoaded({ range, rows }); setRefreshing(false); } })
       .catch(cause => {
         if (!active) return;
         setRefreshing(false);
-        if (cause instanceof ApiValidationError) { setFields(cause.errors); setRejected(true); }
-        else if (!onAccessError(cause)) setFailed(true);
+        if (cause instanceof ApiValidationError) {
+          const general = Object.entries(cause.errors)
+            .filter(([key]) => key !== "from" && key !== "to").map(([, text]) => text);
+          setFields(cause.errors);
+          setRangeError(general.join(" ") || ("from" in cause.errors || "to" in cause.errors ? "" : "Check the dates and try again."));
+          setRejected(true);
+        } else if (!onAccessError(cause)) setFailed(true);
       });
     return () => { active = false; };
   }, [studentId, range, reload, onAccessError]);
@@ -299,12 +308,13 @@ function AttendancePanel({ studentId, onAccessError }: { studentId: string; onAc
         <Button type="submit" style={minTarget}>Show attendance</Button>
       </form>
     </Card>
+    {rangeError && <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>{rangeError}</p>}
     {items === null && !failed && !rejected && <p role="status" style={noticeStyle}>Loading attendance…</p>}
     {failed && <Card className="flex flex-col items-start" style={sectionGap}>
       <p role="alert">Couldn&apos;t load attendance. No records have been changed.</p>
       <Button variant="secondary" style={minTarget} onClick={() => setReload(value => value + 1)}>Retry attendance</Button>
     </Card>}
-    {items && !rejected && <>
+    {items && !rejected && !failed && <>
       <Button variant="secondary" style={minTarget} aria-disabled={refreshing || undefined}
         onClick={() => { if (!refreshing) setReload(value => value + 1); }}>
         {refreshing ? "Refreshing…" : "Refresh attendance"}
