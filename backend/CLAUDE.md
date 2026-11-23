@@ -634,9 +634,20 @@ that's the structure this codebase moved away from.
   assumed 300 a day on Brevo's free plan, unverified), and a due delivery over it is `SKIPPED`/`DAILY_CAP`. The cap check and the `claim` run in one short transaction under a Postgres advisory lock (`lockForCap`), so two instances cannot both take the last attempt; entries are sent oldest first (`discover` sets `next_attempt_at` from the entry's time). `deliverDue` never throws: a failure outside one delivery is logged as an error with the class only. The three scheduled jobs get `spring.task.scheduling.pool.size: 3` so a slow provider cannot hold up the late alerts. **Privacy:** the email has the first name,
   the type, the school-local time and a link (`DeliveryEmail`, pinned by `docs/contracts/samples/notification-delivery/email-picked-up.txt`); logs hold
   the delivery id, the entry id, the attempt and the exception's class only, never `e.getMessage()` (an SMTP error can hold the recipient) or the
-  exception itself. No Micrometer and no new actuator endpoint (`HealthEndpointTests` stays): the summary is the monitoring. Tests use a
+  exception itself. No Micrometer and no new actuator endpoint (`HealthEndpointTests` stays): the summary is the monitoring (and, since SCRUM-290, `monitoring` counts the sends). Tests use a
   `RecordingMailer` (a real class that stands in for the provider and can refuse) through `DeliverySupport`, which empties the outbox and the inbox
   first because the sender looks at every school's entries. Known limits: see the contract (at most once against a crash only, a rejected address is retried, the cap counts attempts, English plain text, no unsubscribe link).
+- `monitoring` — the platform health numbers for the admin (SCRUM-290): `GET /api/admin/metrics` (ADMIN). Shapes, rules and sample in
+  `docs/contracts/admin-metrics.md`. A **leaf module** (imports no other module), so `auth` and `inbox` call
+  `service/OperationalMetrics` without a cycle. It is our own small counter, not Micrometer/actuator: the only actuator endpoint stays
+  `/actuator/health`. `config/RequestMetricsFilter` is the outermost servlet filter (`HIGHEST_PRECEDENCE + 10`, before Spring Security) and times
+  every request with `System.nanoTime`: 5xx (or an exception, counted as 500) and 429 are counted, the latest 2,000 times feed an exact
+  nearest-rank p95, `/actuator/*` and the metrics path are skipped, and failed sign-ins are counted from the answers (401 on login, 400 on
+  2FA verify), so no other module needs a hook for them. `AuthService` calls `accountLocked()` where it logs a lock, and
+  `NotificationDeliveryService` calls `notificationSent()` after a send and `notificationsFailed(n)` where a delivery ends `FAILED`
+  (given up, expired, interrupted). **In memory: resets on a restart or redeploy, one instance only**, and the answer says so
+  (`since`, `resetsOnRestart`). No admin page yet (a stretch of the ticket). Tests: `OperationalMetricsTests`,
+  `RequestMetricsFilterTests`, `AdminMetricsControllerTests` (roles and a scripted run), and a row in `RoleAccessMatrixTests`.
 - `roster` — pausing and archiving a student and placing a student on the best route (SCRUM-270):
   `PUT /api/head-of-transport/students/{id}/status`, `GET` and `POST .../students/{id}/best-route`. Shapes and rules are in
   `docs/contracts/roster.md`. A new module because both touch the students and the routes, and `students` never imports
