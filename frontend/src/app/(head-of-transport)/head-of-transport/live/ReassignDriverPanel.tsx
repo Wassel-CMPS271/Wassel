@@ -7,7 +7,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
-import { motion } from "framer-motion";
+import { motion, useIsPresent } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { focusRingClass, focusRingStyle } from "@/components/ui/focusRing";
@@ -38,6 +38,9 @@ function formatWhen(iso: string): string {
 
 export function ReassignDriverPanel({ run, refreshRuns, reportUnauthorized, onClose }: ReassignDriverPanelProps) {
   const panel = useReassign(run, refreshRuns, reportUnauthorized);
+  // False while AnimatePresence plays the exit: closeReassign has already put focus back on the page, and a
+  // late response re-rendering this panel must not pull it into the fading dialog.
+  const isPresent = useIsPresent();
   const [driverId, setDriverId] = useState("");
   const [reason, setReason] = useState("");
   const [justSucceeded, setJustSucceeded] = useState(false);
@@ -66,23 +69,28 @@ export function ReassignDriverPanel({ run, refreshRuns, reportUnauthorized, onCl
   }, [panel.candidates, panel.candidatesFailed]);
 
   // Keeps focus inside the dialog. A control can disappear or turn disabled while it holds focus (the
-  // "Try again" button once the candidates load, Submit after a success, everything while saving), which drops
+  // "Try again" button once it reloads, Submit after a success, everything while saving), which drops
   // focus to the page behind: Escape and the Tab trap then stop working, because the key handler sits on this
-  // overlay. Runs after every render; does nothing while focus is still on something usable. Declared before
-  // the failure effect below so, after a failed submit, the alert is what ends up focused.
+  // overlay. Runs after every render; does nothing while focus is still on something usable, and nothing
+  // while the dialog is closing. Declared before the failure effect below so, after a failed submit, the
+  // alert is what ends up focused.
   useEffect(() => {
-    if (panel.submitting) return;
+    if (panel.submitting || !isPresent) return;
     const container = panelRef.current;
     if (!container) return;
     const active = document.activeElement;
-    // Focus parked on the dialog itself (while the drivers loaded) moves to the picker once it exists.
-    const lost =
-      !active ||
-      !container.contains(active) ||
-      active.matches(":disabled") ||
-      (active === container && driverSelectRef.current !== null);
+    const lost = !active || !container.contains(active) || active.matches(":disabled");
     if (lost) (driverSelectRef.current ?? container).focus();
   });
+
+  // Focus parked on the dialog itself while the drivers (re)loaded moves to the picker once it appears. Keyed
+  // on the picker's existence, not on every render, so a click on the dialog's text isn't undone later.
+  const pickerShown = panel.candidates !== null && panel.candidates.length > 0;
+  useEffect(() => {
+    if (pickerShown && isPresent && document.activeElement === panelRef.current) {
+      driverSelectRef.current?.focus();
+    }
+  }, [pickerShown, isPresent]);
 
   // A submit failure moves focus to the banner that explains it, instead of leaving it on Submit or
   // jumping back to the picker when the failure also reloads the eligible list.

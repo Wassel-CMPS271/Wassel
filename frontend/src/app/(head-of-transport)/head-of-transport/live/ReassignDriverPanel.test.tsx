@@ -294,9 +294,10 @@ describe("ReassignDriverPanel: review fixes", () => {
 
     await pickAndSubmit(dialog);
     expect(within(dialog).getByRole("alert")).toHaveTextContent(/reopen/);
-    fireEvent.change(within(dialog).getByRole("combobox", { name: "New driver" }), {
-      target: { value: "d-karim" },
-    });
+    // d-nadim is still eligible and selected, so only the reopen gate can be what keeps Submit off.
+    const picker = within(dialog).getByRole("combobox", { name: "New driver" }) as HTMLSelectElement;
+    fireEvent.change(picker, { target: { value: "d-nadim" } });
+    expect(picker.value).toBe("d-nadim");
     expect(within(dialog).getByRole("button", { name: "Submit" })).toBeDisabled();
   });
 
