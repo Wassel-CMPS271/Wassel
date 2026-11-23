@@ -47,8 +47,8 @@ that's the structure this codebase moved away from.
   `TwoFactorService` logs each wrong code at WARN with the user id and attempt number (never the
   code), because the exception handler's line names no user and repeated wrong codes are what a
   guessing attempt looks like. Locally, the code is in the log.
-  Password flows (SCRUM-169): `POST /api/auth/forgot-password` (204 for any email, unless the send
-  fails; see the limits below; emails a link only
+  Password flows (SCRUM-169): `POST /api/auth/forgot-password` (204 for every outcome, a failed send
+  and the daily cap included; emails a link only
   for an existing, enabled account, at most once per 60 seconds) and `POST /api/auth/password`
   (sets the password from a token, for both first-time set and reset; a bad, expired or used
   token is one generic 400). Tokens (`entity/PasswordToken`) are 32 random bytes, stored only as
@@ -63,10 +63,38 @@ that's the structure this codebase moved away from.
   ever drift there are zero or two `Mailer` beans and startup fails. `SmtpMailer` uses
   `spring-boot-starter-mail` with `MAIL_HOST`/`MAIL_PORT`/`MAIL_USERNAME`/`MAIL_PASSWORD` (Gmail and an
   app password for now; Gmail sends as the signed-in account whatever the from address says, so the
-  sender is `MAIL_USERNAME`). A failed send throws, which rolls back the caller's transaction (no
-  login code or token is left behind) and answers a generic 500, so the user retries; the cause is
-  logged at ERROR. The send runs inside the request's transaction, so `spring.mail` has 5 second
-  timeouts; they are per network step, so they bound a hang, not the whole send. A missing
+  sender is `MAIL_USERNAME`). A failed send throws and answers a generic 500, so the user retries; the cause is
+  logged at ERROR. Where the send runs (SCRUM-289, `docs/contracts/auth-email.md`): sign-in, resend and
+  forgot-password are not `@Transactional`. The code or token and the cap's slot are written in one short
+  `TransactionTemplate` transaction (tx1), the send follows its commit on the request thread, so no database
+  connection is held while the provider is called, and a failed send is undone in a second short transaction
+  (tx2): login deletes its own row (`LoginCodeRepository.deleteUnsent`, conditional on id and code hash, so a racing
+  login's row is never removed), resend puts the previous code back (`restore`: code, expiry, send time and attempts,
+  plus the guesses made at the new code), forgot-password deletes its token (`deleteUnused`) and voids the user's older links only after the send succeeded
+  (`voidUnusedExcept`). `service/SendUndo` runs
+  tx2 and never throws; an undo that fails is logged at ERROR. Not `afterCommit` or an event listener: both run
+  before the connection is released. Admin and head invites (`PasswordService.sendInvite`, called from `accounts` and
+  `drivers`) still send inside the transaction that creates the account, so a failed send still rolls the account back
+  there. The send still has `spring.mail` 5 second timeouts: they are per network step, so they bound a hang
+  (now of a request thread), not the whole send.
+  Daily cap (SCRUM-289): table `auth_emails` (V18, one row per send attempt: user id, kind, time; no address),
+  `service/AuthEmailBudget`. `claim` runs inside tx1 under its own advisory lock (`289_001`; the notification cap
+  keeps `283_001` in `inbox`: both draw on one provider quota, so a third key must be a new constant), is refused by
+  the daily cap, the reset share or the per-account limit (`AUTH_EMAIL_*` in `application.yml`; the per-account limit
+  counts an account's own kind only, sign-in codes and resends for a login and reset links for a reset, so a reset
+  flood can never refuse a sign-in), counted from Beirut midnight, and answers login and resend with 503 +
+  `Retry-After` (`AuthEmailCapException`) and forgot-password with 204. `forgotPassword` takes the lock (`lock()`)
+  before it reads its cooldown, so parallel requests send one link. A failed send still counts, except an invite,
+  which is recorded in the invite's own transaction and rolls back with it. Invites are never refused. A failed
+  send is rethrown as `AuthEmailSendException` (kind, user id and the provider's class only, never its message:
+  SMTP errors carry the address). Figures, the sum rule's numbers, the tests and the measurement are in
+  `docs/testing/SCRUM-289/report.md`; the numbers for the caps are in `docs/contracts/auth-email.md`. The test profile
+  lifts the caps (`application-test.yml`) so the shared database's count cannot trip other suites; a cap test sets its own
+  with `@TestPropertySource` (one more Spring context, so put such tests together).
+  Independent testers should challenge: no connection held during any auth send; a failed send leaves no usable code or
+  link and never blocks an immediate retry; the resend undo restores the old code; the cap and its two sub-limits hold
+  across parallel requests and Beirut midnight; refusals reveal nothing (forgot-password is always 204); admin invites
+  are never refused; logs hold ids and counts only. A missing
   `MAIL_USERNAME` stops startup, but a missing `MAIL_PASSWORD` does not (Boot binds it as the literal
   text), so `docker-compose.staging.yml` is what refuses to start without it.
   Brevo (SCRUM-197): `BrevoMailer` sends through Brevo's HTTPS API (`POST /v3/smtp/email`, key in the `api-key`
@@ -76,7 +104,7 @@ that's the structure this codebase moved away from.
   deployed environment never prints a code. `brevo` needs `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` (an address
   verified in the Brevo account, since Brevo only sends from a verified sender); a blank one stops startup, and
   `MAIL_USERNAME`/`MAIL_PASSWORD` are then unused. Same failure rule as SMTP: a rejected or timed-out send
-  (5 s) throws, so the caller's transaction rolls back and the user retries. The exception carries only its
+  (5 s) throws, so the user retries (nothing is left behind: see where the send runs, above). The exception carries only its
   type: never the key or the response body, which can echo the recipient. Local and staging keep SMTP.
   Known limits: a password change does not revoke existing sessions (tokens are stateless); the
   fix is a "tokens valid from" timestamp on `User` checked by `JwtAuthenticationFilter`. And
@@ -86,21 +114,22 @@ that's the structure this codebase moved away from.
   and, by logging in every minute, keep that user's code from being usable. Account lockout
   (SCRUM-171) does not change this, since it counts wrong passwords and this caller has the right
   one. Limits that real email adds:
-  - **Forgot-password reveals which emails have accounts.** An unknown email, or one in its cooldown,
-    answers 204 at once; a registered one waits for the send (a second or so) and is a 500 if Gmail
-    fails. The old "always 204, reveals nothing" held only because logging took no time. Accepted
-    for now. The fix is to send off the request thread and always answer 204. Login is not affected:
-    its email only goes out after a correct password.
+  - **Forgot-password reveals which emails have accounts, by timing only.** The status is 204 for every outcome
+    (SCRUM-289), but a registered email still waits for the send (a second or so) on the request thread, and an unknown
+    one or one in its cooldown answers at once. Accepted for now. The fix is to send off the request thread. Login is
+    not affected: its email only goes out after a correct password.
   - **One account can stop every login.** Login and forgot-password each allow one email a minute
     per account, about 1,440 a day, against Gmail's roughly 500. Once Gmail refuses, every login
     answers 500, because 2FA has no off switch. Account lockout and a provider with a higher limit are
     the fixes; Gmail is not meant for real users.
-  - The forgot-password cooldown is read-then-write and a slow send widens that window, so parallel
-    requests for one account can each send an email.
-  - If Gmail accepts a message but the reply times out, the transaction rolls back and the user holds
-    a code or link that doesn't work; they ask for another.
-  - Each login opens a fresh encrypted connection to Gmail inside the request, so it takes a second or
-    more longer than when the email was only logged (not measured).
+  - The forgot-password cooldown is read-then-write. The send is no longer inside its transaction, which narrows the
+    window, but parallel requests for one account can still each send an email.
+  - If the provider accepts a message but the reply times out, the undo deletes or restores a code or link the user did
+    receive; they ask for another, and that is allowed at once. A crash between the commit and the send leaves a code
+    nobody received until it expires (5 minutes; a new login is blocked for 60 s). Older reset links stay voided after a
+    failed forgot-password send.
+  - Each login opens a fresh encrypted connection to Gmail on the request thread, outside any transaction, so it takes a
+    second or more longer than when the email was only logged (not measured).
 - `users` — the `User` entity and `Role` enum, plus `UserRepository`/`UserService` for other
   modules to look up one of their own school's users by id and role (e.g. students, validating
   a parent-link target), and for auth to find users by email and create accounts. The foundational
