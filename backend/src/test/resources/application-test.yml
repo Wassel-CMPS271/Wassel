@@ -20,6 +20,13 @@ jwt:
   cookie-secure: false
 
 wassel:
+  # The auth email cap counts across the whole test run (one shared database), so out of reach here; the tests of
+  # the cap set their own (SCRUM-289).
+  auth:
+    email:
+      daily-cap: 100000
+      reset-daily-cap: 100000
+      per-account-daily-cap: 100000
   school:
     latitude: 33.896
     longitude: 35.484
