@@ -1,14 +1,16 @@
 # SCRUM-293 (S5-G): load test for a normal school, report
 
-How to run it again: [`loadtest/README.md`](../../../loadtest/README.md). Raw output of the run below:
-`summary-2026-11-22-sunday.json` and `docker-stats-2026-11-22-sunday.txt` in this folder.
+How to run it again: [`loadtest/README.md`](../../../loadtest/README.md). Raw output of the runs below:
+`summary-2026-11-22-sunday.json` and `docker-stats-2026-11-22-sunday.txt` (run 1), `summary-2026-11-23-monday.json`
+and `docker-stats-2026-11-23-monday.txt` (run 2) in this folder.
 
 ## Result in one line
 
-**Run 1 (Sunday 22 November 2026, 10 minutes, 300 users, 100 sign-ins in one minute): every threshold passed**, with
-zero 5xx answers, but it was run on a Sunday, which the backend treats as a holiday, so it did **not** exercise the
-bus-position and driver-location paths. **Run 2, on a weekday, is still to do** and decides whether the ticket's
-"p95 under 1 s" is shown for the real morning peak.
+**Run 2 (Monday 23 November 2026, a school day, 10 minutes, 300 users, 100 sign-ins in one minute): every threshold
+passed**: p95 **9.2 ms** for everything except sign-in, sign-in p95 **877 ms**, **zero 5xx answers**, no failed sign-in.
+This time all 40 drivers started their morning run and sent positions, and parents got live bus positions with an
+estimate, so the real morning peak was tested. Run 1 (Sunday, a holiday for the backend) passed too but could not test
+those paths. One thing to know: the first 15 seconds, when all 300 users start at once, are slow (below).
 
 ## What was run
 
@@ -41,27 +43,97 @@ The sign-in limit of 3 s is mine: the ticket asks for p95 under 1 s and zero 5xx
 because the stand-in mail provider takes 800 ms by design, so sign-in is measured on its own and everything else
 against 1 s.
 
+## Results, run 2 (the school day)
+
+Monday 23 November 2026, clock started 07:35 Asia/Beirut, fresh stack (`down -v`, `up`, seed), same script and
+command as run 1. I ran it twice on fresh stacks that morning; both passed with nearly the same numbers (steady p95
+7.5 ms and 9.2 ms, sign-in p95 873 ms and 877 ms, zero 5xx, zero failed sign-ins). The table is the second, which also
+wrote k6's raw per-request output, the source of the per-endpoint table below.
+
+| Measure | Result | Limit | |
+|---|---|---|---|
+| p95, all requests except sign-in | **9.2 ms** (avg 58 ms, max 6.15 s, see below) | under 1 s | pass |
+| p95, sign-in (password and code) | **877 ms** (avg 438 ms, max 885 ms) | under 3 s | pass |
+| 5xx answers | **0** (every answer was 200 or 204) | 0 | pass |
+| Failed sign-ins | **0** of 100 in the burst (and 300 of 300 before it) | 0 | pass |
+| Checks | 33,489 of 33,489 passed | | |
+| Requests | 37,189 in all, 55 a second with sign-in and the mail stand-in's lookups | | |
+| 429 answers | 0 (no rate limit yet) | | |
+
+**Runs and positions were really exercised.** During the first attempt, checked in the database, all 40 morning runs were `IN_PROGRESS` and all 40 drivers
+had location sharing on, with the newest position 5 s old. A parent account the test does not use, signed in by hand,
+got `"status":"LIVE"`, a position 2 s old, `stopsLeft` 9, the planned time and an estimate. Each driver sent 60
+positions (2,400 in all), every one answered 204.
+
+Per endpoint (run 2, from the raw output):
+
+| Endpoint | Requests | Median | p95 | p99 | Max |
+|---|---|---|---|---|---|
+| Parent: bus location (`GET .../bus-location`) | 25,819 | 3.5 ms | 7.5 ms | 1.89 s | 4.99 s |
+| Parent: unread count | 5,030 | 1.0 ms | 1.6 ms | 2.2 ms | 26 ms |
+| Parent: children | 1,490 | 2.8 ms | 2.46 s | 3.23 s | 3.73 s |
+| Parent: inbox | 1,130 | 0.9 ms | 1.4 ms | 1.8 ms | 8 ms |
+| Driver: position (`PUT .../location`) | 2,400 | 6.4 ms | 29 ms | 392 ms | 788 ms |
+| Driver: today's runs (once each, at the start) | 40 | 5.85 s | 6.15 s | | 6.16 s |
+| Driver: start run (once each) | 40 | 1.10 s | 1.90 s | | 1.99 s |
+| Driver: location sharing on (once each) | 40 | 709 ms | 992 ms | | 995 ms |
+| Sign-in burst: password | 100 | 874 ms | 878 ms | 885 ms | 885 ms |
+| Sign-in burst: code | 100 | 3.1 ms | 4.0 ms | 4.3 ms | 4.3 ms |
+
+The p95 of "children" is high because a fifth of its calls are each parent's first one, made in the first seconds.
+
+**Every request over 1 s (726 of 37,189) was in the first 15 seconds** of the clock, when 260 parents and 40 drivers
+all start in the same second on a backend that had just started. In those seconds the 40 drivers' first
+`runs/today` creates the day's 80 runs, then they start their runs, while every parent reads its children and its
+first bus position; backend CPU reached 98% of its one CPU. **After the first 30 seconds: p95 6.8 ms, max 63 ms**
+over 34,217 requests. A real morning does not start all 300 users in one second, and the JVM is not just started, so
+this is mostly the test's own start; but see the finding below.
+
+Use during run 2: backend CPU **16% on average, 98% at most** (at the start; 12% average and 36% at most after the
+first minute), memory 500 MiB at most of 1 GB; PostgreSQL 5% average, 42% at most, 73 MiB.
+
+## Run 1 and run 2 side by side
+
+| | Run 1 (Sunday, holiday) | Run 2 (Monday, school day) |
+|---|---|---|
+| Steady p95 | 5.0 ms | 9.2 ms (7.5 ms in the first attempt) |
+| Steady max | 1.18 s | 6.15 s (start of the clock only) |
+| Sign-in p95 | 887 ms | 877 ms |
+| 5xx / failed sign-ins | 0 / 0 | 0 / 0 |
+| Requests | 37,766 | 37,189 |
+| Backend CPU avg / max | 17% / 61% | 16% / 98% |
+| Drivers | only re-read their run list | start the morning run, send a position every 10 s |
+| Parents' bus location | `UNAVAILABLE` at once | `LIVE`, with stops left and an estimate |
+
+The school day costs about 4 ms more at p95 and a slower start; the steady part is still far under 1 s.
+
 ## Host limits (what the numbers hold for)
 
 - Backend container: **1 CPU, 1 GB**, JVM heap 70% of that, 10 database connections (the production default).
   PostgreSQL 16 container: 1 CPU, 1 GB. One backend instance.
-- Use during the run: backend CPU **17% on average, 61% at most** of its one CPU, memory 506 MiB at most of 1 GB;
+- Use during run 1: backend CPU **17% on average, 61% at most** of its one CPU, memory 506 MiB at most of 1 GB;
   PostgreSQL 6% and 22% CPU, 71 MiB. So there was room to spare on this host.
-- The machine that ran it also ran k6: Windows 11, 16 GB, Docker Desktop with 12 CPUs and 8 GB, in the same Docker
-  network, so no internet latency is included.
+- The machine that ran it also ran k6, in the same Docker network, so no internet latency is included. Run 1:
+  Windows 11, 16 GB, Docker Desktop with 12 CPUs and 8 GB. Run 2: Linux (Arch-based), 12 CPUs, 16 GB, Docker running
+  natively. The container limits were the same, so the two runs compare.
 - A real host is smaller or slower than this in unknown ways. These numbers say the app is not the bottleneck at this
   size on this hardware; they are not a promise for Railway's plan.
 
-## Why run 1 is not the final word
+## Why run 1 was not the final word
 
 Saturday and Sunday are holidays for the backend (the school day is decided by the `Asia/Beirut` clock, which a test
-cannot move). On a holiday the drivers have no run, so they sent no positions (the 40 drivers only re-read their run
-list), and a parent's `bus-location` answers `UNAVAILABLE` straight away. The slowest and most important part of the
-peak (a driver's position write, and a parent's read of a live bus with its estimate) was therefore not tested.
-The fast 5 ms figure for everything but sign-in comes from that.
+cannot move). On a holiday the drivers have no run, so they sent no positions, and a parent's `bus-location` answers
+`UNAVAILABLE` straight away. Run 2, on a Monday, covered that. There is no time-of-day rule: a driver can start the
+morning run at any hour of a school day, so any weekday time before midnight in Beirut works.
 
-**To do on a weekday:** the same command, `docker compose run --rm --no-deps k6` after a fresh `down -v`, `up` and
-seed; then replace this section with run 2's numbers.
+## Finding: the first seconds of a school day are slow when every driver opens the app at once
+
+In run 2 the 40 drivers' first `GET /api/driver/runs/today` took 5.8 s (median) and starting a run 1.1 s, because
+all 40 came in the same second on a just-started backend, and the first read of the day creates the day's runs. Parents'
+first reads waited behind them (bus location p99 1.9 s, all in the first 15 s). Nothing failed and it cleared in
+seconds. In a real morning drivers open the app minutes apart, so this is unlikely to matter, but a deploy just before
+the morning run, or many drivers at once, would show a few seconds' wait. Not a blocker; worth one look if drivers
+report a slow first screen.
 
 ## Finding for S5-H: a sign-in stampede exhausts the database pool
 
@@ -79,7 +151,7 @@ After S5-H, repeat the early scenario (it is `PARENT_VUS=260 DRIVER_VUS=40` with
 
 ## What this test does not cover
 
-- Weekday traffic (above), the afternoon run, and parents and heads of transportation using other screens.
+- The afternoon run, and parents and heads of transportation using other screens.
 - Rate limiting (S5-A): nothing returned 429 because nothing limits yet.
 - More than one backend instance, a real mail provider, real road times, or the live database.
 - A longer run than 10 minutes, or growth over a school year.
@@ -91,3 +163,6 @@ After S5-H, repeat the early scenario (it is `PARENT_VUS=260 DRIVER_VUS=40` with
 - The first version used the wrong field for the child's id and signed everyone in at second zero (the finding above).
 - Running `docker compose run k6` without `--no-deps` once recreated the database container and lost the seed. The
   README and compose file now say `--no-deps`.
+- On Linux (run 2), k6 could not write `results/summary.json` (permission denied): the k6 image runs as user 12345 and
+  `results/` belongs to the user who cloned the repo. The test itself was unaffected; `chmod 777 loadtest/results`
+  before the run fixes it, and the README now says so. Docker Desktop on Windows and Mac does not have this problem.
