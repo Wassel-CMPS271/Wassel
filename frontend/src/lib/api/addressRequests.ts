@@ -70,12 +70,21 @@ function obj(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 const nullableText = (x: unknown) => x === null || typeof x === "string";
+// Plain decimal text only, so "abc", "33.8e" or "0x10" can't pass as a number (or as a blank field).
+const decimalText = /^[+-]?(\d+\.?\d*|\.\d+)$/;
 const moment = (x: unknown) =>
   typeof x === "string" && /^\d{4}-\d{2}-\d{2}T.+Z$/.test(x) && Number.isFinite(Date.parse(x));
 function validPin(lat: unknown, lng: unknown): boolean {
   return (lat === null && lng === null) ||
     (typeof lat === "number" && Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
       typeof lng === "number" && Number.isFinite(lng) && lng >= -180 && lng <= 180);
+}
+/** A 2xx answer whose body is not a valid AddressRequest; after a POST the request was probably saved. */
+export class InvalidAddressRequestResponse extends Error {
+  constructor() {
+    super("Invalid address-request response");
+    this.name = "InvalidAddressRequestResponse";
+  }
 }
 function parseRequest(value: unknown, studentId: string): AddressRequest {
   if (!obj(value) || typeof value.id !== "string" || value.studentId !== studentId ||
@@ -86,7 +95,7 @@ function parseRequest(value: unknown, studentId: string): AddressRequest {
     !["pending", "approved", "rejected"].includes(String(value.status)) ||
     !moment(value.createdAt) || (value.decidedAt !== null && !moment(value.decidedAt)) ||
     !nullableText(value.rejectionReason)) {
-    throw new Error("Invalid address-request response");
+    throw new InvalidAddressRequestResponse();
   }
   return value as unknown as AddressRequest;
 }
@@ -100,9 +109,9 @@ export function addressInputErrors(input: { address: string; latitude: string; l
     errors.latitude = "Enter both coordinates or leave both blank.";
     errors.longitude = "Enter both coordinates or leave both blank.";
   } else if (lat && lng) {
-    if (!Number.isFinite(Number(lat)) || Number(lat) < -90 || Number(lat) > 90)
+    if (!decimalText.test(lat) || Number(lat) < -90 || Number(lat) > 90)
       errors.latitude = "Latitude must be between -90 and 90.";
-    if (!Number.isFinite(Number(lng)) || Number(lng) < -180 || Number(lng) > 180)
+    if (!decimalText.test(lng) || Number(lng) < -180 || Number(lng) > 180)
       errors.longitude = "Longitude must be between -180 and 180.";
   }
   return errors;

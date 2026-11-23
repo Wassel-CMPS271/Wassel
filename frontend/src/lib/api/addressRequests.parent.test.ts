@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import pending from "../../../../docs/contracts/samples/address-requests/address-request-pending.json";
 import { ApiError, ApiValidationError } from "./errors";
 import {
-  addressInputErrors, listParentAddressRequests, submitParentAddressRequest,
+  addressInputErrors, InvalidAddressRequestResponse, listParentAddressRequests, submitParentAddressRequest,
 } from "./addressRequests";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -54,6 +54,18 @@ describe("SCRUM-281 parent address requests contract", () => {
     expect(addressInputErrors({ address: "Valid", latitude: "91", longitude: "35" }).latitude).toBeDefined();
     expect(addressInputErrors({ address: "Valid", latitude: "33", longitude: "-181" }).longitude).toBeDefined();
     expect(addressInputErrors({ address: "Valid", latitude: "0", longitude: "0" })).toEqual({});
+  });
+
+  it("rejects text that only looks numeric", () => {
+    for (const bad of ["abc", "33.8e", "--", "0x10", "1e1", "."])
+      expect(addressInputErrors({ address: "Valid", latitude: bad, longitude: "35" }).latitude).toBeDefined();
+    expect(addressInputErrors({ address: "Valid", latitude: "-33.5", longitude: ".5" })).toEqual({});
+  });
+
+  it("flags a 2xx submit reply that is not a valid request, so the caller can reload", async () => {
+    reply({ ...pending, status: "weird" }, 201);
+    await expect(submitParentAddressRequest(child, { address: "New" }))
+      .rejects.toBeInstanceOf(InvalidAddressRequestResponse);
   });
 
   it("does not turn a failed POST into an optimistic approval", async () => {

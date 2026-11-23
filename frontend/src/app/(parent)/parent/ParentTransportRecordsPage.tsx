@@ -10,7 +10,7 @@ import { ApiError, ApiValidationError } from "@/lib/api/errors";
 import { schoolToday } from "@/lib/api/absences";
 import { getMyChildren, type Child } from "@/lib/api/myChildren";
 import {
-  addressInputErrors, listParentAddressRequests, submitParentAddressRequest,
+  addressInputErrors, InvalidAddressRequestResponse, listParentAddressRequests, submitParentAddressRequest,
   type AddressRequest,
 } from "@/lib/api/addressRequests";
 import {
@@ -99,6 +99,9 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // True after a 409 for a pending request we can't see (another parent's): the form can't succeed until the school decides.
+  const [blocked, setBlocked] = useState(false);
+  const loadSeq = useRef(0);
   const locked = useRef(false);
   const alive = useRef(true);
   const messageRef = useRef<HTMLParagraphElement>(null);
@@ -106,11 +109,15 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
   // The panel remounts per child (key), so items start null; a reload keeps the rows and the form
   // mounted instead of blanking them, which would also drop keyboard focus.
   useEffect(() => {
+    // loadSeq lets a successful send discard a list that was requested before it: that list can't
+    // contain the new request and would otherwise bring the form back.
+    const mine = ++loadSeq.current;
+    const current = () => mine === loadSeq.current;
     let active = true;
     setLoadFailed(false); setRefreshing(true);
-    listParentAddressRequests(studentId).then(rows => { if (active) { setItems(rows); setRefreshing(false); } })
+    listParentAddressRequests(studentId).then(rows => { if (active && current()) { setItems(rows); setRefreshing(false); } })
       .catch(cause => {
-        if (!active) return;
+        if (!active || !current()) return;
         setRefreshing(false);
         if (!onAccessError(cause)) setLoadFailed(true);
       });
@@ -121,7 +128,7 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
   useEffect(() => { if (message) messageRef.current?.focus(); }, [message]);
   function reloadRequests() {
     if (refreshing) return;
-    setError(""); setMessage(""); setFields({});
+    setError(""); setMessage(""); setFields({}); setBlocked(false);
     setReload(value => value + 1);
   }
 
@@ -139,12 +146,20 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
         ...(lat && lng ? { latitude: Number(lat), longitude: Number(lng) } : {}),
       });
       if (!alive.current) return;
+      loadSeq.current++; setRefreshing(false);
       setItems(current => [result, ...(current ?? []).filter(item => item.id !== result.id)]);
       setDraft({ address: "", latitude: "", longitude: "" });
       setMessage("Request sent to the school. The saved pickup address will not change until approved.");
     } catch (cause) {
-      if (!alive.current || onAccessError(cause)) return;
-      if (cause instanceof ApiValidationError) {
+      // A POST 403 is also what a CORS/origin mismatch looks like (frontend/CLAUDE.md), so it is not
+      // proof that access to the child was lost; the reads decide that.
+      if (!alive.current || (!(cause instanceof ApiError && cause.status === 403) && onAccessError(cause))) return;
+      if (cause instanceof InvalidAddressRequestResponse) {
+        // The server answered 2xx, so the request was most likely saved; show it from a fresh list, not a blind retry.
+        setDraft({ address: "", latitude: "", longitude: "" });
+        setMessage("Request sent to the school, but its details couldn't be displayed. Showing the latest requests.");
+        setReload(value => value + 1);
+      } else if (cause instanceof ApiValidationError) {
         // 400 puts messages on the address/pin fields; the inactive-child 409 is { studentId: message },
         // which no input renders, so show that text itself.
         const general = Object.entries(cause.errors)
@@ -154,7 +169,8 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
       } else if (cause instanceof ApiError && cause.status === 409) {
         // The pending request may belong to another parent of this child, so it won't appear in this list.
         setError("The school already has a pending request for this child, so a new one can't be sent yet.");
-      } else setError("Couldn't submit the request. Please retry.");
+        setBlocked(true);
+      } else setError("Something went wrong. Please try again.");
     } finally { locked.current = false; if (alive.current) setBusy(false); }
   }
 
@@ -189,7 +205,9 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
           </Card>
         </li>)}
       </ul>}
-      {pending ? <p role="status">You already have a pending request for this child. You can send a new one after the school decides.</p> :
+      {pending || blocked ? <p role="status">{pending ?
+        "You already have a pending request for this child. You can send a new one after the school decides." :
+        "You can send a new request after the school decides on the one already pending."}</p> :
         <Card>
           <form method="post" noValidate className="flex min-w-0 flex-col" style={sectionGap}
             onSubmit={event => { event.preventDefault(); void submit(); }}>
@@ -201,10 +219,10 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
               Optional pin coordinates for the requested address. Enter both or leave both blank.
             </p>
             <div className="grid min-w-0 grid-cols-1 sm:grid-cols-2" style={sectionGap}>
-              <Input label="Latitude (optional)" type="number" step="any" min={-90} max={90} disabled={busy}
+              <Input label="Latitude (optional)" disabled={busy}
                 style={minTarget} value={draft.latitude} error={fields.latitude}
                 onChange={event => setDraft(previous => ({ ...previous, latitude: event.target.value }))} />
-              <Input label="Longitude (optional)" type="number" step="any" min={-180} max={180} disabled={busy}
+              <Input label="Longitude (optional)" disabled={busy}
                 style={minTarget} value={draft.longitude} error={fields.longitude}
                 onChange={event => setDraft(previous => ({ ...previous, longitude: event.target.value }))} />
             </div>
@@ -214,7 +232,7 @@ function AddressRequestsPanel({ studentId, onAccessError }: { studentId: string;
           </form>
         </Card>}
     </>}
-    {error && <p role="alert" style={{ color: colors.error[500] }}>{error}</p>}
+    {error && <p role="alert" className="text-sm" style={{ color: colors.error[500] }}>{error}</p>}
     {message && <p ref={messageRef} tabIndex={-1} role="status" className="outline-none">{message}</p>}
   </section>;
 }

@@ -101,10 +101,60 @@ describe("SCRUM-281 parent linked-child UI", () => {
     fill("New pickup address", "New address");
     fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/already has a pending request/);
+    expect(screen.getByRole("alert")).toHaveClass("text-sm");
     expect(screen.getByText("No address-change requests yet.")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
+    // The blocking request is another parent's, so the form stops inviting futile retries until a refresh.
+    expect(screen.queryByRole("button", { name: "Submit address request" })).not.toBeInTheDocument();
+    expect(screen.getByText(/after the school decides on the one already pending/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh request status" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Submit address request" }));
     await screen.findByText("Pending school decision");
     expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let a refresh started before a send bring the form back", async () => {
+    await open();
+    let finish: (rows: requests.AddressRequest[]) => void = () => {};
+    list.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh request status" }));
+    fill("New pickup address", "New address");
+    fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
+    await screen.findByText("Pending school decision");
+    await act(async () => finish([])); // the older answer, from before the POST
+    expect(screen.getByText("Pending school decision")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Submit address request" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the form after a POST 403 instead of treating it as lost access", async () => {
+    post.mockRejectedValueOnce(new ApiError(403));
+    await open();
+    fill("New pickup address", "New address");
+    fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong. Please try again.");
+    expect(screen.getByLabelText("New pickup address")).toHaveValue("New address");
+    expect(screen.queryByText("You cannot view these records.")).not.toBeInTheDocument();
+  });
+
+  it.each([["abc", "abc"], ["33.8e", "35"], ["--", ""]])(
+    "rejects non-numeric coordinates %j / %j instead of sending no pin", async (lat, lng) => {
+      await open();
+      fill("New pickup address", "New address");
+      fill("Latitude (optional)", lat);
+      fill("Longitude (optional)", lng);
+      fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
+      expect((await screen.findAllByText(/Latitude must be between|Enter both coordinates/)).length).toBeGreaterThan(0);
+      expect(post).not.toHaveBeenCalled();
+    });
+
+  it("reloads the list when the server accepted the request but the reply was unreadable", async () => {
+    post.mockRejectedValueOnce(new requests.InvalidAddressRequestResponse());
+    await open();
+    list.mockResolvedValueOnce([pending]);
+    fill("New pickup address", "New address");
+    fireEvent.click(screen.getByRole("button", { name: "Submit address request" }));
+    await screen.findByText("Pending school decision");
+    expect(screen.getByText(/Request sent to the school, but its details/)).toBeVisible();
+    expect(screen.queryByText("Something went wrong. Please try again.")).not.toBeInTheDocument();
   });
 
   it("shows the inactive-child 409 message, which has no field of its own", async () => {
