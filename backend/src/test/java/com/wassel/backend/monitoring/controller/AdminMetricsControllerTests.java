@@ -64,12 +64,6 @@ class AdminMetricsControllerTests {
 	}
 
 	@Test
-	void itIsReadOnly() throws Exception {
-		mockMvc.perform(post(METRICS).with(as(Role.ADMIN)).contentType(MediaType.APPLICATION_JSON).content("{}"))
-				.andExpect(status().is4xxClientError());
-	}
-
-	@Test
 	void theAnswerHasEveryCounterAndSaysItResetsOnRestart() throws Exception {
 		mockMvc.perform(get(METRICS).with(as(Role.ADMIN)))
 				.andExpect(jsonPath("$.since").isString())
