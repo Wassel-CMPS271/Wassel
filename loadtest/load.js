@@ -3,18 +3,22 @@
 //
 //   - Before the clock starts, setup() signs the 300 users in (10 at a time) so they are already signed in, as
 //     at a real peak, where sessions last an hour; the sign-in load is the burst below, not a stampede at second zero
-//   - 260 parents poll their child's bus every ~6 s (about 43 requests a second), a few also read the inbox
+//   - 260 parents poll their child's bus every ~6 s (about 43 requests a second), every 5th poll also reads the unread
+//     count and every 20th the inbox and children (about 56 requests a second from parents)
 //   - 40 drivers each send their position every 10 s (4 requests a second)
-//   - 300 users at once, 40-50 requests a second in all, for DURATION (10 minutes)
+//   - 300 users at once, about 60 requests a second in all, for DURATION (10 minutes)
 //   - 100 more parents sign in during one minute, halfway through (the sign-in burst)
 //
-// Pass: p95 under 1 s for everything except sign-in, and zero 5xx answers. Every sign-in is the real two steps
-// (password, then the code the mail stand-in received), so a slow mail provider is part of what is measured.
+// Pass: p95 under 1 s for everything except the password step of sign-in, zero 5xx answers, every check passed and
+// almost no failed requests (any 4xx counts, so a 401/403/404/409 fails the run even when it is fast). Every sign-in
+// is the real two steps (password, then the code the mail stand-in received), so a slow mail provider is part of what
+// is measured: the password step (which waits for the mail) and the code step are tagged apart, and the whole
+// sign-in, as the user waits for it, is the sign_in_duration trend.
 
 import http from "k6/http";
 import exec from "k6/execution";
 import { check, sleep } from "k6";
-import { Counter } from "k6/metrics";
+import { Counter, Trend } from "k6/metrics";
 
 const BASE = __ENV.BASE_URL || "http://backend:8080";
 const STUB = __ENV.MAIL_STUB || "http://mail-stub:9000";
@@ -28,6 +32,7 @@ const BURST_START = __ENV.BURST_START || "5m";
 const serverErrors = new Counter("server_errors");
 const tooManyRequests = new Counter("too_many_requests");
 const signInFailures = new Counter("sign_in_failures");
+const signInDuration = new Trend("sign_in_duration", true); // password + code, without the stand-in lookup
 
 export const options = {
   scenarios: {
@@ -46,9 +51,13 @@ export const options = {
   },
   thresholds: {
     "http_req_duration{phase:steady}": ["p(95)<1000"],
-    "http_req_duration{phase:signin}": ["p(95)<3000"],
+    "http_req_duration{phase:signin-code}": ["p(95)<1000"],
+    "http_req_duration{phase:signin-password}": ["p(95)<3000"],
+    sign_in_duration: ["p(95)<3000"],
     server_errors: ["count==0"],
     sign_in_failures: ["count==0"],
+    checks: ["rate==1"],
+    http_req_failed: ["rate<0.001"],
   },
   setupTimeout: "10m",
   // k6 empties a VU's cookie jar at the start of every iteration by default; a signed-in user keeps its session.
@@ -77,13 +86,14 @@ function app(method, path, body, name, phase) {
 
 // The real two-step sign-in: password, then the six-digit code the mail stand-in received for this address.
 function signIn(email) {
-  const login = app("POST", "/api/auth/login", { email, password: PASSWORD }, "login", "signin");
+  const login = app("POST", "/api/auth/login", { email, password: PASSWORD }, "login", "signin-password");
   let ok = check(login, { "login answered 204": (r) => r.status === 204 });
   if (ok) {
     const stub = http.get(`${STUB}/code?email=${encodeURIComponent(email)}`, { tags: { name: "stub", phase: "stub" } });
     const code = stub.status === 200 ? stub.json("code") : null;
-    const verify = code ? app("POST", "/api/auth/2fa/verify", { code }, "verify", "signin") : null;
+    const verify = code ? app("POST", "/api/auth/2fa/verify", { code }, "verify", "signin-code") : null;
     ok = check(verify, { "verify answered 200": (r) => r !== null && r.status === 200 });
+    if (ok) signInDuration.add(login.timings.duration + verify.timings.duration);
   }
   if (!ok) signInFailures.add(1);
   return ok;
@@ -152,6 +162,7 @@ export function parent(data) {
     signedIn = start(email, data);
     if (signedIn) {
       const children = app("GET", "/api/parent/children", undefined, "children", "steady");
+      check(children, { "children 200": (r) => r.status === 200 });
       child = children.status === 200 ? children.json()[0] : null;
     } else {
       sleep(65); // a new code is allowed once a minute per account
@@ -191,8 +202,12 @@ export function driver(data) {
     const runs = today.status === 200 ? today.json("runs") || [] : [];
     const morning = runs.find((r) => r.direction === "MORNING") || runs[0];
     if (morning) {
-      if (morning.state === "NOT_STARTED") app("POST", `/api/driver/runs/${morning.id}/start`, undefined, "run-start", "steady");
-      app("PUT", `/api/driver/runs/${morning.id}/location-sharing`, { enabled: true }, "location-sharing", "steady");
+      if (morning.state === "NOT_STARTED") {
+        const started = app("POST", `/api/driver/runs/${morning.id}/start`, undefined, "run-start", "steady");
+        check(started, { "run start 200": (r) => r.status === 200 });
+      }
+      const sharing = app("PUT", `/api/driver/runs/${morning.id}/location-sharing`, { enabled: true }, "location-sharing", "steady");
+      check(sharing, { "location sharing 200": (r) => r.status === 200 });
       run = morning;
     } else {
       sleep(10);

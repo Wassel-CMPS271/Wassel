@@ -8,15 +8,24 @@ must never be pointed at the live school: it signs in hundreds of accounts and s
 | | Number | How |
 |---|---|---|
 | School | about 1,000 students, 40 buses, 800 parent accounts | `seed.sql` |
-| Parents | 260 at once, each polling its child's bus every 5.5 to 6.5 s (about 43 requests a second); every 5th poll also reads the unread count, every 20th the inbox and children | `parent()` in `load.js` |
+| Parents | 260 at once, each polling its child's bus every 5.5 to 6.5 s (about 43 requests a second); every 5th poll also reads the unread count, every 20th the inbox and children (about 56 requests a second from parents) | `parent()` in `load.js` |
 | Drivers | 40 at once, each sending its position every 10 s (4 requests a second); on a school day each starts its morning run first | `driver()` |
-| Concurrent users | 300 (260 parents + 40 drivers), 40 to 50 requests a second in all, for 10 minutes | the two scenarios above |
+| Concurrent users | 300 (260 parents + 40 drivers), about 60 requests a second in all, for 10 minutes | the two scenarios above |
 | Sign-in burst | 100 more parents sign in during one minute, starting 5 minutes in | `burst()` |
 
 Every sign-in is the real two steps: the password, then the code the mail stand-in received.
 
-**Pass:** p95 under 1 s for all requests except sign-in, **zero 5xx answers**, and no failed sign-in. Sign-in has its
-own limit, p95 under 3 s, because the stand-in mail provider answers after 800 ms by design. The sign-in burst is
+**Pass** (each is a k6 threshold):
+
+- p95 under 1 s for all requests except the password step of sign-in, including the code step (`phase:signin-code`);
+- the password step (`phase:signin-password`) and the whole sign-in (`sign_in_duration`, password plus code) p95
+  under 3 s, because the stand-in mail provider answers after 800 ms by design;
+- **zero 5xx answers** and no failed sign-in;
+- **every check passed** (`checks` rate 1) and under 0.1% failed requests (`http_req_failed`, any 4xx or 5xx), so a
+  fast 401, 403, 404 or 409, for example on a driver's run start or location sharing, fails the run.
+
+The two sign-in steps are tagged apart because the password step waits for the mail (about 800 ms) and the code step
+takes a few ms: one tag over both would halve the p95. The sign-in burst is
 meant to pass after S5-H (SCRUM-289, sending the email without holding the database): run it before and after.
 
 ## Why it is safe

@@ -2,15 +2,19 @@
 
 How to run it again: [`loadtest/README.md`](../../../loadtest/README.md). Raw output of the runs below:
 `summary-2026-11-22-sunday.json` and `docker-stats-2026-11-22-sunday.txt` (run 1), `summary-2026-11-23-monday.json`
-and `docker-stats-2026-11-23-monday.txt` (run 2) in this folder.
+and `docker-stats-2026-11-23-monday.txt` (run 2), `summary-2026-11-23-monday-run3.json` and
+`docker-stats-2026-11-23-monday-run3.txt` (run 3) in this folder. The summaries have k6's `setup_data` (the session
+tokens of the 300 test accounts) taken out.
 
 ## Result in one line
 
-**Run 2 (Monday 23 November 2026, a school day, 10 minutes, 300 users, 100 sign-ins in one minute): every threshold
-passed**: p95 **9.2 ms** for everything except sign-in, sign-in p95 **877 ms**, **zero 5xx answers**, no failed sign-in.
-This time all 40 drivers started their morning run and sent positions, and parents got live bus positions with an
-estimate, so the real morning peak was tested. Run 1 (Sunday, a holiday for the backend) passed too but could not test
-those paths. One thing to know: the first 15 seconds, when all 300 users start at once, are slow (below).
+**Run 3 (Monday 23 November 2026, a school day, 10 minutes, 300 users, 100 sign-ins in one minute, with the stricter
+pass rules from the review): every threshold passed**: p95 **8.8 ms** for everything except the password step of
+sign-in, password step p95 **876 ms**, code step p95 **3.6 ms**, whole sign-in p95 **879 ms**, **zero 5xx answers**,
+no failed sign-in, **every check passed and no request failed** (0 of 37,240 answered 4xx or 5xx). All 40 drivers
+started their morning run and sent positions, and parents got live bus positions with an estimate, so the real morning
+peak was tested. Runs 1 (Sunday, a holiday for the backend) and 2 (Monday, before the stricter rules) passed too. One
+thing to know: the first 15 seconds, when all 300 users start at once, are slow (below).
 
 ## What was run
 
@@ -20,7 +24,7 @@ those paths. One thing to know: the first 15 seconds, when all 300 users start a
 | School | 1,000 students, 40 buses and drivers, 40 routes, 800 parent accounts (`loadtest/seed.sql`) |
 | Parents | 260 at once, polling their child's bus every 5.5 to 6.5 s, a few also the inbox (about 43 requests a second) |
 | Drivers | 40 at once, one request every 10 s each (about 4 a second) |
-| Concurrent users | 300 for 10 minutes, 40 to 50 requests a second |
+| Concurrent users | 300 for 10 minutes, about 60 requests a second (bus location 43, unread count 8, driver positions 4, the rest inbox and children) |
 | Sign-in burst | 100 more parents sign in during one minute, from minute 5 (two steps: password, then emailed code) |
 | Before the clock | the 300 users are signed in first (10 at a time), as at a real peak where sessions last an hour |
 | Mail | slow stand-in answering after 800 ms, no email sent (`WASSEL_MAIL_BREVO_BASE_URL`) |
@@ -32,7 +36,7 @@ those paths. One thing to know: the first 15 seconds, when all 300 users start a
 | Measure | Result | Limit | |
 |---|---|---|---|
 | p95, all requests except sign-in | **5.0 ms** (avg 8.0 ms, max 1.18 s) | under 1 s | pass |
-| p95, sign-in (password and code) | **887 ms** (avg 441 ms, max 903 ms) | under 3 s (my choice, see below) | pass |
+| p95, sign-in (password and code under one tag) | **887 ms** (avg 441 ms, max 903 ms) | under 3 s (my choice, see below) | pass |
 | 5xx answers | **0** | 0 | pass |
 | Failed sign-ins | **0** of 100 in the burst (and 300 of 300 before it) | 0 | pass |
 | Checks | 33,846 of 33,846 passed | | |
@@ -42,6 +46,10 @@ those paths. One thing to know: the first 15 seconds, when all 300 users start a
 The sign-in limit of 3 s is mine: the ticket asks for p95 under 1 s and zero 5xx errors. Sign-in cannot meet 1 s here
 because the stand-in mail provider takes 800 ms by design, so sign-in is measured on its own and everything else
 against 1 s.
+
+In runs 1 and 2 one tag covered both sign-in steps, the password (about 870 ms, it waits for the mail) and the code (a
+few ms), so its p95 mixed two very different requests (median 438 ms is between the two). Run 3 tags them apart and also
+measures the whole sign-in per user (`sign_in_duration`); see the run 3 table.
 
 ## Results, run 2 (the school day)
 
@@ -53,7 +61,7 @@ wrote k6's raw per-request output, the source of the per-endpoint table below.
 | Measure | Result | Limit | |
 |---|---|---|---|
 | p95, all requests except sign-in | **9.2 ms** (avg 58 ms, max 6.15 s, see below) | under 1 s | pass |
-| p95, sign-in (password and code) | **877 ms** (avg 438 ms, max 885 ms) | under 3 s | pass |
+| p95, sign-in (password and code under one tag) | **877 ms** (avg 438 ms, max 885 ms) | under 3 s | pass |
 | 5xx answers | **0** (every answer was 200 or 204) | 0 | pass |
 | Failed sign-ins | **0** of 100 in the burst (and 300 of 300 before it) | 0 | pass |
 | Checks | 33,489 of 33,489 passed | | |
@@ -92,18 +100,62 @@ this is mostly the test's own start; but see the finding below.
 Use during run 2: backend CPU **16% on average, 98% at most** (at the start; 12% average and 36% at most after the
 first minute), memory 500 MiB at most of 1 GB; PostgreSQL 5% average, 42% at most, 73 MiB.
 
-## Run 1 and run 2 side by side
+## Results, run 3 (the school day, stricter pass rules)
 
-| | Run 1 (Sunday, holiday) | Run 2 (Monday, school day) |
-|---|---|---|
-| Steady p95 | 5.0 ms | 9.2 ms (7.5 ms in the first attempt) |
-| Steady max | 1.18 s | 6.15 s (start of the clock only) |
-| Sign-in p95 | 887 ms | 877 ms |
-| 5xx / failed sign-ins | 0 / 0 | 0 / 0 |
-| Requests | 37,766 | 37,189 |
-| Backend CPU avg / max | 17% / 61% | 16% / 98% |
-| Drivers | only re-read their run list | start the morning run, send a position every 10 s |
-| Parents' bus location | `UNAVAILABLE` at once | `LIVE`, with stops left and an estimate |
+Hashem's review of this PR found that the thresholds of runs 1 and 2 only failed a run on slow requests, 5xx answers
+and failed sign-ins: a fast 401, 403, 404 or 409 (for example on a driver's run start) would still have passed. Run 3
+adds two thresholds, **every check passed** (`checks` rate 1) and **under 0.1% failed requests** (`http_req_failed`,
+any 4xx or 5xx), checks on the run start, location sharing and first children read, and tags the two sign-in steps
+apart. Monday 23 November 2026, clock started 08:05 Asia/Beirut, fresh stack (`down -v`, `up`, seed), otherwise the
+same command as runs 1 and 2. k6 exited 0.
+
+| Measure | Result | Limit | |
+|---|---|---|---|
+| p95, all requests except the password step | **8.8 ms** (avg 52 ms, max 6.43 s, start of the clock only) | under 1 s | pass |
+| p95, sign-in password step (waits for the mail) | **876 ms** (avg 872 ms, max 884 ms) | under 3 s | pass |
+| p95, sign-in code step | **3.6 ms** (avg 2.8 ms, max 4.1 ms) | under 1 s | pass |
+| p95, whole sign-in (password + code) | **879 ms** (avg 875 ms, max 887 ms) | under 3 s | pass |
+| 5xx answers | **0** | 0 | pass |
+| Failed requests (4xx or 5xx) | **0** of 37,240 | under 0.1% | pass |
+| Checks | **33,856 of 33,856** passed, including 40 run starts and 40 location sharing | all | pass |
+| Failed sign-ins | **0** of 100 in the burst (and 300 of 300 before it) | 0 | pass |
+| Requests | 37,240 in all, 55 a second over the whole run with setup; about 60 a second in the 10 minutes | | |
+
+Afterwards, in the database: all 40 morning runs `IN_PROGRESS`, each with a stored position.
+
+Per endpoint (run 3, from the raw output):
+
+| Endpoint | Requests | Median | p95 | p99 | Max |
+|---|---|---|---|---|---|
+| Parent: bus location | 25,833 | 3.1 ms | 6.1 ms | 1.51 s | 4.61 s |
+| Parent: unread count | 5,041 | 0.9 ms | 1.5 ms | 1.9 ms | 14 ms |
+| Parent: children | 1,502 | 2.6 ms | 2.39 s | 3.38 s | 3.99 s |
+| Parent: inbox | 1,141 | 0.8 ms | 1.4 ms | 1.9 ms | 9 ms |
+| Driver: position | 2,400 | 7.8 ms | 15 ms | 201 ms | 594 ms |
+| Driver: today's runs (once each) | 40 | 5.65 s | 6.27 s | | 6.43 s |
+| Driver: start run (once each) | 40 | 1.30 s | 2.20 s | | 2.30 s |
+| Driver: location sharing on (once each) | 40 | 606 ms | 892 ms | | 893 ms |
+| Sign-in burst: password | 101 | 872 ms | 876 ms | 880 ms | 884 ms |
+| Sign-in burst: code | 101 | 2.7 ms | 3.6 ms | 3.9 ms | 4.1 ms |
+
+Same picture as run 2: every request over 1 s (648 of 36,239 in the 10 minutes, sign-in password step aside) was in
+the first 13 seconds of the clock. **After the first 30 seconds: p95 6.6 ms, max 45 ms** over 34,322 requests. Backend
+CPU 12% on average and 99% at most (at the start; 10% average and 25% at most after the first minute), memory 505 MiB
+at most of 1 GB; PostgreSQL 5% average, 13% at most, 71 MiB.
+
+## Runs side by side
+
+| | Run 1 (Sunday, holiday) | Run 2 (Monday, school day) | Run 3 (Monday, stricter rules) |
+|---|---|---|---|
+| Steady p95 | 5.0 ms | 9.2 ms (7.5 ms in the first attempt) | 8.8 ms |
+| Steady max | 1.18 s | 6.15 s (start of the clock only) | 6.43 s (start of the clock only) |
+| Sign-in p95 | 887 ms (both steps, one tag) | 877 ms (both steps, one tag) | 876 ms password, 3.6 ms code, 879 ms whole |
+| 5xx / failed sign-ins | 0 / 0 | 0 / 0 | 0 / 0 |
+| Failed requests (4xx or 5xx) | not a threshold | not a threshold (every answer 200 or 204) | 0, threshold |
+| Requests | 37,766 | 37,189 | 37,240 |
+| Backend CPU avg / max | 17% / 61% | 16% / 98% | 12% / 99% |
+| Drivers | only re-read their run list | start the morning run, send a position every 10 s | same as run 2, run start and sharing checked |
+| Parents' bus location | `UNAVAILABLE` at once | `LIVE`, with stops left and an estimate | same as run 2 |
 
 The school day costs about 4 ms more at p95 and a slower start; the steady part is still far under 1 s.
 
@@ -163,6 +215,9 @@ After S5-H, repeat the early scenario (it is `PARENT_VUS=260 DRIVER_VUS=40` with
 - The first version used the wrong field for the child's id and signed everyone in at second zero (the finding above).
 - Running `docker compose run k6` without `--no-deps` once recreated the database container and lost the seed. The
   README and compose file now say `--no-deps`.
+- After review: the thresholds did not fail a run on fast 4xx answers, the sign-in tag mixed the password and code
+  steps, the backend port was published on every interface (now `127.0.0.1` only), and the summaries kept the test
+  accounts' session tokens (now taken out). All fixed; run 3 is the run with these fixes.
 - On Linux (run 2), k6 could not write `results/summary.json` (permission denied): the k6 image runs as user 12345 and
   `results/` belongs to the user who cloned the repo. The test itself was unaffected; `chmod 777 loadtest/results`
   before the run fixes it, and the README now says so. Docker Desktop on Windows and Mac does not have this problem.
