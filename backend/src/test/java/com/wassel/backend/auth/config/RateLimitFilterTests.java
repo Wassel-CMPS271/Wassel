@@ -45,7 +45,6 @@ class RateLimitFilterTests {
 
 	private static MockHttpServletRequest post(String path, String remote) {
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
-		request.setServletPath(path);
 		request.setRemoteAddr(remote);
 		return request;
 	}
@@ -138,6 +137,17 @@ class RateLimitFilterTests {
 		}
 		// None of that used up the real allowance.
 		assertEquals(200, send(post("/api/auth/login", "203.0.113.9")).getStatus());
+	}
+
+	@Test
+	void aPathParameterOrAContextPathDoesNotSlipPastTheLimit() throws Exception {
+		for (int i = 0; i < 3; i++) {
+			send(post("/api/auth/login", "203.0.113.9"));
+		}
+		assertEquals(429, send(post("/api/auth/login;x=1", "203.0.113.9")).getStatus());
+		MockHttpServletRequest underContext = post("/wassel/api/auth/login", "203.0.113.9");
+		underContext.setContextPath("/wassel");
+		assertEquals(429, send(underContext).getStatus());
 	}
 
 	@Test

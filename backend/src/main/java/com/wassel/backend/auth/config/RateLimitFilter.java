@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.UrlPathHelper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -56,13 +57,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
 	@Override
 	protected boolean shouldNotFilter(HttpServletRequest request) {
 		return !properties.enabled() || !"POST".equals(request.getMethod())
-				|| !ENDPOINTS.containsKey(request.getServletPath());
+				|| !ENDPOINTS.containsKey(pathOf(request));
 	}
 
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
 			FilterChain filterChain) throws ServletException, IOException {
-		Endpoint endpoint = ENDPOINTS.get(request.getServletPath());
+		Endpoint endpoint = ENDPOINTS.get(pathOf(request));
 		String address = addresses.resolve(request);
 		Decision decision = limiter.tryAcquire(endpoint + ":" + address, limitOf(endpoint), properties.window());
 		if (decision.allowed()) {
@@ -72,10 +73,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
 		if (decision.firstRefusal()) {
 			// Once per address and window, with the raw header next to the answer, so what the backend sees behind
 			// a proxy can be read off the log (SCRUM-288, "which client address the backend sees").
-			log.warn("Rate limit reached on {} by {} (connection {}, X-Forwarded-For {})", request.getServletPath(),
+			log.warn("Rate limit reached on {} by {} (connection {}, X-Forwarded-For {})", pathOf(request),
 					address, request.getRemoteAddr(), ClientAddressResolver.forwardedChain(request));
 		}
 		refuse(response, decision.retryAfterSeconds());
+	}
+
+	/** The path as the application sees it: no context path, no {@code ;parameters}, decoded. */
+	private static String pathOf(HttpServletRequest request) {
+		return UrlPathHelper.defaultInstance.getPathWithinApplication(request);
 	}
 
 	private int limitOf(Endpoint endpoint) {
