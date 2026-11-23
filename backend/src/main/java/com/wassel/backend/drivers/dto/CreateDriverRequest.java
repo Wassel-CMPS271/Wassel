@@ -2,6 +2,7 @@ package com.wassel.backend.drivers.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 /**
  * The phone number must match the Lebanese format: {@code +961}, then a 1-2 digit prefix, then
@@ -9,9 +10,11 @@ import jakarta.validation.constraints.Pattern;
  */
 public record CreateDriverRequest(
 		@NotBlank(message = "First name is required")
+		@Size(max = 100, message = "First name is too long")
 		String firstName,
 
 		@NotBlank(message = "Last name is required")
+		@Size(max = 100, message = "Last name is too long")
 		String lastName,
 
 		@NotBlank(message = "Phone number is required")
@@ -20,6 +23,7 @@ public record CreateDriverRequest(
 		String phone,
 
 		@NotBlank(message = "Email is required")
+		@Size(max = 255, message = "Email is too long")
 		@Pattern(regexp = "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$", message = "Enter a valid email address")
 		String email) {
 

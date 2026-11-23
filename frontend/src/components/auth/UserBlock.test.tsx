@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { ApiError } from "@/lib/api/errors";
 import { UserBlock } from "./UserBlock";
 
 const replace = vi.fn();
@@ -93,4 +94,13 @@ it("calls confirmSignOut fresh each click, so a cleared warning signs out at onc
   fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
   await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
+});
+
+it("tells the user how long to wait when the address is over the sign-in limit (SCRUM-288)", async () => {
+  logout.mockRejectedValue(new ApiError(429, "Too many attempts. Try again in 12 seconds.", undefined, 12));
+  render(<UserBlock />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts. Try again in 12 seconds.");
 });

@@ -111,6 +111,21 @@ wassel:
     lockout:
       max-failures: ${LOCKOUT_MAX_FAILURES:5}
       duration: ${LOCKOUT_DURATION:15m}
+    # Per-address limit on the six public sign-in endpoints (SCRUM-288): this many POSTs from one address to one endpoint
+    # in each window, then 429 with Retry-After. In memory, so it resets on a restart and assumes ONE backend instance.
+    # trusted-proxy-hops is how many proxies in front of the backend each append to X-Forwarded-For; 0 ignores the
+    # header (the connection's own address is used). Read the README ("Rate limit") before changing it on a host.
+    rate-limit:
+      enabled: ${RATE_LIMIT_ENABLED:true}
+      window: ${RATE_LIMIT_WINDOW:1m}
+      trusted-proxy-hops: ${RATE_LIMIT_TRUSTED_PROXY_HOPS:0}
+      limits:
+        login: ${RATE_LIMIT_LOGIN:30}
+        two-factor-verify: ${RATE_LIMIT_2FA_VERIFY:60}
+        two-factor-resend: ${RATE_LIMIT_2FA_RESEND:20}
+        logout: ${RATE_LIMIT_LOGOUT:60}
+        forgot-password: ${RATE_LIMIT_FORGOT_PASSWORD:10}
+        set-password: ${RATE_LIMIT_SET_PASSWORD:30}
   # Must be overridden in every deployed environment: the MVP serves one school, and every
   # route response includes its location.
   school:
