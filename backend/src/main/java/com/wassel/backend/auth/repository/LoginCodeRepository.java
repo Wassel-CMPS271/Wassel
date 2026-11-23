@@ -50,4 +50,21 @@ public interface LoginCodeRepository extends JpaRepository<LoginCode, UUID> {
 	@Modifying
 	@Query("update LoginCode c set c.usedAt = :now where c.id = :id and c.usedAt is null")
 	int markUsed(@Param("id") UUID id, @Param("now") Instant now);
+
+	/** The undo of a failed login send: removes the row this request made, and nothing a racing login made. */
+	@Modifying
+	@Query("delete from LoginCode c where c.id = :id and c.codeHash = :codeHash and c.usedAt is null")
+	int deleteUnsent(@Param("id") UUID id, @Param("codeHash") String codeHash);
+
+	/**
+	 * The undo of a failed resend: puts back the code the user last received, with its expiry and send time, and adds
+	 * the guesses made at the new one to the old count. Only while the row still holds the new code and is unused.
+	 */
+	@Modifying
+	@Query("update LoginCode c set c.codeHash = :oldHash, c.expiresAt = :oldExpiresAt, c.sentAt = :oldSentAt, "
+			+ "c.attempts = c.attempts + :oldAttempts "
+			+ "where c.id = :id and c.codeHash = :newHash and c.usedAt is null")
+	int restore(@Param("id") UUID id, @Param("newHash") String newHash, @Param("oldHash") String oldHash,
+			@Param("oldExpiresAt") Instant oldExpiresAt, @Param("oldSentAt") Instant oldSentAt,
+			@Param("oldAttempts") int oldAttempts);
 }
