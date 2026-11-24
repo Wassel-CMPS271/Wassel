@@ -24,6 +24,16 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
 	boolean existsBySchoolIdAndFirstNameIgnoreCaseAndLastNameIgnoreCaseAndGuardianPhone(
 			UUID schoolId, String firstName, String lastName, String guardianPhone);
 
+	/**
+	 * Whether two names are the same student's in the way {@code existsBy...IgnoreCase} above compares them, asked of the
+	 * database itself ({@code upper(...)}), so an import never disagrees with single create about characters such as
+	 * {@code ß} or Turkish {@code İ}.
+	 */
+	@Query(value = "SELECT upper(CAST(:firstA AS text)) = upper(CAST(:firstB AS text)) "
+			+ "AND upper(CAST(:lastA AS text)) = upper(CAST(:lastB AS text))", nativeQuery = true)
+	boolean sameName(@Param("firstA") String firstA, @Param("lastA") String lastA, @Param("firstB") String firstB,
+			@Param("lastB") String lastB);
+
 	long countBySchoolIdAndRouteId(UUID schoolId, UUID routeId);
 
 	long countBySchoolIdAndStatusAndRouteIdIsNotNull(UUID schoolId, StudentStatus status);

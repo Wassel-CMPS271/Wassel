@@ -135,6 +135,7 @@ class RoleAccessMatrixTests {
 
 		TABLE.put("GET /api/head-of-transport/students", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("POST /api/head-of-transport/students", Access.HEAD_OF_TRANSPORT_ONLY);
+		TABLE.put("POST /api/head-of-transport/students/import", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("PATCH /api/head-of-transport/students/{id}/address", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("PATCH /api/head-of-transport/students/{id}/location", Access.HEAD_OF_TRANSPORT_ONLY);
 		TABLE.put("PATCH /api/head-of-transport/students/{id}/parent", Access.HEAD_OF_TRANSPORT_ONLY);
@@ -235,6 +236,9 @@ class RoleAccessMatrixTests {
 		VALID_BODIES.put("PATCH /api/head-of-transport/vehicles/{id}/capacity", "{\"capacity\":10}");
 		VALID_BODIES.put("POST /api/head-of-transport/students", "{\"firstName\":\"Test\",\"lastName\":\"Student\","
 				+ "\"grade\":\"Grade 3\",\"guardianName\":\"Guardian\",\"guardianPhone\":\"+961 3 123 456\"}");
+		VALID_BODIES.put("POST /api/head-of-transport/students/import", "{\"students\":[{\"row\":2,\"firstName\":\"Test\","
+				+ "\"lastName\":\"Student\",\"grade\":\"Grade 3\",\"guardianName\":\"Guardian\","
+				+ "\"guardianPhone\":\"+961 3 123 456\"}]}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/students/{id}/address", "{\"address\":\"Hamra Street, Beirut\"}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/students/{id}/location", "{\"latitude\":33.9,\"longitude\":35.5}");
 		VALID_BODIES.put("PATCH /api/head-of-transport/students/{id}/parent", "{\"parentUserId\":\"" + SOME_ID + "\"}");

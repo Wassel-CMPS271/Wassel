@@ -3,12 +3,17 @@ package com.wassel.backend.students.service;
 import com.wassel.backend.geocoding.service.GeocodeResult;
 import com.wassel.backend.geocoding.service.Geocoder;
 import com.wassel.backend.students.dto.CreateStudentRequest;
+import com.wassel.backend.students.dto.ImportRowResult;
+import com.wassel.backend.students.dto.ImportStudentRow;
+import com.wassel.backend.students.dto.ImportStudentsRequest;
+import com.wassel.backend.students.dto.ImportStudentsResponse;
 import com.wassel.backend.students.dto.LinkParentRequest;
 import com.wassel.backend.students.dto.StudentResponse;
 import com.wassel.backend.students.dto.UpdateStudentAddressRequest;
 import com.wassel.backend.students.dto.UpdateStudentLocationRequest;
 import com.wassel.backend.students.entity.Student;
 import com.wassel.backend.students.entity.StudentStatus;
+import com.wassel.backend.students.exception.InvalidImportException;
 import com.wassel.backend.students.exception.InvalidStopOrderException;
 import com.wassel.backend.students.exception.StudentAlreadyExistsException;
 import com.wassel.backend.students.exception.StudentNotActiveException;
@@ -17,13 +22,17 @@ import com.wassel.backend.students.exception.StudentStatusConflictException;
 import com.wassel.backend.students.repository.StudentRepository;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.service.UserService;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -67,6 +76,8 @@ public class StudentService {
 	private final UserService userService;
 
 	private final Geocoder geocoder;
+
+	private final Validator validator;
 
 	/**
 	 * The school's students, oldest first, optionally narrowed by a free-text query (matched
@@ -112,6 +123,115 @@ public class StudentService {
 			student.longitude(result.map(GeocodeResult::longitude).orElse(null));
 		}
 		return toResponse(studentRepository.saveAndFlush(student.build()));
+	}
+
+	/** The most rows one import may carry, counted as sent. */
+	public static final int MAX_IMPORT_ROWS = 500;
+
+	private static final String IMPORT_SIZE_MESSAGE = "Import between 1 and " + MAX_IMPORT_ROWS + " students at a time.";
+
+	private static final String IMPORT_ROW_NUMBER_MESSAGE = "Every row needs a row number of 1 or more.";
+
+	/**
+	 * Adds many students at once and answers for every row (SCRUM-300, docs/contracts/students-import.md). A request that is
+	 * malformed as a whole (no rows, over 500, a missing or repeated row number) throws {@link InvalidImportException} and
+	 * creates nobody. Otherwise each row stands alone: it is checked as single create checks its body (one message per
+	 * field), then against the roster and against the earlier valid rows of the request, and only then is it created or
+	 * rejected. The created rows are saved together in one transaction, in request order, so an unexpected failure saves
+	 * nobody. No address is read, so nothing is geocoded.
+	 *
+	 * <p>The roster is asked with the same derived query as single create. A repeat inside the request is a repeat when
+	 * the guardian phone is equal and {@link StudentRepository#sameName} says the names are, so both use the database's
+	 * own letter-case comparison. Known limit (as for single create): the check is read-then-write, and no unique index
+	 * backs it.
+	 */
+	@Transactional
+	public ImportStudentsResponse importStudents(UUID schoolId, ImportStudentsRequest request) {
+		List<ImportStudentRow> rows = request == null ? null : request.students();
+		if (rows == null || rows.isEmpty() || rows.size() > MAX_IMPORT_ROWS) {
+			throw new InvalidImportException(IMPORT_SIZE_MESSAGE);
+		}
+		Set<Integer> seen = new HashSet<>();
+		Integer repeated = null;
+		for (ImportStudentRow row : rows) {
+			if (row == null || row.row() == null || row.row() < 1) {
+				throw new InvalidImportException(IMPORT_ROW_NUMBER_MESSAGE);
+			}
+			if (!seen.add(row.row()) && repeated == null) {
+				repeated = row.row();
+			}
+		}
+		if (repeated != null) {
+			throw new InvalidImportException("Row " + repeated + " appears more than once.");
+		}
+
+		// Valid rows seen so far, by guardian phone: what a later row is compared with.
+		Map<String, List<ImportStudentRow>> earlierByPhone = new HashMap<>();
+		List<ImportRowResult> results = new ArrayList<>();
+		// For each created row, its place in results and the entity that will carry its id once saved.
+		List<Integer> createdAt = new ArrayList<>();
+		List<Student> toCreate = new ArrayList<>();
+		for (ImportStudentRow row : rows) {
+			CreateStudentRequest clean = new CreateStudentRequest(row.firstName(), row.lastName(), row.grade(),
+					row.guardianName(), row.guardianPhone(), null);
+			Map<String, String> errors = fieldErrors(clean);
+			if (errors.isEmpty()) {
+				errors = duplicateErrors(schoolId, clean, earlierByPhone);
+				earlierByPhone.computeIfAbsent(clean.guardianPhone(), phone -> new ArrayList<>())
+						.add(new ImportStudentRow(row.row(), clean.firstName(), clean.lastName(), clean.grade(),
+								clean.guardianName(), clean.guardianPhone()));
+			}
+			if (!errors.isEmpty()) {
+				results.add(ImportRowResult.rejected(row.row(), errors));
+				continue;
+			}
+			toCreate.add(Student.builder().schoolId(schoolId).firstName(clean.firstName()).lastName(clean.lastName())
+					.grade(clean.grade()).guardianName(clean.guardianName()).guardianPhone(clean.guardianPhone())
+					.status(StudentStatus.ACTIVE).build());
+			createdAt.add(results.size());
+			results.add(null);
+		}
+
+		List<Student> saved = studentRepository.saveAllAndFlush(toCreate);
+		for (int i = 0; i < saved.size(); i++) {
+			int place = createdAt.get(i);
+			results.set(place, ImportRowResult.created(rows.get(place).row(), toResponse(saved.get(i))));
+		}
+		return new ImportStudentsResponse(saved.size(), rows.size() - saved.size(), results);
+	}
+
+	/** One message per field, and "is required" wins over any other message for the same field. */
+	private Map<String, String> fieldErrors(CreateStudentRequest request) {
+		Map<String, String> errors = new LinkedHashMap<>();
+		for (ConstraintViolation<CreateStudentRequest> violation : validator.validate(request)) {
+			String field = violation.getPropertyPath().toString();
+			String message = violation.getMessage();
+			String current = errors.get(field);
+			if (current == null || (message.endsWith(" is required") && !current.endsWith(" is required"))) {
+				errors.put(field, message);
+			}
+		}
+		return errors;
+	}
+
+	private Map<String, String> duplicateErrors(UUID schoolId, CreateStudentRequest request,
+			Map<String, List<ImportStudentRow>> earlierByPhone) {
+		// A repeat of an earlier row is named as such even when that row was itself already in the roster.
+		for (ImportStudentRow earlier : earlierByPhone.getOrDefault(request.guardianPhone(), List.of())) {
+			boolean sameName = (earlier.firstName().equals(request.firstName())
+					&& earlier.lastName().equals(request.lastName()))
+					|| studentRepository.sameName(earlier.firstName(), earlier.lastName(), request.firstName(),
+							request.lastName());
+			if (sameName) {
+				return Map.of("guardianPhone", "Same student and guardian phone as row " + earlier.row() + ".");
+			}
+		}
+		if (studentRepository.existsBySchoolIdAndFirstNameIgnoreCaseAndLastNameIgnoreCaseAndGuardianPhone(schoolId,
+				request.firstName(), request.lastName(), request.guardianPhone())) {
+			return Map.of("guardianPhone", DUPLICATE_MESSAGE_FORMAT.formatted(request.firstName(),
+					request.lastName(), request.guardianPhone()));
+		}
+		return Map.of();
 	}
 
 	/**
