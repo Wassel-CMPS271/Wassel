@@ -6,7 +6,7 @@ import { addressRequestsApi } from "@/lib/api/addressRequests";
 import { getParents, type Parent } from "@/lib/api/parents";
 import type { BestRoutePlacement } from "@/lib/api/roster";
 import { getRouteAssignments, type Route, type RouteAssignment, type RouteAssignments } from "@/lib/api/routes";
-import { addStudentWithAddress, getStudents, importStudents, matchesFilters, setStudentLocation, updateStudentAddress, STUDENT_STATUS_LABELS, type ImportRowResult, type NewStudent, type NewStudentWithAddress, type Student } from "@/lib/api/students";
+import { addStudentWithAddress, getStudents, importStudents, matchesFilters, setStudentLocation, updateStudentAddress, STUDENT_STATUS_LABELS, type ImportRow, type NewStudentWithAddress, type StudentImport, type Student } from "@/lib/api/students";
 import { AddStudentForm } from "./AddStudentForm";
 import { AddressRequestsSection } from "./AddressRequestsSection";
 import { ImportStudentsForm } from "./ImportStudentsForm";
@@ -255,16 +255,14 @@ export default function StudentsPage() {
     pushToast(`Placed on ${route.name} as stop ${placement.position}, pickup ${placement.arrivalTime}.`);
   }
 
-  async function handleImport(rows: NewStudent[]): Promise<ImportRowResult[]> {
-    const results = await importStudents(rows);
-    const added = results
-      .filter((result): result is Extract<ImportRowResult, { status: "success" }> => result.status === "success")
-      .map((result) => result.student);
+  async function handleImport(rows: ImportRow[]): Promise<StudentImport> {
+    const outcome = await importStudents(rows);
+    const added = outcome.result.results.flatMap((result) => result.status === "created" ? [result.student] : []);
     if (added.length > 0) {
       setStudents((prev) => [...prev, ...added]);
       pushToast(`${added.length} student${added.length === 1 ? "" : "s"} imported.`);
     }
-    return results;
+    return outcome;
   }
 
   return (

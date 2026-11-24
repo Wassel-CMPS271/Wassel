@@ -23,6 +23,11 @@ describe("SCRUM-251 authoritative per-child run status", () => {
     render(<ChildTransportCard child={{ ...child, todayRun: run("IN_PROGRESS", Number(count)) }} />);
     expect(screen.getByText(String(label))).toBeVisible();
   });
+  it("links each child to its records page by encoded id, with or without a route", () => {
+    render(<ChildTransportCard child={{ ...child, studentId: "a b/1", route: null, todayRun: null }} />);
+    expect(screen.getByRole("link", { name: /address changes & attendance history for/i }))
+      .toHaveAttribute("href", "/parent/children/a%20b%2F1/records");
+  });
   it("shows afternoon independently of the planned morning pickup", () => {
     render(<ChildTransportCard child={{ ...child, todayRun: run("IN_PROGRESS", 2, "AFTERNOON") }} />);
     expect(screen.getByText("Afternoon run")).toBeVisible();

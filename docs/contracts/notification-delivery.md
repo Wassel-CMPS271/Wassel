@@ -65,7 +65,7 @@ A delivery is `SKIPPED`, with no email, when:
 
 ### The daily cap
 
-At most `dailyCap` send attempts (`NOTIFICATION_EMAIL_DAILY_CAP`, 150 by default) are made from midnight in `Asia/Beirut`, counted from the stored deliveries across the whole deployment. Every attempt counts, a retry and a failed attempt included, because each one asks the provider; skipped deliveries do not. The same mail account sends sign-in codes, so the cap keeps them from running out. A delivery that comes due after the cap is `SKIPPED` with reason `DAILY_CAP`. The check and the claim of an attempt are one step even across instances, so two instances cannot both take the last attempt.
+At most `dailyCap` send attempts (`NOTIFICATION_EMAIL_DAILY_CAP`, 150 by default) are made from midnight in `Asia/Beirut`, counted from the stored deliveries across the whole deployment. Every attempt counts, a retry and a failed attempt included, because each one asks the provider; skipped deliveries do not. Sign-in, resend, invite and reset email has its own cap ([`auth-email.md`](auth-email.md)); the two caps together (150 + 120 by default) must stay under the provider's daily limit. A delivery that comes due after the cap is `SKIPPED` with reason `DAILY_CAP`. The check and the claim of an attempt are one step even across instances, so two instances cannot both take the last attempt.
 
 ### What the email says
 

@@ -1,0 +1,6 @@
+{
+  "title": "Service Unavailable",
+  "status": 503,
+  "detail": "No more sign-in emails can be sent today. Please try again later.",
+  "instance": "/api/auth/2fa/resend"
+}

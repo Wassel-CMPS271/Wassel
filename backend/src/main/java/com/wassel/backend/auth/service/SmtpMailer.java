@@ -9,8 +9,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Sends plain-text email through the SMTP server in {@code spring.mail.*}. A failed send is an
- * unchecked exception, so it rolls back the caller's transaction and the request fails; the user
- * retries. It runs in every profile except local and test, which print the email instead
+ * unchecked exception that the caller handles: sign-in, resend and forgot-password undo what they wrote
+ * (SCRUM-289, docs/contracts/auth-email.md), and an admin invite rolls the account back. It runs in every profile except local and test, which print the email instead
  * ({@link LoggingMailer}), so a deployed environment never writes a code or link to its log. It is
  * the default provider; {@code wassel.mail.provider=brevo} swaps it for {@link BrevoMailer}, for
  * hosts that block outbound SMTP.

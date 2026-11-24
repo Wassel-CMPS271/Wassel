@@ -7,6 +7,7 @@ import { CtaButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { focusRingClass, focusRingStyle } from "@/components/ui/focusRing";
 import { forgotPassword } from "@/lib/api/auth";
+import { rateLimitMessage } from "@/lib/api/errors";
 import { colors, darkTheme, radius, sizing, spacing } from "@/styles/tokens";
 
 export function ForgotPasswordForm() {
@@ -39,9 +40,10 @@ export function ForgotPasswordForm() {
     try {
       await forgotPassword(address);
       setSent(true);
-    } catch {
-      // Never display backend details that might disclose account status.
-      setFormError("Something went wrong. Please try again.");
+    } catch (error) {
+      // Never display backend details that might disclose account status. The per-address
+      // limit says nothing about any account, so its wait time is safe to show.
+      setFormError(rateLimitMessage(error) ?? "Something went wrong. Please try again.");
     } finally {
       pending.current = false;
       setIsSubmitting(false);
