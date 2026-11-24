@@ -56,6 +56,7 @@ test("reassignment journey: Head UI, old driver 404 on every write, new driver c
       await card(karim, names[1]).getByRole("button", { name: "Dropped off", exact: true }).click();
       await expect(card(karim, names[1]).getByText("Saved on phone", { exact: false })).toBeVisible();
       const saved = await savedTaps(karim); // the queue's storage has no fixed order
+      expect(saved.length).toBe(2); // a number, so a failed run's summary can say how many taps the phone held
       expect(saved.map(t => `${t.studentId}:${t.status}`).sort()).toEqual([`${jad.studentId}:DROPPED_OFF`, `${jad.studentId}:PICKED_UP`].sort());
       // K1 has never been sent: it is a second key for a status Lea already has (runs.md, offline replay rule 5). Karim still
       // owns the run, so it is a 200 that keeps her first confirmation time and records nothing more.

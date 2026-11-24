@@ -37,7 +37,7 @@ test("offline replay: taps survive a reload, send once, and a repeated key or a 
       const items = await savedTaps(karim);
       keys = items.map(i => i.key);
       leaPickedUpKey = found(items.find(i => i.status === "PICKED_UP"), "Lea's picked-up tap is saved").key;
-      expect(items).toHaveLength(3);
+      expect(items.length).toBe(3); // a number, so a failed run's summary can say how many taps the phone held
       expect(new Set(keys).size).toBe(3);
       expect(await added()).toEqual([]);
     });

@@ -93,14 +93,27 @@ export async function driverPage(browser: Browser): Promise<Page> {
   return context.newPage();
 }
 export const card = (page: Page, name: string) => page.getByRole("group", { name: `Confirm ${name}` });
-/** The taps the phone has saved and not yet synced, from the offline queue's own localStorage keys. */
+/**
+ * The taps the phone has saved and not yet synced, read the way the app's own queue reads them (offline/queue.ts `load`): the
+ * queue key, plus every `<queue key>.pending.<itemId>` key. A tap is written to its own pending key first and only merged into
+ * the queue key by the next write under the lock, a few milliseconds later, so reading the queue key alone can miss the tap
+ * the page has just shown as "Saved on phone" (this failed on a CI runner and passed on a faster machine).
+ */
 export function savedTaps(page: Page) {
-  return page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("wassel.driver.queue.v1.")).flatMap(([, value]) => {
-    try {
-      const queue = JSON.parse(value);
-      return (Array.isArray(queue) ? queue : queue.items ?? []).map((i: { clientRequestId: string; state: string; status: string; studentId: string }) => ({ key: i.clientRequestId, state: i.state, status: i.status, studentId: i.studentId }));
-    } catch { return []; }
-  })).then(taps => taps.filter(t => t.state !== "synced"));
+  return page.evaluate(() => {
+    type Item = { id: string; clientRequestId: string; state: string; status: string; studentId: string };
+    const prefix = "wassel.driver.queue.v1.";
+    const byId = new Map<string, Item>();
+    for (const [key, value] of Object.entries(localStorage)) {
+      if (!key.startsWith(prefix)) continue;
+      try {
+        const stored = JSON.parse(value);
+        const items: Item[] = Array.isArray(stored) ? stored : stored.items ?? (stored.item ? [stored.item] : []);
+        for (const item of items) byId.set(item.id, item);
+      } catch { /* A key that is not JSON holds no tap. */ }
+    }
+    return [...byId.values()].map(i => ({ key: i.clientRequestId, state: i.state, status: i.status, studentId: i.studentId }));
+  }).then(taps => taps.filter(t => t.state !== "synced"));
 }
 /** The parent's inbox entries made after this call, as sorted "studentId:TYPE" (earlier tests emailed this parent too, so ids are compared). */
 export async function watchInbox(parent: Who) {
