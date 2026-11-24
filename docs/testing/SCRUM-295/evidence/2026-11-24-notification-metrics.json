@@ -1,0 +1,44 @@
+{
+  "runId": 45320203899,
+  "jobId": 138196635309,
+  "testCommit": "1ec20d92b4ac74f7d67206e7ad837c8d120ca8e3",
+  "artifactId": 14885774672,
+  "zipSha256": "571f7d810f6a6de2be129c5ddd9cbe49bc2918f63b707c38dc91566284ab4a2f",
+  "mailProvider": "existing test stand-in; no external mail sent",
+  "scope": "Real production confirmation/outbox/delivery services with PostgreSQL/Flyway; metrics delta assertions are independently authored.",
+  "result": {
+    "candidateSha": "e8bca50722324279df6be686843949b06a212500",
+    "suites": [
+      {
+        "name": "independent.scrum295.IndependentNotificationMetricsCriteriaTests",
+        "cases": [
+          {
+            "name": "exhaustedRetriesCountOneFailureOnlyWhenTheDeliveryFinallyEnds",
+            "status": "passed"
+          },
+          {
+            "name": "expiredPendingDeliveryCountsOneFinalFailureRatherThanAnotherSend",
+            "status": "passed"
+          },
+          {
+            "name": "mutedDeliveryIsSkippedWithoutIncrementingSentOrFailed",
+            "status": "passed"
+          },
+          {
+            "name": "interruptedInFlightDeliveryCountsOneFinalFailureWithoutCallingMail",
+            "status": "passed"
+          },
+          {
+            "name": "aRetryThenSuccessCountsOneSentAndNoFinalFailure",
+            "status": "passed"
+          }
+        ],
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "passed": 5
+      }
+    ]
+  }
+}

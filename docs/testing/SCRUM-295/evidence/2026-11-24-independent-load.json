@@ -1,0 +1,217 @@
+{
+  "runId": 45319942145,
+  "jobId": 138195791968,
+  "runUrl": "https://github.com/Wassel-CMPS271/Wassel/actions/runs/45319942145",
+  "testCommit": "44d304fe135f2a01a099ad33b10b833bc367b32b",
+  "artifactId": 14887268395,
+  "zipSha256": "e016b211f75e00877f90e5d631a206e7733083946de401e8045d538b8ba728ac",
+  "audit": {
+    "requests": 37721,
+    "checks": [
+      {
+        "name": "p95 under 1000 ms",
+        "actual": 6.853132,
+        "pass": true
+      },
+      {
+        "name": "zero HTTP 5xx",
+        "actual": 0,
+        "pass": true
+      },
+      {
+        "name": "40-50 requests/sec achieved",
+        "actual": 60.24748302080395,
+        "pass": false
+      },
+      {
+        "name": "300 peak active VUs",
+        "actual": 302,
+        "pass": true
+      },
+      {
+        "name": "10 minutes measured",
+        "actual": 606.183,
+        "pass": true
+      }
+    ],
+    "complete": true,
+    "missing": [],
+    "pass": false,
+    "observations": {
+      "aggregateRequestsPerSecond": 56.26552151899596,
+      "backendSteadyRequestsPerSecond": 60.24748302080395,
+      "parentActors": 260,
+      "driverActors": 40,
+      "completedBurst": 100,
+      "steadyP95Millis": 4.923643,
+      "passwordP95Millis": 859.443585,
+      "codeP95Millis": 2.70385235,
+      "signInP95Millis": 861.8539776499999,
+      "failedSignIns": 0,
+      "failedRequestRate": 0,
+      "failedChecks": 0
+    },
+    "scope": "Aggregate HTTP metrics may include setup and mail-stub calls. Peak VUs do not alone prove 300 sustained users. Duration is never inferred from count/rate or intended configuration."
+  },
+  "measured": {
+    "steadyBackendRequests": 36521,
+    "steadyElapsedMs": 606183,
+    "parentActors": 260,
+    "driverActors": 40,
+    "completedBurst": 100
+  },
+  "environment": {
+    "sourceSha": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b",
+    "host": {
+      "platform": "linux",
+      "release": "7.0.0-1020-azure",
+      "cpus": 4,
+      "memoryBytes": 16759431168
+    },
+    "services": {
+      "backend": {
+        "nanoCpus": 1000000000,
+        "memoryBytes": 1073741824
+      },
+      "postgres": {
+        "nanoCpus": 1000000000,
+        "memoryBytes": 1073741824
+      },
+      "mail-stub": {
+        "nanoCpus": 250000000,
+        "memoryBytes": 134217728
+      }
+    },
+    "internalOnlyNetwork": true,
+    "mailStandIn": true,
+    "roadApiKeyAbsent": true,
+    "dataset": {
+      "students": 1000,
+      "buses": 40,
+      "parents": 800,
+      "drivers": 40,
+      "routes": 40
+    },
+    "datasetWasCheckedInSQL": true,
+    "loadScriptSha256": "79dd5d4667f2499f287906fe6cf4fc8a88c9f3e94c8f9e52711d3d608e8a709f",
+    "seedSha256": "5a5c4d9b18d2f9d139b1207cb598af772d2441d5c6907a79f67dd09957f57214"
+  },
+  "checks": [
+    {
+      "name": "children 200",
+      "passes": 260,
+      "fails": 0
+    },
+    {
+      "name": "bus location 200",
+      "passes": 25988,
+      "fails": 0
+    },
+    {
+      "name": "driver today 200",
+      "passes": 40,
+      "fails": 0
+    },
+    {
+      "name": "run start 200",
+      "passes": 40,
+      "fails": 0
+    },
+    {
+      "name": "location sharing 200",
+      "passes": 40,
+      "fails": 0
+    },
+    {
+      "name": "location 204",
+      "passes": 2400,
+      "fails": 0
+    },
+    {
+      "name": "unread count 200",
+      "passes": 5151,
+      "fails": 0
+    },
+    {
+      "name": "login answered 204",
+      "passes": 100,
+      "fails": 0
+    },
+    {
+      "name": "verify answered 200",
+      "passes": 100,
+      "fails": 0
+    }
+  ],
+  "nativeThresholds": {
+    "http_req_failed": {
+      "rate<0.001": {
+        "ok": true
+      }
+    },
+    "scrum295_driver_actors": {
+      "count==40": {
+        "ok": true
+      }
+    },
+    "scrum295_burst_completed": {
+      "count>=100": {
+        "ok": true
+      }
+    },
+    "http_req_duration{phase:steady}": {
+      "p(95)<1000": {
+        "ok": true
+      }
+    },
+    "server_errors": {
+      "count==0": {
+        "ok": true
+      }
+    },
+    "scrum295_steady_elapsed_ms": {
+      "max>=600000": {
+        "ok": true
+      }
+    },
+    "checks": {
+      "rate==1": {
+        "ok": true
+      }
+    },
+    "http_req_duration{phase:signin-code}": {
+      "p(95)<1000": {
+        "ok": true
+      }
+    },
+    "http_reqs{phase:steady}": {
+      "count>=0": {
+        "ok": true
+      }
+    },
+    "scrum295_parent_actors": {
+      "count==260": {
+        "ok": true
+      }
+    },
+    "sign_in_failures": {
+      "count==0": {
+        "ok": true
+      }
+    },
+    "http_req_duration{phase:signin-password}": {
+      "p(95)<3000": {
+        "ok": true
+      }
+    },
+    "sign_in_duration": {
+      "p(95)<3000": {
+        "ok": true
+      }
+    }
+  },
+  "nativeK6StepPassed": true,
+  "independentAuditExit": 1,
+  "cleanupVerifiedInJob": true,
+  "scope": "Independent rerun of accepted develop source before SCRUM-289 or SCRUM-288 acceptance; no external email/road provider traffic."
+}

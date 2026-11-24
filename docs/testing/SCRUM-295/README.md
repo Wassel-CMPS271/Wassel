@@ -11,13 +11,13 @@ Acceptance is **incomplete**. Checker self-tests are not feature acceptance.
 | Gate | Actual evidence | Result / remaining work |
 | --- | --- | --- |
 | X2-01: admin-only metrics | PR #187 author CI ran four controller tests; independent PostgreSQL/security tests prepared against its exact head | Independent real PostgreSQL/security assertions passed; injected principals are not browser/2FA proof |
-| X2-02: metric values, units, resets | Local Java: **7 passed, 1 failed**; hosted Java: **11 passed, 1 failed**, 0 errors/skips; canonical checker controls pass | Real prefix-exclusion defect below; delivery integration and deployed-restart observation still required |
+| X2-02: metric values, units, resets | Local Java: **7 passed, 1 failed**; hosted Java: **11 passed, 1 failed**, 0 errors/skips; canonical checker controls pass | Confirmed prefix-exclusion defect remains; all five delivery integration criteria pass; new-instance reset and restart disclosure verified |
 | X2-03: minimal health / private actuator | Candidate contract and existing tests reviewed; independent real-application assertions prepared | Independent real-application health/privacy assertions passed (PostgreSQL 16.16, Flyway v17) |
 | X2-04: external uptime / outage alerts | SCRUM-291 Jira and comments reviewed; README describes health checks but supplies no verified external monitor dashboard | BLOCKED: provider links/settings, both monitored targets, alert receipt and genuine disposable outage/recovery evidence |
 | X2-05: coverage readings | Actual PR #187 CI artifacts: backend **3408/3521 = 96.7907%**, frontend **4253/4735 = 89.8205%** | Both above configured floors; genuine develop daily readings independently extracted below; owner document still lacks rows; rounding discrepancy below |
 | X2-06: native coverage rejection | Disposable workflows add uncovered code and run all tests with unchanged native floors | Both native gates rejected actual below-floor regressions after zero unexpected functional failures; details below |
-| X2-07: school load replay | Three genuine author summaries audited; Monday run 3 global p95 **9.8956 ms**, steady p95 **8.8133 ms**, zero recorded 5xx/failed checks | Not accepted: duration and backend-only steady throughput missing in old summaries; workload differs from ticket; post-SCRUM-289 replay outstanding |
-| X2-08: isolated resource-capped stack | Authored compose/seed/stubs and Docker-stat reports inspected | New independently captured caps/dataset and replay pending; production comparison remains a documented limitation |
+| X2-07: school load replay | Three author summaries audited, then independently replayed: **37,721 requests**, p95 **6.8531 ms**, zero 5xx/failed checks, **606.183 s**, 260 parent + 40 driver actors, 100 successful burst sign-ins | Latency/errors pass at **60.2475 steady backend RPS**; strict 40–50 ticket band fails; post-SCRUM-289 replay outstanding |
+| X2-08: isolated resource-capped stack | Real SQL dataset and Docker CPU/RAM/network settings checked; fake-mail/no-road-key configuration and hashes captured | Independent disposable-stack constraints passed and cleanup succeeded; measurements apply to the recorded host, not an unknown production plan |
 
 Frozen sources inspected:
 
@@ -40,7 +40,7 @@ contains test identities/counts only, with no captured HTTP bodies or credential
   **8 run, 7 passed, 1 failed, 0 errors, 0 skipped**. Both Java fixture classes
   compiled. The local command selected only `IndependentRequestMetricsCriteriaTests`;
   the four Spring/PostgreSQL tests were then executed in hosted CI and **all four passed**. PostgreSQL 16.16 started, and Flyway applied 17 migrations to v17.
-- Both SCRUM-295 workflow YAML files parsed successfully. JavaScript syntax and
+- All three SCRUM-295 workflow YAML files parsed successfully. JavaScript syntax and
   `git diff --check` are checked before publication.
 - PR #187's real [backend CI](https://github.com/Wassel-CMPS271/Wassel/actions/runs/45238110173/job/137915153513)
   ran `AdminMetricsControllerTests` **4/4**, `RequestMetricsFilterTests` **4/4**
@@ -53,7 +53,7 @@ contains test identities/counts only, with no captured HTTP bodies or credential
 Local Docker Desktop's engine did not answer two bounded unsandboxed server
 queries (25 s and 15 s). No local load stack was started or stopped. Hosted
 Ubuntu runners are used for the disposable PostgreSQL, coverage controls and
-load replay; the real completed results are recorded below. The initial load attempt failed before startup on Maven Central HTTP 429; the load-only retry built the stack but its host-loopback health probe could not connect. The harness now probes health inside the internal Docker network used by k6 and provides pre-seed startup diagnostics; another actual run is required.
+load replay; the real completed results are recorded below. The initial load attempt failed before startup on Maven Central HTTP 429; the load-only retry built the stack but its host-loopback health probe could not connect. The corrected internal-network health probe then succeeded, and the full measured replay completed; see below. The Docker image and business load script were not patched.
 
 ## Hosted execution results
 
@@ -70,7 +70,7 @@ load replay; the real completed results are recorded below. The initial load att
   test retained; coverage **75.3882%** below unchanged **86.6%** floor.
   Vitest returned 1 specifically for the native coverage threshold.
 - **Load:** initial attempt could not build because Maven Central returned 429;
-  no load execution is claimed from that attempt. The first retry built the stack but host-loopback health remained unreachable; it never seeded or ran k6. Our harness now checks the same health endpoint inside the isolated network, preserving egress isolation and the UP requirement. A new execution is pending.
+  no load execution is claimed from that attempt. The first retry built the stack but host-loopback health remained unreachable; it never seeded or ran k6. Our harness now checks the same health endpoint inside the isolated network, preserving egress isolation and the UP requirement. The corrected replay subsequently completed as recorded below.
 
 The [sanitized hosted evidence](evidence/2026-11-24-hosted-probes.json) records
 artifact IDs, hashes and exact native exits/counts. A successful negative-control
@@ -85,6 +85,53 @@ skips**; frontend **1798 passed, 1 existing expected failure, 5 existing skips**
 parent/driver UI **1/1** passed; routing success and both deliberate probe jobs
 also passed. No existing expected-failure or skipped test was changed by this PR.
 Those normal CI results do not override the independent candidate defect.
+
+Across the two independent PR #187 jobs, **17 distinct criteria ran: 16 passed,
+1 failed, 0 errors/skips**. The five notification criteria use real confirmations,
+PostgreSQL outbox/delivery state and the production sender with only the mail
+provider replaced by the existing recording stand-in. The prefix defect remains
+a genuine failing criterion.
+
+## Completed independent load replay — 24 November
+
+[Run 45319942145 / job 138195791968](https://github.com/Wassel-CMPS271/Wassel/actions/runs/45319942145/job/138195791968),
+source develop `7a938f500228f6aff0c86c1a79ed029ed0e4f65b`, test commit
+`44d304fe135f2a01a099ad33b10b833bc367b32b`:
+
+| Measurement | Actual result |
+| --- | --- |
+| Requests (all phases, including setup/stub) | 37,721 |
+| Backend steady-phase requests / measured elapsed | 36,521 / 606.183 seconds |
+| Backend steady-phase throughput | **60.2475 requests/s** |
+| Global p95 / steady p95 | **6.8531 ms / 4.9236 ms** |
+| Password / code / whole-sign-in p95 | **859.4436 / 2.7039 / 861.8540 ms** |
+| 5xx / failed requests / failed checks / failed sign-ins | **0 / 0 / 0 / 0** |
+| Observed participants / peak active VUs | **260 parents + 40 drivers / 302** |
+| Completed successful burst sign-ins / 2FA verifications | **100 / 100** |
+| Real run starts / location-sharing enables / GPS writes | **40 / 40 / 2,400**, every check passed |
+| Parent bus-location reads | **25,988**, every check passed |
+| Host | Ubuntu runner, Linux 7.0.0-1020-azure, 4 CPUs, 16,759,431,168 bytes RAM |
+| Actual Docker caps | Backend and PostgreSQL each 1 CPU/1 GiB; mail stand-in 0.25 CPU/128 MiB |
+| Dataset verified with SQL | **1,000 students / 40 buses / 800 parents / 40 drivers / 40 routes** |
+| Safety / cleanup | Internal-only network, fake mail, no road API key; only this uniquely named project removed successfully |
+
+All original k6 thresholds **passed**, as did the added duration/actor/burst
+measurements. The independent audit returned **exit 1 solely for the 40–50 RPS
+band**; all four other original audit gates passed and no evidence field was
+missing. This is positive latency/error evidence at a higher load, with a
+workload-specification discrepancy still requiring owner/team resolution.
+We did not weaken the band assertion. Backend steady RPS excludes the separate
+authentication-tagged burst calls; it is not the aggregate rate including setup.
+
+The independently measured p95/error results are consistent with the owner's
+Monday run 3 (9.8956 ms global p95, zero 5xx). They now supply the measured steady
+duration and throughput missing from the old native exports. The workload is
+still **pre-SCRUM-289**; no post-H performance acceptance is claimed.
+The [sanitized load evidence](evidence/2026-11-24-independent-load.json) includes
+all check counts, original threshold outcomes, exact caps, source/seed hashes,
+artifact digest and cleanup verdict. No session tokens, raw mail or browser
+artifacts are committed. Both native coverage controls and the 11/12 metrics
+result also repeated in this run; exact artifacts are linked in the hosted JSON.
 
 ## Confirmed SCRUM-290 defect
 
@@ -110,7 +157,7 @@ latest-2000 sample, null empty ratios/p95, response classification, documented
 failed-login statuses, notification arithmetic and in-memory reset behavior.
 The Spring fixture uses the real application/security chain, PostgreSQL/Flyway,
 controlled test-only 500/429 sources and real invalid-password/account-lock flows.
-Role principals are injected test fixtures. Notification arithmetic is a unit check. Five additional independent criteria now exercise real confirmations, PostgreSQL outbox rows, retry-then-success, exhausted retries, expiry, interruption and muted delivery through the production service, using the existing mail-provider stand-in. They compile locally; hosted execution is pending. Neither stand-in delivery nor a new collector instance proves real provider delivery or an observed cross-process restart.
+Role principals are injected test fixtures. Notification arithmetic is a unit check. Five additional independent criteria now exercise real confirmations, PostgreSQL outbox rows, retry-then-success, exhausted retries, expiry, interruption and muted delivery through the production service, using the existing mail-provider stand-in. They compiled locally and [all five passed in hosted CI](https://github.com/Wassel-CMPS271/Wassel/actions/runs/45320203899), with zero errors/skips. The [sanitized notification evidence](evidence/2026-11-24-notification-metrics.json) preserves each case. The first attempt had 4 passes and one fixture-precondition failure: muting before confirmation suppressed creation of the event. The corrected fixture creates the event first and then mutes it; every assertion is unchanged. The provider stand-in is deliberate for these isolated tests; no external delivery was attempted. Restart disclosure and a new collector resetting are verified, without claiming an observed deployed-process restart.
 
 ## SCRUM-292 coverage audit
 
@@ -172,7 +219,7 @@ Limitations and discrepancies:
   ~2.4 s) clearing after ~30 s. Overall p95 must not hide these limitations.
 - SCRUM-289 PR #188 and rate-limit PR #186 remain open at inspection. The
   accepted-source replay is **before** those changes; the required post-289
-  burst needs another accepted combined candidate. No dependencies are merged
+  burst needs another accepted combined candidate. PR #186 also proposes default per-address login/code limits of 30/60 per minute and deliberately sets rate limiting off in its load Compose file because all k6 users share one IP. Load performance with that switch off cannot certify production rate-limit behavior; a representative security-enabled client-address test is separately required after acceptance. We did not disable a limiter or alter those feature changes. No dependencies are merged
   here to manufacture acceptance.
 - Caps are backend 1 CPU/1 GiB, PostgreSQL 1 CPU/1 GiB, fake mail 0.25 CPU/128 MiB.
   The stand-in delays mail 800 ms; absent ORS key forces straight-line routing,
@@ -228,11 +275,11 @@ Synthetic response tests are not genuine uptime acceptance.
 
 ## Next actions / Draft rule
 
-1. Finish the corrected network-internal load readiness/replay and five new real delivery-metric criteria; attach actual results, including failures.
-2. Moustafa fixes the confirmed prefix exclusion and provides final notification
-   integration evidence; rerun independent criteria against his new head.
+1. Complete SCRUM-291 with genuine external-monitor outage, alert receipt and recovery evidence on a disposable stack. The app restart can also be observed during that coordinated run.
+2. Moustafa fixes the confirmed prefix exclusion; rerun independent criteria against his new head. Notification outcome counters already have independent PostgreSQL/service evidence. Real provider delivery was deliberately outside this isolated test.
 3. Mohamad supplies monitor/outage evidence, coverage rounding clarification and
-   publishes the independently recovered daily readings in the owner document; reconciles load model/budget and publishes complete timings.
+   publishes the independently recovered daily readings in the owner document; reconciles the 40–50 RPS model and 1s login guard with the owner script. Measured duration, burst counts and complete timings now exist in our independent evidence.
 4. Once SCRUM-289 is accepted, rerun the real one-minute login burst against it.
-5. Keep #183 Draft until all X2-01 through X2-08 are evidenced. Do not label
+5. The lightweight combined metrics/security/delivery workflow now runs on every own-branch push, including report-only commits, so the unresolved normal failure remains visible on the current head. The longer pinned coverage/load probes retain their actual run links.
+6. Keep #183 Draft until all X2-01 through X2-08 are evidenced. Do not label
    synthetic checks, author reports or pre-dependency runs as full acceptance.

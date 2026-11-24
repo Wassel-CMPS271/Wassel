@@ -1,15 +1,13 @@
-name: SCRUM-295 independent notification metrics
+name: SCRUM-295 independent metrics and delivery
 on:
   push:
     branches: [test/SCRUM-295-independent-s5-checks]
-    paths:
-      - 'verification/scrum295-notifications/**'
-      - '.github/workflows/scrum295-notification-candidate.yml'
+    # Keep the real independent verdict attached to every current PR head, including report-only commits.
 permissions:
   contents: read
 jobs:
   delivery-metrics-candidate:
-    name: Real delivery outcome metrics against pinned PR 187
+    name: Independent metrics security and delivery against PR 187
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -30,14 +28,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Add only independent notification criteria
+      - name: Add only independent metric and notification criteria
         run: |
           test "$(git -C candidate-metrics rev-parse HEAD)" = e8bca50722324279df6be686843949b06a212500
           mkdir -p candidate-metrics/backend/src/test/java/independent/scrum295
+          cp verification/scrum295/java/independent/scrum295/*.java candidate-metrics/backend/src/test/java/independent/scrum295/
           cp verification/scrum295-notifications/java/independent/scrum295/*.java candidate-metrics/backend/src/test/java/independent/scrum295/
-      - name: Real PostgreSQL confirmation outbox retry expiry and mute criteria
+      - name: Real PostgreSQL security counters confirmation outbox and delivery criteria
         working-directory: candidate-metrics/backend
-        run: sh ./mvnw -B test -Dtest=IndependentNotificationMetricsCriteriaTests -DfailIfNoTests=true
+        run: sh ./mvnw -B test -Dtest=IndependentRequestMetricsCriteriaTests,IndependentAdminMetricsCriteriaTests,IndependentNotificationMetricsCriteriaTests -DfailIfNoTests=true
       - name: Extract only independent test counts and identities
         if: always()
         run: node scripts/scrum295-junit-summary.mjs candidate-metrics/backend/target/surefire-reports tmp/scrum295-notification-results.json
