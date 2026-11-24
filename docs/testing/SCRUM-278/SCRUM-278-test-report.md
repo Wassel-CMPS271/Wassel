@@ -2,15 +2,17 @@
 
 Written by Majd, the independent tester of Wassim's SCRUM-279 and SCRUM-280. Dated 16 November 2026.
 
-## What was added
+## Where the tests live
 
-Four frontend test files and one shared harness, no production file and no existing test file touched:
+The 80 tests were first written in this ticket's independent suite (`*.independent.test.tsx` plus the harness `test-support/parentAcceptance.ts`, on this branch). PR #150 adopted them into `develop` as branch-owned copies, so they now live on `develop` under these names, and this branch no longer carries its own duplicate copies:
 
-- `frontend/src/app/(parent)/parent/tracking.independent.test.tsx` — SCRUM-279, 43 tests.
-- `frontend/src/app/(parent)/parent/authorization.independent.test.tsx` — SCRUM-280's own authorization/cross-parent criterion, 8 tests.
-- `frontend/src/app/(parent)/parent/inbox.independent.test.tsx` — SCRUM-280, 16 tests.
-- `frontend/src/app/(parent)/parent/preferences.independent.test.tsx` — SCRUM-280, 13 tests.
-- `frontend/src/test-support/parentAcceptance.ts` — the shared harness: a stateful fake server behind a stubbed `fetch`, the contract samples, and a `FakeMapView` stand-in. It imports no production oracle (not `parentTracking.ts`, not `parentNavigation.ts`): expected values are `docs/contracts/samples/**` JSON, used raw, plus numbers worked out by hand in its comments.
+- `frontend/src/app/(parent)/parent/tracking.acceptance.test.tsx` — SCRUM-279, 43 tests.
+- `frontend/src/app/(parent)/parent/authorization.acceptance.test.tsx` — SCRUM-280's own authorization/cross-parent criterion, 8 tests.
+- `frontend/src/app/(parent)/parent/inbox.acceptance.test.tsx` — SCRUM-280, 16 tests.
+- `frontend/src/app/(parent)/parent/preferences.acceptance.test.tsx` — SCRUM-280, 13 tests.
+- `frontend/src/test-support/parentAcceptance.owned.ts` — the shared harness (identical to the original `parentAcceptance.ts`): a stateful fake server behind a stubbed `fetch`, the contract samples, and a `FakeMapView` stand-in. It imports no production oracle (not `parentTracking.ts`, not `parentNavigation.ts`): expected values are `docs/contracts/samples/**` JSON, used raw, plus numbers worked out by hand in its comments.
+
+The `develop` copies differ from the originals only in the harness import path and in six unread-count matchers (three in `inbox`, three in `authorization`). The originals accepted "1 unread update" or "1 unread updates". The `develop` copies require exactly `"1 unread update"`, as decided in `docs/testing/SCRUM-280/SCRUM-169-wording-conflict.md`.
 
 No `.skip`, `xit`, `xdescribe` or `test.todo` appears in any of the four files; every one of the 80 tests below actually ran.
 
@@ -25,23 +27,40 @@ No `.skip`, `xit`, `xdescribe` or `test.todo` appears in any of the four files; 
 
 `e1bc4c7` is the newest commit under `frontend/src/app/(parent)/parent/`; #149 and #150 are both already merged into `develop` and into this branch, so the code under test here is the merged result, not a candidate checkout.
 
+The table above is the original run. The re-run on current `develop` (see "Re-run on current develop" below) used:
+
+| What | Ref |
+|---|---|
+| PR #150 merge into `develop` | `7a938f500228f6aff0c86c1a79ed029ed0e4f65b` |
+| `develop` | `35600e52b0c23c20f7c0b5b7734b471f1eea0d27` |
+| This branch after merging `develop` | `654f16f94b0f7e39130eee16a591b237bf35dc74` |
+
 ## Scope and method
 
 - Every test renders the real `ParentLayout` and `ParentPage`, so the real `RoleGuard`, the real `request()` client (`frontend/src/lib/api/client.ts`) and the real screens run end to end. Only three things are replaced: global `fetch` (`vi.stubGlobal`, per `frontend/CLAUDE.md`), `next/navigation`'s router, and `MapView` (a `FakeMapView` that renders each marker's label and exact coordinates as text, so a test can prove a marker is or is not on screen without a real Leaflet/tile stack).
 - No sample or fixture client is swapped in: `page.tsx` already wires `parentInboxApi`, `notificationPreferencesApi` and `getBusLocation` for real, so the fake server is the only thing standing in for the backend.
-- Expected values come from `docs/contracts/samples/runs/*.json` and `docs/contracts/samples/inbox/*.json`, used as-is, plus the hand-computed countdown/arrival numbers documented in `parentAcceptance.ts` (e.g. `secondsAway 350 = 5m 50s`, `arrivesAt` UTC + 3 h = Asia/Beirut school time). No test imports a helper from the code under test to compute its own expectation.
+- Expected values come from `docs/contracts/samples/runs/*.json` and `docs/contracts/samples/inbox/*.json`, used as-is, plus the hand-computed countdown/arrival numbers documented in `parentAcceptance.owned.ts` (e.g. `secondsAway 350 = 5m 50s`, `arrivesAt` UTC + 3 h = Asia/Beirut school time). No test imports a helper from the code under test to compute its own expectation.
 - No production code was touched to make a test pass or fail. No test assertion was loosened, skipped or marked expected-failure to get a clean run; the 9 failures below are reported as found.
 
 ## How to run
 
 ```
 cd frontend
-npx vitest run "src/app/(parent)/parent/tracking.independent.test.tsx" "src/app/(parent)/parent/authorization.independent.test.tsx" "src/app/(parent)/parent/inbox.independent.test.tsx" "src/app/(parent)/parent/preferences.independent.test.tsx"
+npx vitest run "src/app/(parent)/parent/tracking.acceptance.test.tsx" "src/app/(parent)/parent/authorization.acceptance.test.tsx" "src/app/(parent)/parent/inbox.acceptance.test.tsx" "src/app/(parent)/parent/preferences.acceptance.test.tsx"
 ```
 
-or `npm test` (`vitest run`) to run them inside the whole frontend suite, as CI's `frontend-build` job does.
+or `node e2e/review-parent-acceptance.mjs` (the same four files, used by the `Parent independent acceptance` workflow), or `npm test` (`vitest run`) to run them inside the whole frontend suite, as CI's `frontend-build` job does.
 
-Full frontend regression with these four files added: **1021 tests, 1005 passed, 9 failed, 1 pre-existing expected failure, 6 pre-existing skips (74 files)**. The 9 failures are exactly the 6 (SCRUM-279) + 3 (SCRUM-280) below; no other test in the suite was broken by adding these files.
+Original run, full frontend regression with the four independent files added: **1021 tests, 1005 passed, 9 failed, 1 pre-existing expected failure, 6 pre-existing skips (74 files)**. The 9 failures are exactly the 6 (SCRUM-279) + 3 (SCRUM-280) below; no other test in the suite was broken by adding these files.
+
+## Re-run on current develop
+
+At `654f16f`, which is this branch after merging `develop` with the duplicate independent copies removed:
+
+- The four `.acceptance` files: **80 tests, 80 passed** (tracking 43, authorization 8, inbox 16, preferences 13).
+- Full frontend suite (`npm test`): **108 files passed; 1813 passed, 1 expected failure, 5 skipped (1819 tests)**.
+
+The nine tests that failed in the original run (D1 to D6 below) pass on `develop`. The defect write-ups below are kept as found in the original run. This report does not say which commit fixed each one.
 
 ## SCRUM-279 — results: 43 tests, 37 pass, 6 fail
 
@@ -73,7 +92,7 @@ Full frontend regression with these four files added: **1021 tests, 1005 passed,
 ### D1 — a run starting while the tracking screen stays open is never picked up
 
 - **PR**: #149 (SCRUM-279). **File**: `frontend/src/app/(parent)/parent/TrackingPanel.tsx:25`.
-- **Failing test**: `picks up a run that starts while the tracking screen is open (NOT_STARTED, then IN_PROGRESS on the server) within two minutes` (`tracking.independent.test.tsx`).
+- **Failing test**: `picks up a run that starts while the tracking screen is open (NOT_STARTED, then IN_PROGRESS on the server) within two minutes` (`tracking.acceptance.test.tsx`, originally `tracking.independent.test.tsx`).
 - **User-visible effect**: a parent who opens Bus tracking before the driver starts the run sees "Run not started." and it never changes, even two minutes after the run goes `IN_PROGRESS` on the server. The screen only shows the live bus after the parent leaves and comes back (a remount — covered separately by the passing positive control, `after a reload (remount) against the same server, the started run is shown live`).
 - **Why**: `const waiting = child.todayRun?.state === "IN_PROGRESS" && …` (line 25) is computed once from the `child` prop on every render, but nothing ever re-fetches that child's `todayRun` while the panel is mounted — there is no polling of `/api/parent/children`, only of the bus-location endpoint, and that polling effect does not start until `waiting` is already true. A `NOT_STARTED`/`FINISHED` run is never rechecked.
 - **Expected behaviour**: SCRUM-279's acceptance criteria (AC6, "no active run, loading, errors and Retry") and the contract's live-tracking intent both assume the screen reflects the server while it is open, not only across a reload.
@@ -82,7 +101,7 @@ Full frontend regression with these four files added: **1021 tests, 1005 passed,
 ### D2 — polling continues after a 401, 403 or 404
 
 - **PR**: #149 (SCRUM-279). **File**: `frontend/src/app/(parent)/parent/TrackingPanel.tsx:38`.
-- **Failing tests**: `stops polling after a 401 (sign-in expired or access revoked)`, `stops polling after a 403 (sign-in expired or access revoked)`, `stops polling after a 404 (sign-in expired or access revoked)` (`tracking.independent.test.tsx`).
+- **Failing tests**: `stops polling after a 401 (sign-in expired or access revoked)`, `stops polling after a 403 (sign-in expired or access revoked)`, `stops polling after a 404 (sign-in expired or access revoked)` (`tracking.acceptance.test.tsx`, originally `tracking.independent.test.tsx`).
 - **User-visible effect**: after the bus-location poll answers 401, 403 or 404 — the parent's session expired, or the child is no longer theirs to see — the screen correctly shows the error, but the panel keeps polling every 15 seconds anyway. In the test, two more polls landed in the following 60 seconds.
 - **Why**: `finally { if (active) timer = setTimeout(() => void load(), 15_000); }` reschedules unconditionally, regardless of the `catch` branch's `error` status. There is no distinction between a retryable failure (network blip, 500) and a permanent one (expired session, lost or revoked access to that child).
 - **Expected behaviour**: once ownership or authorization is gone, nothing about that child should be requested again until the parent acts (Retry, sign-in, or picking a different child) — the same way AC2's 401/403/404 cases already stop the *displayed* data from reappearing, this should also stop the *requests*.
@@ -91,7 +110,7 @@ Full frontend regression with these four files added: **1021 tests, 1005 passed,
 ### D3 — an afternoon run can show "Planned morning pickup" while loading or after an error
 
 - **PR**: #149 (SCRUM-279). **File**: `frontend/src/app/(parent)/parent/TrackingPanel.tsx:60`.
-- **Failing tests**: `shows no morning wording or time while the afternoon location is loading`, `shows no morning wording or time after an afternoon load error` (`tracking.independent.test.tsx`).
+- **Failing tests**: `shows no morning wording or time while the afternoon location is loading`, `shows no morning wording or time after an afternoon load error` (`tracking.acceptance.test.tsx`, originally `tracking.independent.test.tsx`).
 - **User-visible effect**: for a child on an afternoon run, while the first bus-location answer is still pending, or after it fails, the panel shows "Planned morning pickup: 07:21. This is not a live estimate." — the morning pickup time, labelled as a morning pickup, even though the run is a drop-off.
 - **Why**: `{!progress && <p …>Planned morning pickup: {child.expectedPickupTime ?? "Not available"}…}` (line 60) hardcodes "morning" and always reads `expectedPickupTime` (the morning value) whenever `progress` is not yet available — which is exactly the loading and error states, since `progress` only exists once a successful response has arrived. The already-correct direction-aware wording a few lines down (line 63, `{child.todayRun?.direction === "AFTERNOON" ? "drop-off" : "pickup"}`) is not reused here.
 - **Expected behaviour**: SCRUM-279 AC7 ("an afternoon run never shows morning wording") applies in every state, not only once the live answer has arrived — the passing case for the resolved afternoon view (`shows the afternoon countdown … and no morning wording or time`) shows the intended behaviour is already right once `progress` exists.
@@ -100,7 +119,7 @@ Full frontend regression with these four files added: **1021 tests, 1005 passed,
 ### D4 — the Inbox button is disabled when only the children list fails
 
 - **PR**: #150 (SCRUM-280). **File**: `frontend/src/app/(parent)/parent/ParentHome.tsx:104`.
-- **Failing test**: `keeps the Inbox button usable when only the children list fails` (`inbox.independent.test.tsx`).
+- **Failing test**: `keeps the Inbox button usable when only the children list fails` (`inbox.acceptance.test.tsx`, originally `inbox.independent.test.tsx`).
 - **User-visible effect**: when `GET /api/parent/children` fails (500 or network failure) but the inbox backend is fine, the whole Home screen shows its failed-to-load alert, and Inbox — which needs no child list — is also disabled, so the parent cannot reach their transport updates at all until the children list recovers.
 - **Why**: `disabled={state.kind !== "loaded"}` (line 104) ties the Inbox nav button to the same `state` that only tracks the children fetch. Bus tracking is correctly gated on `!children.length` (it needs a child to track), but Inbox has no such dependency — `ParentInboxHome`/`page.tsx` wire it from the session alone.
 - **Expected behaviour**: SCRUM-280's own criterion 4 ("loading, empty, error-and-retry, and the Inbox button when only children fails") expects Inbox to stay reachable when it is specifically the children list that is down.
@@ -109,7 +128,7 @@ Full frontend regression with these four files added: **1021 tests, 1005 passed,
 ### D5 — a 400 on preferences shows only the lateAfterMinutes error; the other field errors go into one generic alert
 
 - **PR**: #150 (SCRUM-280). **File**: `frontend/src/app/(parent)/parent/NotificationPreferencesPanel.tsx:38`.
-- **Failing test**: `shows a 400's field errors on the right field and leaves the form usable` (`preferences.independent.test.tsx`).
+- **Failing test**: `shows a 400's field errors on the right field and leaves the form usable` (`preferences.acceptance.test.tsx`, originally `preferences.independent.test.tsx`).
 - **User-visible effect**: when the backend's 400 names more than one invalid field (e.g. a boolean field sent as something else, alongside an out-of-range `lateAfterMinutes`), only the minutes field gets its own inline error; every other field's message (e.g. the "Picked up" checkbox's error) is joined into a single unrelated `role="alert"` banner above the form, not next to the checkbox it is actually about.
 - **Why**: `fail()` (line 38) special-cases `lateAfterMinutes` (`setFieldError(cause.errors.lateAfterMinutes)`) and dumps everything else in `cause.errors` into one joined string via `setError(...)`, with no per-field slot for the four boolean choices.
 - **Expected behaviour**: `frontend/CLAUDE.md`'s API-calls rule for `ApiValidationError` is explicit: "show each message next to its field." The contract's preferences PUT can return an `errors` map with any of the five fields, not only `lateAfterMinutes`.
@@ -118,7 +137,7 @@ Full frontend regression with these four files added: **1021 tests, 1005 passed,
 ### D6 — "1 unread updates" is always plural
 
 - **PR**: #150 (SCRUM-280). **File**: `frontend/src/app/(parent)/parent/InboxPanel.tsx:71`.
-- **Failing test**: `uses singular wording for exactly one unread update` (`inbox.independent.test.tsx`).
+- **Failing test**: `uses singular wording for exactly one unread update` (`inbox.acceptance.test.tsx`, originally `inbox.independent.test.tsx`).
 - **User-visible effect**: with exactly one unread entry, the inbox reads "1 unread updates" instead of "1 unread update".
 - **Why**: `<p role="status">{visible.count} unread updates</p>` (line 71) has no singular/plural branch.
 - **Expected behaviour**: ordinary English pluralization for a user-facing count; the same pattern is already used correctly elsewhere on the Home screen (`ParentHome.tsx`'s `{state.children.length === 1 ? "child" : "children"}`).
@@ -130,8 +149,8 @@ Full frontend regression with these four files added: **1021 tests, 1005 passed,
 - **Muting by preference and LATE-alert generation are backend behaviour**, not tested here. These test files only exercise the frontend's reading, saving and rendering of whatever the fake server returns; whether a muted preference actually suppresses a future `LATE`/confirmation event, and whether the once-a-minute scheduler correctly generates one, are server-side and out of scope for this frontend-only pass (see `docs/contracts/inbox.md`'s `LATE` generation rule and `notification-delivery.md`).
 - **Contract/Jira wording gap on absences, not re-litigated here**: `docs/contracts/inbox.md:65` says plainly "An absence the parent reports is not an entry," and `NOT_PRESENT` is the driver's own not-at-the-stop confirmation (tested and passing: `shows NOT_PRESENT as 'Not at the stop', the only absence-shaped entry the contract defines`). SCRUM-280's Jira wording instead talks about "absence updates" appearing in the inbox. Wassim's own SCRUM-280 report already flags this exact gap; this report does not re-decide it, and no test asserts a parent-reported absence should or should not create an inbox entry.
 - **No unread badge exists anywhere before the Inbox is opened.** `shows no unread badge anywhere, and makes no unread-count request, before the Inbox is opened` passes — there genuinely is no such badge on `ParentHome`'s nav or elsewhere. Whether SCRUM-280's acceptance criteria require one is ambiguous from the ticket text available; this is noted as a gap, not asserted as a defect.
-- **Tests fixed during this run**: none. All four files and the shared harness were run cold, without modification, and the 9 failures above reproduced on the first run with the exact counts reported (43/37 and 37/34); no assertion was loosened, retried, or adjusted to make a test pass.
+- **Tests fixed during this run**: none. All four files and the shared harness were run cold, without modification, and the 9 failures above reproduced on the first run with the exact counts reported (43/37 and 37/34); no assertion was loosened, retried, or adjusted to make a test pass. Later, when #150 adopted the suite into `develop`, six unread-count matchers were made strict (exactly `"1 unread update"`), as decided in `docs/testing/SCRUM-280/SCRUM-169-wording-conflict.md`. That change tightens those tests and loosens none.
 
 ## Conclusion
 
-As merged at `24701a1` (#149) and `e1bc4c7` (#150), SCRUM-279's AC1–AC5, AC8 and AC9 and SCRUM-280's criteria 1 (except singular wording), 2, 3 (except multi-field 400 display), 5 and 6 hold up against the real client and the contract samples: ownership/role checks leak nothing, the live estimate and planned time stay visibly separate, stale/missing GPS is never shown as live, multiple children are correctly isolated, navigation preserves and restores tracking, and the inbox/preferences read-and-save path, event wording and 44px/360px structure are all correct as far as these tests can see. Six distinct, reproducible defects remain open against the two PRs: a started run is never picked up while the tracking screen stays open and polling never stops after a permanent 401/403/404 (both SCRUM-279 AC6), afternoon runs can briefly show morning wording while loading or erroring (SCRUM-279 AC7), the Inbox button is wrongly gated on the unrelated children-list load (SCRUM-280 criterion 4), a multi-field 400 on preferences only surfaces one field's error (SCRUM-280 criterion 3), and the unread count is never singular (SCRUM-280 criterion 1). None of these were fixed here, per SCRUM-278's own rule of leaving that decision to Wassim and the PO.
+As merged at `24701a1` (#149) and `e1bc4c7` (#150), SCRUM-279's AC1–AC5, AC8 and AC9 and SCRUM-280's criteria 1 (except singular wording), 2, 3 (except multi-field 400 display), 5 and 6 hold up against the real client and the contract samples: ownership/role checks leak nothing, the live estimate and planned time stay visibly separate, stale/missing GPS is never shown as live, multiple children are correctly isolated, navigation preserves and restores tracking, and the inbox/preferences read-and-save path, event wording and 44px/360px structure are all correct as far as these tests can see. Six distinct, reproducible defects remain open against the two PRs: a started run is never picked up while the tracking screen stays open and polling never stops after a permanent 401/403/404 (both SCRUM-279 AC6), afternoon runs can briefly show morning wording while loading or erroring (SCRUM-279 AC7), the Inbox button is wrongly gated on the unrelated children-list load (SCRUM-280 criterion 4), a multi-field 400 on preferences only surfaces one field's error (SCRUM-280 criterion 3), and the unread count is never singular (SCRUM-280 criterion 1). None of these were fixed here, per SCRUM-278's own rule of leaving that decision to Wassim and the PO. In the re-run on current `develop` at `654f16f`, all 80 tests pass, including the nine that showed these defects.
