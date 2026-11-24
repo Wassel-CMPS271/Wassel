@@ -1,0 +1,67 @@
+name: Transport E2E
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [develop]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: transport-e2e-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  transport-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: wassel_e2e
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: disposable-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d wassel_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run test:e2e:install -- --with-deps
+        working-directory: frontend
+      # Driver reassignment, offline replay and notification email on the real stack (SCRUM-284).
+      # No continue-on-error: compilation, migrations, seed or browser errors fail the job.
+      - name: PostgreSQL transport browser test
+        run: node e2e/review-transport.mjs
+        working-directory: frontend
+        env:
+          E2E_MAVEN_CMD: mvn
+          E2E_DB_URL: jdbc:postgresql://127.0.0.1:5432/wassel_e2e
+          E2E_DB_USERNAME: postgres
+          E2E_DB_PASSWORD: disposable-ci-only
+      # On GitHub only the sanitized reporter prints (the launcher drops Playwright's list reporter there), so the log and the
+      # job summary carry the same allowlisted text. This step re-checks the summary and only then writes it to the job summary;
+      # it fails the job if the summary is incomplete, empty or holds anything off the allowlist.
+      # (The flag hides Node's note that frontend/package.json has no "type"; the gate imports a .ts file.)
+      - name: Check the failure summary
+        if: always()
+        run: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON e2e/check-transport-summary.mjs
+        working-directory: frontend
+      # Do not upload backend mail logs, database files, generated credentials, traces, videos or screenshots:
+      # they contain disposable authentication material and the text of emails.
