@@ -25,13 +25,17 @@ export function summarizeJUnit(xml) {
   }
   return result;
 }
+export function resultWithSource(suites, candidateSha) {
+  if (!/^[a-f0-9]{40}$/.test(candidateSha ?? "")) throw new Error("Missing verified candidate SHA");
+  return { candidateSha, suites };
+}
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const [directory, output] = process.argv.slice(2);
-  if (!directory || !output || process.argv.length !== 4) throw new Error("Usage: node scripts/scrum295-junit-summary.mjs <surefire-directory> <safe-summary.json>");
+  const [directory, output, candidateSha] = process.argv.slice(2);
+  if (!directory || !output || process.argv.length !== 5) throw new Error("Usage: node scripts/scrum295-junit-summary.mjs <surefire-directory> <safe-summary.json> <verified-candidate-sha>");
   const files = readdirSync(directory).filter(file => /^TEST-independent\.scrum295\..*\.xml$/.test(file));
   if (!files.length) throw new Error("No independent metrics JUnit reports were produced");
   const suites = files.sort().map(file => summarizeJUnit(readFileSync(resolve(directory,file),"utf8")));
-  const result = { candidateSha: "e8bca50722324279df6be686843949b06a212500", suites };
+  const result = resultWithSource(suites, candidateSha);
   mkdirSync(dirname(output),{recursive:true}); writeFileSync(output, JSON.stringify(result,null,2)+"\n");
   for (const suite of suites) console.log(suite.name + ": " + suite.passed + " passed, " + suite.failures + " failed, " + suite.errors + " errors, " + suite.skipped + " skipped");
 }

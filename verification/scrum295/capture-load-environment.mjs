@@ -24,6 +24,6 @@ for (const service of ["backend","postgres","mail-stub"]) {
 const network=JSON.parse(execFileSync("docker",["network","inspect",project+"_default"],{encoding:"utf8"}))[0];
 assert.equal(network.Internal,true);
 const hash=path=>createHash("sha256").update(readFileSync(path)).digest("hex");
-const result={sourceSha:"7a938f500228f6aff0c86c1a79ed029ed0e4f65b",host:{platform:platform(),release:release(),cpus:cpus().length,memoryBytes:totalmem()},services,internalOnlyNetwork:true,mailStandIn:true,roadApiKeyAbsent:true,dataset:{students:1000,buses:40,parents:800,drivers:40,routes:40},datasetWasCheckedInSQL:true,loadScriptSha256:hash("candidate-load/loadtest/load.js"),seedSha256:hash("candidate-load/loadtest/seed.sql")};
+const result={sourceSha:"e9de4167a5d669289461b5054b5f0a28f8238358",host:{platform:platform(),release:release(),cpus:cpus().length,memoryBytes:totalmem()},services,internalOnlyNetwork:true,mailStandIn:true,roadApiKeyAbsent:true,dataset:{students:1000,buses:40,parents:800,drivers:40,routes:40},datasetWasCheckedInSQL:true,loadScriptSha256:hash("candidate-load/loadtest/load.js"),seedSha256:hash("candidate-load/loadtest/seed.sql")};
 mkdirSync("tmp",{recursive:true});writeFileSync(output,JSON.stringify(result,null,2)+"\n");
 console.log("Captured disposable-stack limits, fake-mail/no-road-key configuration and source hashes; no credentials recorded.");

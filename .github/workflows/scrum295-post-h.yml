@@ -36,7 +36,7 @@ jobs:
             source: cab56d67dabe1acf69884607c87bf936c92309e4
           - mode: metrics-http
             project: scrum295-metrics-http
-            source: e8bca50722324279df6be686843949b06a212500
+            source: e9de4167a5d669289461b5054b5f0a28f8238358
     env:
       SCRUM295_MODE: ${{ matrix.mode }}
       SCRUM295_LOAD_PROJECT: ${{ matrix.project }}-${{ github.run_id }}

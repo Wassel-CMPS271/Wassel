@@ -23,7 +23,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
-          ref: e8bca50722324279df6be686843949b06a212500
+          ref: e9de4167a5d669289461b5054b5f0a28f8238358
           path: candidate-metrics
           persist-credentials: false
       - uses: actions/setup-java@v4
@@ -37,7 +37,7 @@ jobs:
           node-version: '24'
       - name: Add only independent test fixtures to the disposable candidate checkout
         run: |
-          test "$(git -C candidate-metrics rev-parse HEAD)" = e8bca50722324279df6be686843949b06a212500
+          test "$(git -C candidate-metrics rev-parse HEAD)" = e9de4167a5d669289461b5054b5f0a28f8238358
           mkdir -p candidate-metrics/backend/src/test/java/independent/scrum295
           cp verification/scrum295/java/independent/scrum295/*.java candidate-metrics/backend/src/test/java/independent/scrum295/
       - name: Real PostgreSQL Flyway security and metrics criteria
@@ -45,7 +45,7 @@ jobs:
         run: sh ./mvnw -B test -Dtest=IndependentRequestMetricsCriteriaTests,IndependentAdminMetricsCriteriaTests -DfailIfNoTests=true
       - name: Extract only test counts and identities
         if: always()
-        run: node scripts/scrum295-junit-summary.mjs candidate-metrics/backend/target/surefire-reports tmp/scrum295-metrics-independent-results.json
+        run: node scripts/scrum295-junit-summary.mjs candidate-metrics/backend/target/surefire-reports tmp/scrum295-metrics-independent-results.json e9de4167a5d669289461b5054b5f0a28f8238358
       - uses: actions/upload-artifact@v4
         if: always() && hashFiles('tmp/scrum295-metrics-independent-results.json') != ''
         with:
@@ -67,7 +67,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
-          ref: 7a938f500228f6aff0c86c1a79ed029ed0e4f65b
+          ref: e9de4167a5d669289461b5054b5f0a28f8238358
           path: candidate-coverage
           persist-credentials: false
       - uses: actions/setup-java@v4
@@ -108,7 +108,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
-          ref: 7a938f500228f6aff0c86c1a79ed029ed0e4f65b
+          ref: e9de4167a5d669289461b5054b5f0a28f8238358
           path: candidate-coverage
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -155,7 +155,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
-          ref: 7a938f500228f6aff0c86c1a79ed029ed0e4f65b
+          ref: e9de4167a5d669289461b5054b5f0a28f8238358
           path: candidate-load
           persist-credentials: false
       - uses: actions/setup-node@v4

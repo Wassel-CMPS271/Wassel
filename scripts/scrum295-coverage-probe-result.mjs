@@ -38,7 +38,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     record={...record,floor:Number(floor[1]),measured:vitestPercent(JSON.parse(readFileSync(resolve(project,"coverage/coverage-summary.json"),"utf8")),"lines"),tests:report.numTotalTests,failures:report.numFailedTests,errors:report.numRuntimeErrorTestSuites ?? 0,skipped:report.numPendingTests};
   }
   const result=verifyNativeCoverageFailure(kind,record);
-  result.sourceSha="7a938f500228f6aff0c86c1a79ed029ed0e4f65b";
+  result.sourceSha="e9de4167a5d669289461b5054b5f0a28f8238358";
   mkdirSync(dirname(output),{recursive:true}); writeFileSync(output,JSON.stringify(result,null,2)+"\n");
   console.log(JSON.stringify(result));
 }

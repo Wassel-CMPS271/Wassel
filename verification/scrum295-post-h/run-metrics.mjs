@@ -7,7 +7,7 @@ const marker="candidate-load/loadtest/results/metrics-ready.json";
 assert.ok(!existsSync(marker),"Preserving an existing marker");
 const child=spawn("docker",[...compose,"exec","-T","mail-stub","node","/verification/verification/scrum295-post-h/metrics-api.mjs"],{stdio:"inherit"});
 let childExit=null;const done=new Promise(resolve=>child.on("exit",code=>{childExit=code??1;resolve(childExit);}));
-const record={candidateSource:"e8bca50722324279df6be686843949b06a212500",sourceWasNotPatched:true,externalMonitorVerified:false,events:[]};
+const record={candidateSource:"e9de4167a5d669289461b5054b5f0a28f8238358",sourceWasNotPatched:true,externalMonitorVerified:false,events:[]};
 try {
   const deadline=Date.now()+120000;
   while(!existsSync(marker)){if(childExit!==null)throw new Error("HTTP client exited before restart phase");if(Date.now()>deadline)throw new Error("No ready marker from real authenticated HTTP checks");await pause(250);}

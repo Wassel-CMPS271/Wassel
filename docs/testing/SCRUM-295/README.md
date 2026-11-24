@@ -8,6 +8,8 @@ Latest continuation: [follow-up from commit 2e0a9f7](2026-11-24-follow-up.md), i
 
 Current continuation results: real HTTP roles/2FA, backend outage/recovery and process counter reset executed; post-H full Maven/gated measurements passed; exact-100 burst exceeded 1s p95 and full-school defaults hit the 120-email cap. See the linked follow-up for the complete verdict.
 
+Dependency update: PR #187 was merged by its owner and develop is now `e9de4167`. The prefix remains unchanged; source-pinned verification is being refreshed, including stronger real-2FA setup under the updated contract. Earlier snapshots/results below are preserved.
+
 ## Current evidence and verdict
 
 Acceptance is **incomplete**. Checker self-tests are not feature acceptance.

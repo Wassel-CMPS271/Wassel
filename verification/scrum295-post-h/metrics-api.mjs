@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {writeFileSync} from "node:fs";
 import {verifyMetricsSnapshot} from "../../scripts/scrum295-metrics-contract.mjs";
 const BASE="http://backend:8080";
-const result={candidateSource:"e8bca50722324279df6be686843949b06a212500",scope:"Real HTTP with password and fake-provider-delivered 2FA, private backend outage/recovery and metrics restart; no external monitor or frontend alert claim.",checks:[],externalMonitorVerified:false,frontendMonitorVerified:false};
+const result={candidateSource:"e9de4167a5d669289461b5054b5f0a28f8238358",scope:"Real HTTP with password and fake-provider-delivered 2FA, private backend outage/recovery and metrics restart; no external monitor or frontend alert claim.",checks:[],externalMonitorVerified:false,frontendMonitorVerified:false};
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const record=async(name,work)=>{try{const evidence=await work();result.checks.push({name,pass:true,...evidence});}catch(error){result.checks.push({name,pass:false,reason:error.message});}};
 function save(){writeFileSync("/results/metrics-http-result.json",JSON.stringify(result,null,2)+"\n");}

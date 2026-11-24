@@ -9,7 +9,7 @@ import {compose,project,docker,sql,ownBackend,pause,ready} from "./stack.mjs";
 const mode=process.env.SCRUM295_MODE;
 assert.ok(["full","burst","metrics-http"].includes(mode));
 const source=execFileSync("git",["-C","candidate-backend","rev-parse","HEAD"],{encoding:"utf8"}).trim();
-const expected=mode==="metrics-http"?"e8bca50722324279df6be686843949b06a212500":"cab56d67dabe1acf69884607c87bf936c92309e4";
+const expected=mode==="metrics-http"?"e9de4167a5d669289461b5054b5f0a28f8238358":"cab56d67dabe1acf69884607c87bf936c92309e4";
 assert.equal(source,expected);
 assert.equal(resolve(process.env.SCRUM295_CANDIDATE_BACKEND),resolve("candidate-backend/backend"));
 assert.equal(execFileSync("git",["-C","candidate-load","rev-parse","HEAD"],{encoding:"utf8"}).trim(),"7a938f500228f6aff0c86c1a79ed029ed0e4f65b");
