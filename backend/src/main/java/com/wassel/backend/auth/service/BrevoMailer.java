@@ -22,8 +22,8 @@ import java.util.Map;
  * SMTP (Railway allows it only on its Pro plan). It runs only when {@code wassel.mail.provider} is
  * {@code brevo}, and like {@link SmtpMailer} only outside the local and test profiles, so exactly
  * one {@link Mailer} exists in every setup and a deployed environment never prints a code or link.
- * A failed send is an unchecked exception, so it rolls back the caller's transaction and the
- * request fails; the user retries.
+ * A failed send is an unchecked exception that the caller handles: sign-in, resend and forgot-password
+ * undo what they wrote (SCRUM-289, docs/contracts/auth-email.md), and an admin invite rolls the account back.
  *
  * <p>Brevo only sends from a sender address that has been verified in the account, so
  * {@code senderEmail} must be that address. Neither the API key nor the response body is logged or

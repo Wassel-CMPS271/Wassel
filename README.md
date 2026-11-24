@@ -129,13 +129,32 @@ response are in `docs/contracts/notification-delivery.md`.
 | `NOTIFICATION_EMAIL_DAILY_CAP` | the most emails a day, default `150` |
 
 - **It shares the provider's daily limit with sign-in codes.** When the limit runs out every sign-in fails, so read the real
-  daily limit off the Brevo account (the free plan is thought to be 300 a day, not checked) and set the cap to about half of it.
+  daily limit off the Brevo account (the free plan is thought to be 300 a day, not checked) and keep
+  `NOTIFICATION_EMAIL_DAILY_CAP + AUTH_EMAIL_DAILY_CAP` under it with a margin (see the next section; the defaults are 150 + 120).
 - **Turn it on only where every parent address is real.** Fake addresses bounce, and a high bounce rate can get the
   provider account suspended. The demo accounts use `DEMO_EMAIL_BASE`, so point that at a real mailbox first.
 - **Rollback** is `NOTIFICATION_EMAIL_ENABLED=false` and a restart. The `notification_deliveries` table (migration V16)
   stays and is harmless.
 - **Check how it is going** (administrator session, counts only, no addresses or names):
   `curl -b cookies.txt "$BACKEND/api/admin/notification-deliveries/summary?date=2026-11-16"`
+
+### Authentication email (sign-in codes, resets, invites)
+
+Sign-in codes, resends, password-reset links and invites have their own daily cap, counted in the `auth_emails` table
+(migration V18), so a flood of them cannot use up the provider's quota. Rules, answers and what a refused request sees are
+in `docs/contracts/auth-email.md`.
+
+| Variable | Value |
+| -------- | ----- |
+| `AUTH_EMAIL_DAILY_CAP` | the most authentication emails a day, default `120` |
+| `AUTH_EMAIL_RESET_DAILY_CAP` | of those, the most reset links, default `30` (at most the daily cap) |
+| `AUTH_EMAIL_PER_ACCOUNT_DAILY_CAP` | the most sign-in codes and resends, or the most reset links, for one account a day, default `10` |
+
+- **The sum rule:** `NOTIFICATION_EMAIL_DAILY_CAP + AUTH_EMAIL_DAILY_CAP` must stay under the provider's daily limit, with a
+  margin for invites, which are never refused. The defaults add up to 270 against a limit assumed, not confirmed, to be 300.
+  Raise the caps only together with the provider's plan.
+- Over the cap a sign-in or resend answers `503` with `Retry-After` (seconds to midnight in Beirut), and forgot-password
+  still answers `204` and sends nothing. A value of 0 or a reset cap above the daily cap stops the backend at startup.
 
 ### Email on staging
 

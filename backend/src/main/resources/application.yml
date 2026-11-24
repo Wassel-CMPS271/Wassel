@@ -21,9 +21,10 @@ spring:
       mail.smtp.auth: true
       mail.smtp.starttls.enable: true
       mail.smtp.starttls.required: true
-      # JavaMail waits forever by default. The send runs inside the request's transaction, so a hung
-      # connection would hang the login and hold a database connection. These are per network step,
-      # not per message: they bound a hang, not the whole send.
+      # JavaMail waits forever by default. Sign-in and forgot-password send after their transaction has committed
+      # (SCRUM-289), so a hung connection holds a request thread, not a database connection (admin invites still
+      # send inside the transaction that creates the account). These are per network step, not per message: they
+      # bound a hang, not the whole send.
       mail.smtp.connectiontimeout: 5000
       mail.smtp.timeout: 5000
       mail.smtp.writetimeout: 5000
@@ -84,7 +85,9 @@ wassel:
       sender-name: ${BREVO_SENDER_NAME:Wassel}
   # Email for inbox entries (SCRUM-283, docs/contracts/notification-delivery.md): off unless NOTIFICATION_EMAIL_ENABLED=true.
   # It sends through the same mail provider as the sign-in codes, so the daily cap must stay well under that provider's
-  # daily limit (about half; Brevo's free plan is thought to be 300 a day, read the real figure off the account).
+  # daily limit (Brevo's free plan is thought to be 300 a day, read the real figure off the account). Sign-in email has
+  # its own cap below (wassel.auth.email); the two together must stay under that limit, minus a margin for invites,
+  # which are never refused: NOTIFICATION_EMAIL_DAILY_CAP + AUTH_EMAIL_DAILY_CAP <= the limit (150 + 120 = 270 of 300).
   notifications:
     email:
       enabled: ${NOTIFICATION_EMAIL_ENABLED:false}
@@ -111,6 +114,12 @@ wassel:
     lockout:
       max-failures: ${LOCKOUT_MAX_FAILURES:5}
       duration: ${LOCKOUT_DURATION:15m}
+    # The daily cap on sign-in, resend, reset and invite email (SCRUM-289, docs/contracts/auth-email.md). It shares the
+    # provider's daily limit with the notification cap above: keep the two caps' sum under that limit, with a margin.
+    email:
+      daily-cap: ${AUTH_EMAIL_DAILY_CAP:120}
+      reset-daily-cap: ${AUTH_EMAIL_RESET_DAILY_CAP:30}
+      per-account-daily-cap: ${AUTH_EMAIL_PER_ACCOUNT_DAILY_CAP:10}
     # Per-address limit on the six public sign-in endpoints (SCRUM-288): this many POSTs from one address to one endpoint
     # in each window, then 429 with Retry-After. In memory, so it resets on a restart and assumes ONE backend instance.
     # trusted-proxy-hops is how many proxies in front of the backend each append to X-Forwarded-For; 0 ignores the

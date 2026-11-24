@@ -8,6 +8,7 @@ import com.wassel.backend.attendance.exception.InvalidAttendanceQueryException;
 import com.wassel.backend.addressrequests.exception.AddressRequestConflictException;
 import com.wassel.backend.addressrequests.exception.AddressRequestNotFoundException;
 import com.wassel.backend.addressrequests.exception.InvalidAddressRequestException;
+import com.wassel.backend.auth.exception.AuthEmailCapException;
 import com.wassel.backend.auth.exception.CodeCooldownException;
 import com.wassel.backend.auth.exception.InvalidCodeException;
 import com.wassel.backend.auth.exception.InvalidCredentialsException;
@@ -46,7 +47,9 @@ import com.wassel.backend.users.exception.UserNotFoundException;
 import com.wassel.backend.vehicles.exception.VehicleAlreadyExistsException;
 import com.wassel.backend.vehicles.exception.VehicleCapacityConflictException;
 import com.wassel.backend.vehicles.exception.VehicleNotFoundException;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -460,6 +463,14 @@ public class GlobalExceptionHandler {
 	public ProblemDetail handleCodeCooldown(CodeCooldownException ex) {
 		logRejected(ex);
 		return ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+	}
+
+	// The daily cap on authentication email (SCRUM-289, docs/contracts/auth-email.md): not 429, which is the cooldown.
+	// Not logged here: AuthEmailBudget has already logged the refusal, with the user and the limit that was hit.
+	@ExceptionHandler(AuthEmailCapException.class)
+	public ProblemDetail handleAuthEmailCap(AuthEmailCapException ex, HttpServletResponse response) {
+		response.setHeader(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()));
+		return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
 	}
 
 	// Thrown by @PreAuthorize checks inside the MVC layer.
