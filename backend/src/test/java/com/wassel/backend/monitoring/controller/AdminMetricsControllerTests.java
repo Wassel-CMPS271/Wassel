@@ -3,12 +3,14 @@ package com.wassel.backend.monitoring.controller;
 import com.jayway.jsonpath.JsonPath;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.entity.User;
+import com.wassel.backend.users.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -37,6 +39,12 @@ class AdminMetricsControllerTests {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private UserRepository userRepository;
+
+	@Autowired
+	private PasswordEncoder passwordEncoder;
 
 	private static RequestPostProcessor as(Role role) {
 		User user = User.builder().id(UUID.randomUUID()).email(role + "@wassel.test").passwordHash("x").role(role)
@@ -99,6 +107,31 @@ class AdminMetricsControllerTests {
 		assertEquals(0, number(after, "$.requests.tooManyRequests") - number(before, "$.requests.tooManyRequests"));
 		// Reading the numbers is not counted, so reading twice changes nothing.
 		assertEquals(number(after, "$.requests.total"), number(read(), "$.requests.total"));
+	}
+
+	// AuthService calls accountLocked() when the fifth wrong password locks the account; deleting that call must fail here.
+	@Test
+	void anAccountLockedByWrongPasswordsIsCountedOnceAsALockoutAndEveryWrongPasswordAsAFailedSignIn() throws Exception {
+		String email = UUID.randomUUID() + "@wassel.test";
+		userRepository.save(User.builder().email(email).passwordHash(passwordEncoder.encode("correct-horse-1"))
+				.role(Role.PARENT).schoolId(UUID.randomUUID()).build());
+		String before = read();
+
+		// Five wrong passwords lock it; the sixth, with the right password, is refused as a locked account.
+		for (int i = 0; i < 5; i++) {
+			login(email, "definitely-wrong-pw");
+		}
+		login(email, "correct-horse-1");
+
+		String after = read();
+		assertEquals(1, number(after, "$.signIns.lockouts") - number(before, "$.signIns.lockouts"));
+		assertEquals(6, number(after, "$.signIns.failed") - number(before, "$.signIns.failed"));
+	}
+
+	private void login(String email, String password) throws Exception {
+		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"%s\",\"password\":\"%s\"}".formatted(email, password)))
+				.andExpect(status().isUnauthorized());
 	}
 
 	@Test

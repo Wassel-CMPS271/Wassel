@@ -75,11 +75,12 @@ class RequestMetricsFilterTests {
 	}
 
 	@Test
-	void aWrongPasswordIsAFailedSignInAndSoIsAWrongCodeButNothingElse() throws Exception {
+	void aWrongPasswordIsAFailedSignInButNothingElseTheFilterSees() throws Exception {
 		call("POST", "/api/auth/login", 401);
 		call("POST", "/api/auth/login", 401);
+		// Not failed sign-ins here: a success, a malformed body, a refused address, a read. Wrong codes are counted by
+		// TwoFactorService (TwoFactorControllerTests), so whatever verify answers adds nothing in the filter.
 		call("POST", "/api/auth/2fa/verify", 400);
-		// Not failed sign-ins: a success, a malformed body, a refused address, a vanished pending login, a read.
 		call("POST", "/api/auth/login", 204);
 		call("POST", "/api/auth/login", 400);
 		call("POST", "/api/auth/login", 429);
@@ -89,6 +90,6 @@ class RequestMetricsFilterTests {
 		call("GET", "/api/auth/login", 401);
 		call("GET", "/api/auth/me", 401);
 
-		assertEquals(3, metrics.snapshot().signIns().failed());
+		assertEquals(2, metrics.snapshot().signIns().failed());
 	}
 }

@@ -22,7 +22,7 @@ Any other role is 403, no session is 401. It is **not** an actuator endpoint: `/
 | `requests.tooManyRequests` | Answers with 429: the per-address limit on the sign-in endpoints (SCRUM-288) and the one-code-a-minute rule. |
 | `requests.p95Millis` | The 95th percentile (nearest rank) of the time the latest `latencySample` requests took, in whole milliseconds rounded up, or `null` with no requests. |
 | `requests.latencySample` | How many requests the p95 is worked out from: the latest 2,000 at most. |
-| `signIns.failed` | Sign-ins that did not get through: a 401 from `POST /api/auth/login` (wrong or unknown password, disabled or locked account: one answer by design) and a 400 from `POST /api/auth/2fa/verify` (wrong or expired code). |
+| `signIns.failed` | Sign-ins that did not get through: a 401 from `POST /api/auth/login` (wrong or unknown password, disabled or locked account: one answer by design) and every wrong or expired code at `POST /api/auth/2fa/verify`, including the fifth, which ends the login. A malformed code (not six digits) is rejected before the check and is not counted. |
 | `signIns.lockouts` | Accounts locked after too many wrong passwords (SCRUM-171). |
 | `notifications.sent` | Notification emails that went out. |
 | `notifications.failed` | Deliveries that ended `FAILED`: gave up after the last attempt, expired unsent, or interrupted (SCRUM-283). A retry that later succeeds is not a failure. |

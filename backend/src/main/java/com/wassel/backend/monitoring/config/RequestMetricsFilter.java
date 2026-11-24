@@ -19,8 +19,9 @@ import java.io.IOException;
  * exception, which counts as a 500. The health check is not counted (an uptime monitor calls it all day and would
  * drag the latency down), and neither is the metrics endpoint, so reading the numbers does not change them.
  * <p>
- * It also counts failed sign-ins from what the sign-in endpoints answer: a 401 from login (wrong or unknown
- * password, disabled or locked account, all one answer by design) and a 400 from 2FA verify (wrong or expired code).
+ * It also counts failed sign-ins from what login answers: a 401 (wrong or unknown password, disabled or locked
+ * account, all one answer by design). Wrong 2FA codes are counted by {@code TwoFactorService} itself, because the
+ * answer is a 400 for most and a 401 for the fifth, and a malformed body is also a 400.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
@@ -66,10 +67,6 @@ public class RequestMetricsFilter extends OncePerRequestFilter {
 		if (!"POST".equals(request.getMethod())) {
 			return false;
 		}
-		return switch (pathOf(request)) {
-			case "/api/auth/login" -> status == 401;
-			case "/api/auth/2fa/verify" -> status == 400;
-			default -> false;
-		};
+		return "/api/auth/login".equals(pathOf(request)) && status == 401;
 	}
 }
