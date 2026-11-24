@@ -4,7 +4,9 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record SetPasswordRequest(
+		// A real token is 43 characters.
 		@NotBlank(message = "Token is required")
+		@Size(max = 200, message = "Token is too long")
 		String token,
 
 		@NotBlank(message = "Password is required")

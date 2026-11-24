@@ -7,7 +7,7 @@ import { AuthCard, authFieldProps } from "@/components/auth/AuthCard";
 import { Button, CtaButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ROLE_HOME, resendCode, verifyCode } from "@/lib/api/auth";
-import { ApiError, ApiValidationError } from "@/lib/api/errors";
+import { ApiError, ApiValidationError, rateLimitMessage } from "@/lib/api/errors";
 import { colors, darkTheme, spacing } from "@/styles/tokens";
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
@@ -68,6 +68,8 @@ export function TwoFactorForm() {
       } else if (error instanceof ApiError && error.status === 400) {
         // Wrong or expired code: stay and retry, or ask for a new one.
         setCodeError(error.message);
+      } else if (rateLimitMessage(error)) {
+        setFormError(rateLimitMessage(error)!);
       } else {
         setFormError(GENERIC_ERROR);
       }
@@ -90,6 +92,8 @@ export function TwoFactorForm() {
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         router.replace("/login?expired=1");
+      } else if (rateLimitMessage(error)) {
+        setFormError(rateLimitMessage(error)!);
       } else if (error instanceof ApiError && error.status === 429) {
         setFormError(error.message);
       } else {

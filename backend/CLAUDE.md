@@ -47,8 +47,8 @@ that's the structure this codebase moved away from.
   `TwoFactorService` logs each wrong code at WARN with the user id and attempt number (never the
   code), because the exception handler's line names no user and repeated wrong codes are what a
   guessing attempt looks like. Locally, the code is in the log.
-  Password flows (SCRUM-169): `POST /api/auth/forgot-password` (204 for any email, unless the send
-  fails; see the limits below; emails a link only
+  Password flows (SCRUM-169): `POST /api/auth/forgot-password` (204 for every outcome, a failed send
+  and the daily cap included; emails a link only
   for an existing, enabled account, at most once per 60 seconds) and `POST /api/auth/password`
   (sets the password from a token, for both first-time set and reset; a bad, expired or used
   token is one generic 400). Tokens (`entity/PasswordToken`) are 32 random bytes, stored only as
@@ -63,10 +63,39 @@ that's the structure this codebase moved away from.
   ever drift there are zero or two `Mailer` beans and startup fails. `SmtpMailer` uses
   `spring-boot-starter-mail` with `MAIL_HOST`/`MAIL_PORT`/`MAIL_USERNAME`/`MAIL_PASSWORD` (Gmail and an
   app password for now; Gmail sends as the signed-in account whatever the from address says, so the
-  sender is `MAIL_USERNAME`). A failed send throws, which rolls back the caller's transaction (no
-  login code or token is left behind) and answers a generic 500, so the user retries; the cause is
-  logged at ERROR. The send runs inside the request's transaction, so `spring.mail` has 5 second
-  timeouts; they are per network step, so they bound a hang, not the whole send. A missing
+  sender is `MAIL_USERNAME`). A failed send throws and answers a generic 500, so the user retries; the cause is
+  logged at ERROR. Where the send runs (SCRUM-289, `docs/contracts/auth-email.md`): sign-in, resend and
+  forgot-password are not `@Transactional`. The code or token and the cap's slot are written in one short
+  `TransactionTemplate` transaction (tx1), the send follows its commit on the request thread, so no database
+  connection is held while the provider is called, and a failed send is undone in a second short transaction
+  (tx2): login deletes its own row (`LoginCodeRepository.deleteUnsent`, conditional on id and code hash, so a racing
+  login's row is never removed), resend puts the previous code back (`restore`: code, expiry, send time and attempts,
+  plus the guesses made at the new code), forgot-password deletes its token (`deleteUnused`) and voids the user's older links only after the send succeeded
+  (`voidUnusedExcept`). `service/SendUndo` runs
+  tx2 and never throws; an undo that fails is logged at ERROR. Not `afterCommit` or an event listener: both run
+  before the connection is released. Admin and head invites (`PasswordService.sendInvite`, called from `accounts` and
+  `drivers`) still send inside the transaction that creates the account, so a failed send still rolls the account back
+  there. The send still has `spring.mail` 5 second timeouts: they are per network step, so they bound a hang
+  (now of a request thread), not the whole send.
+  Daily cap (SCRUM-289): table `auth_emails` (V18, one row per send attempt: user id, kind, time; no address),
+  `service/AuthEmailBudget`. `claim` runs inside tx1 under its own advisory lock (`289_001`; the notification cap
+  keeps `283_001` in `inbox`: both draw on one provider quota, so a third key must be a new constant), is refused by
+  the daily cap, the reset share or the per-account limit (`AUTH_EMAIL_*` in `application.yml`; the per-account limit
+  counts an account's own kind only, sign-in codes and resends for a login and reset links for a reset, so a reset
+  flood can never refuse a sign-in), counted from Beirut midnight, and answers login and resend with 503 +
+  `Retry-After` (`AuthEmailCapException`) and forgot-password with 204. `forgotPassword` takes the lock (`lock()`)
+  before it reads its cooldown, so parallel requests send one link. A failed send gives its slot back (`AuthEmailBudget.refund`, in the same
+  transaction as the undo, so an outage cannot use up an account's limit), and an invite's slot is recorded in the
+  invite's own transaction and rolls back with it. Invites are never refused. A failed
+  send is rethrown as `AuthEmailSendException` (kind, user id and the provider's class only, never its message:
+  SMTP errors carry the address). Figures, the sum rule's numbers, the tests and the measurement are in
+  `docs/testing/SCRUM-289/report.md`; the numbers for the caps are in `docs/contracts/auth-email.md`. The test profile
+  lifts the caps (`application-test.yml`) so the shared database's count cannot trip other suites; a cap test sets its own
+  with `@TestPropertySource` (one more Spring context, so put such tests together).
+  Independent testers should challenge: no connection held during any auth send; a failed send leaves no usable code or
+  link and never blocks an immediate retry; the resend undo restores the old code; the cap and its two sub-limits hold
+  across parallel requests and Beirut midnight; refusals reveal nothing (forgot-password is always 204); admin invites
+  are never refused; logs hold ids and counts only. A missing
   `MAIL_USERNAME` stops startup, but a missing `MAIL_PASSWORD` does not (Boot binds it as the literal
   text), so `docker-compose.staging.yml` is what refuses to start without it.
   Brevo (SCRUM-197): `BrevoMailer` sends through Brevo's HTTPS API (`POST /v3/smtp/email`, key in the `api-key`
@@ -76,8 +105,27 @@ that's the structure this codebase moved away from.
   deployed environment never prints a code. `brevo` needs `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` (an address
   verified in the Brevo account, since Brevo only sends from a verified sender); a blank one stops startup, and
   `MAIL_USERNAME`/`MAIL_PASSWORD` are then unused. Same failure rule as SMTP: a rejected or timed-out send
-  (5 s) throws, so the caller's transaction rolls back and the user retries. The exception carries only its
+  (5 s) throws, so the user retries (nothing is left behind: see where the send runs, above). The exception carries only its
   type: never the key or the response body, which can echo the recipient. Local and staging keep SMTP.
+  Rate limit (SCRUM-288): `config/RateLimitFilter` refuses repeated POSTs from one address to the six public endpoints
+  (`login`, `2fa/verify`, `2fa/resend`, `logout`, `forgot-password`, `password`) with a 429 problem detail and `Retry-After`,
+  before the body is read and before any account is looked up. It sits after `CorsFilter` in `SecurityConfig` (so the 429
+  carries CORS headers; `Retry-After` is an exposed header for the direct-to-backend dev setup). `service/RateLimiter` is a
+  fixed-window counter per `endpoint:address` in a `ConcurrentHashMap` (so up to twice the limit across a window edge; expired
+  keys are purged once a window; past 100,000 keys new ones pass unchecked rather than lock everyone out). `config/RateLimitProperties`
+  (`wassel.auth.rate-limit.*`, env `RATE_LIMIT_*`; **off unless `RATE_LIMIT_ENABLED=true`**, because with `trusted-proxy-hops` 0 everyone behind Railway shares one bucket; defaults per minute: login 30, 2FA verify 60, resend 20, logout 60,
+  forgot-password 10, set-password 30). **The address:** `config/ClientAddressResolver`. `trusted-proxy-hops` 0 (default) ignores
+  `X-Forwarded-For` and uses the connection's address, so a forged header can never choose the bucket; N takes the Nth entry from
+  the right (each trusted proxy appends), falls back to the connection when the chain is shorter than N or the entry is not an
+  IP literal (no name is ever resolved), reduces IPv6 to its /64 and maps `::ffff:a.b.c.d` to IPv4. The first refusal of a window
+  is logged at WARN with the connection address and the raw header, so what the backend really sees behind Vercel and Railway can
+  be read off the log (README, "Rate limit on the sign-in endpoints"; **not yet confirmed against the live hosts**, so production
+  runs at 0 until it is). **In memory: resets on a restart and assumes one backend instance.** The other 429 of the flow
+  (`CodeCooldownException`, a code sent under a minute ago) has no `Retry-After`; the frontend tells the two apart by that header.
+  Turned off in the `test` and `e2e` profiles (every test signs in from 127.0.0.1); `RateLimitTests` turns it on. Length limits
+  (same ticket): the login and forgot-password email is at most 255 characters (the column), the login password at most 72 bytes
+  (BCrypt's limit, `dto/MaxBytes`: no account can have a longer one), the set-password token at most 200 (a real one is 43), and
+  a driver's names 100 and email 255 (`CreateDriverRequest`), each a 400 naming the field instead of a 500 from the database.
   Known limits: a password change does not revoke existing sessions (tokens are stateless); the
   fix is a "tokens valid from" timestamp on `User` checked by `JwtAuthenticationFilter`. And
   anyone who knows an email can call forgot-password once a minute; each new link voids the
@@ -86,21 +134,22 @@ that's the structure this codebase moved away from.
   and, by logging in every minute, keep that user's code from being usable. Account lockout
   (SCRUM-171) does not change this, since it counts wrong passwords and this caller has the right
   one. Limits that real email adds:
-  - **Forgot-password reveals which emails have accounts.** An unknown email, or one in its cooldown,
-    answers 204 at once; a registered one waits for the send (a second or so) and is a 500 if Gmail
-    fails. The old "always 204, reveals nothing" held only because logging took no time. Accepted
-    for now. The fix is to send off the request thread and always answer 204. Login is not affected:
-    its email only goes out after a correct password.
+  - **Forgot-password reveals which emails have accounts, by timing only.** The status is 204 for every outcome
+    (SCRUM-289), but a registered email still waits for the send (a second or so) on the request thread, and an unknown
+    one or one in its cooldown answers at once. Accepted for now. The fix is to send off the request thread. Login is
+    not affected: its email only goes out after a correct password.
   - **One account can stop every login.** Login and forgot-password each allow one email a minute
     per account, about 1,440 a day, against Gmail's roughly 500. Once Gmail refuses, every login
     answers 500, because 2FA has no off switch. Account lockout and a provider with a higher limit are
     the fixes; Gmail is not meant for real users.
-  - The forgot-password cooldown is read-then-write and a slow send widens that window, so parallel
-    requests for one account can each send an email.
-  - If Gmail accepts a message but the reply times out, the transaction rolls back and the user holds
-    a code or link that doesn't work; they ask for another.
-  - Each login opens a fresh encrypted connection to Gmail inside the request, so it takes a second or
-    more longer than when the email was only logged (not measured).
+  - The forgot-password cooldown is read-then-write. The send is no longer inside its transaction, which narrows the
+    window, but parallel requests for one account can still each send an email.
+  - If the provider accepts a message but the reply times out, the undo deletes or restores a code or link the user did
+    receive; they ask for another, and that is allowed at once. A crash between the commit and the send leaves a code
+    nobody received until it expires (5 minutes; a new login is blocked for 60 s). Older reset links stay voided after a
+    failed forgot-password send.
+  - Each login opens a fresh encrypted connection to Gmail on the request thread, outside any transaction, so it takes a
+    second or more longer than when the email was only logged (not measured).
 - `users` — the `User` entity and `Role` enum, plus `UserRepository`/`UserService` for other
   modules to look up one of their own school's users by id and role (e.g. students, validating
   a parent-link target), and for auth to find users by email and create accounts. The foundational
@@ -634,9 +683,20 @@ that's the structure this codebase moved away from.
   assumed 300 a day on Brevo's free plan, unverified), and a due delivery over it is `SKIPPED`/`DAILY_CAP`. The cap check and the `claim` run in one short transaction under a Postgres advisory lock (`lockForCap`), so two instances cannot both take the last attempt; entries are sent oldest first (`discover` sets `next_attempt_at` from the entry's time). `deliverDue` never throws: a failure outside one delivery is logged as an error with the class only. The three scheduled jobs get `spring.task.scheduling.pool.size: 3` so a slow provider cannot hold up the late alerts. **Privacy:** the email has the first name,
   the type, the school-local time and a link (`DeliveryEmail`, pinned by `docs/contracts/samples/notification-delivery/email-picked-up.txt`); logs hold
   the delivery id, the entry id, the attempt and the exception's class only, never `e.getMessage()` (an SMTP error can hold the recipient) or the
-  exception itself. No Micrometer and no new actuator endpoint (`HealthEndpointTests` stays): the summary is the monitoring. Tests use a
+  exception itself. No Micrometer and no new actuator endpoint (`HealthEndpointTests` stays): the summary is the monitoring (and, since SCRUM-290, `monitoring` counts the sends). Tests use a
   `RecordingMailer` (a real class that stands in for the provider and can refuse) through `DeliverySupport`, which empties the outbox and the inbox
   first because the sender looks at every school's entries. Known limits: see the contract (at most once against a crash only, a rejected address is retried, the cap counts attempts, English plain text, no unsubscribe link).
+- `monitoring` — the platform health numbers for the admin (SCRUM-290): `GET /api/admin/metrics` (ADMIN). Shapes, rules and sample in
+  `docs/contracts/admin-metrics.md`. A **leaf module** (imports no other module), so `auth` and `inbox` call
+  `service/OperationalMetrics` without a cycle. It is our own small counter, not Micrometer/actuator: the only actuator endpoint stays
+  `/actuator/health`. `config/RequestMetricsFilter` is the outermost servlet filter (`HIGHEST_PRECEDENCE + 10`, before Spring Security) and times
+  every request with `System.nanoTime`: 5xx (or an exception, counted as 500) and 429 are counted, the latest 2,000 times feed an exact
+  nearest-rank p95, `/actuator/*` and the metrics path are skipped, and failed sign-ins are counted from the answers (401 on login, 400 on
+  2FA verify), so no other module needs a hook for them. `AuthService` calls `accountLocked()` where it logs a lock, and
+  `NotificationDeliveryService` calls `notificationSent()` after a send and `notificationsFailed(n)` where a delivery ends `FAILED`
+  (given up, expired, interrupted). **In memory: resets on a restart or redeploy, one instance only**, and the answer says so
+  (`since`, `resetsOnRestart`). No admin page yet (a stretch of the ticket). Tests: `OperationalMetricsTests`,
+  `RequestMetricsFilterTests`, `AdminMetricsControllerTests` (roles and a scripted run), and a row in `RoleAccessMatrixTests`.
 - `roster` — pausing and archiving a student and placing a student on the best route (SCRUM-270):
   `PUT /api/head-of-transport/students/{id}/status`, `GET` and `POST .../students/{id}/best-route`. Shapes and rules are in
   `docs/contracts/roster.md`. A new module because both touch the students and the routes, and `students` never imports
@@ -772,8 +832,10 @@ anymore: don't add it back, and don't add a test that depends on a table or colu
 
 **Coverage (SCRUM-151).** JaCoCo (`jacoco-maven-plugin` in `pom.xml`) records coverage during the tests and writes an
 HTML report to `backend/target/site/jacoco/index.html` at the `verify` phase, so `./mvnw verify` produces it (plain
-`test` does not). CI uploads the folder as the `backend-coverage` artifact. It is a report only: there are no
-thresholds, so a low number never fails the build.
+`test` does not). CI uploads the folder as the `backend-coverage` artifact and prints the number in the job summary.
+**Floor (SCRUM-292):** the `check` execution of the same plugin fails `verify` when line coverage of the whole
+backend is under 94.7% (two points below the 96.72% of 2026-11-22). The floor is never lowered; if a change drops
+coverage, add tests. Definitions and daily readings are in `docs/quality/`.
 
 **Independent tests of Moustafa's Sprint 3 work (SCRUM-236, by Hashem)**, written from the tickets and `docs/contracts/runs.md`,
 not from the authors' own suites: `AbsenceCriteriaTests` (238), `AbsentOnRunCriteriaTests` (239),

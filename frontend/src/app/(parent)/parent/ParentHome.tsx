@@ -116,6 +116,7 @@ function ParentHomeContent({ renderTracking, renderInbox }: Omit<ParentHomeProps
     requestAnimationFrame(() => heading.current?.focus());
   }
   const children = state.kind === "loaded" ? state.children : [];
+  const inboxAvailable = state.kind !== "failed" || state.reason === "unavailable";
   function choose(kind: "absences" | "tracking") {
     const child = selectedChild ?? children[0];
     if (child) navigate({ kind, childId: child.studentId });
@@ -135,10 +136,10 @@ function ParentHomeContent({ renderTracking, renderInbox }: Omit<ParentHomeProps
         <Button variant="secondary" style={navStyle} aria-current={view.kind === "children" ? "page" : undefined} onClick={() => navigate({ kind: "children" })}>My children</Button>
         <Button variant="secondary" style={navStyle} disabled={!children.length} aria-current={view.kind === "absences" ? "page" : undefined} onClick={() => choose("absences")}>Absences</Button>
         {renderTracking ? <Button variant="secondary" style={navStyle} disabled={!children.length} aria-current={view.kind === "tracking" ? "page" : undefined} onClick={() => choose("tracking")}>Bus tracking</Button> : unavailable("Bus tracking")}
-        {renderInbox ? <Button variant="secondary" style={navStyle} disabled={state.kind !== "loaded"} aria-current={view.kind === "inbox" ? "page" : undefined} onClick={() => navigate({ kind: "inbox" })}>Inbox</Button> : unavailable("Inbox")}
+        {renderInbox ? <Button variant="secondary" style={navStyle} disabled={!inboxAvailable} aria-current={view.kind === "inbox" ? "page" : undefined} onClick={() => navigate({ kind: "inbox" })}>Inbox</Button> : unavailable("Inbox")}
       </nav>
 
-      {state.kind === "loading" && (
+      {state.kind === "loading" && view.kind !== "inbox" && (
         <div role="status" aria-live="polite" className="flex flex-col" style={{ gap: spacing.md }}>
           <p className="text-sm" style={{ color: darkTheme.text.secondary }}>Loading your children&apos;s transport details…</p>
           {[0, 1].map(index => <Card key={index} aria-hidden="true" className="flex flex-col" style={{ gap: spacing.md }}>
@@ -149,7 +150,7 @@ function ParentHomeContent({ renderTracking, renderInbox }: Omit<ParentHomeProps
         </div>
       )}
 
-      {state.kind === "failed" && (
+      {state.kind === "failed" && (view.kind !== "inbox" || !inboxAvailable) && (
         <Card className="flex flex-col items-start" style={{ gap: spacing.md }}>
           <div role="alert" className="flex flex-col" style={{ gap: spacing.sm }}>
             <h2 className="text-lg font-semibold" style={{ color: darkTheme.text.primary }}>{state.reason === "expired" ? "Your sign-in has expired" : "Couldn't load transport details"}</h2>
@@ -184,7 +185,7 @@ function ParentHomeContent({ renderTracking, renderInbox }: Omit<ParentHomeProps
           requestAnimationFrame(() => document.getElementById(`absences-${id}`)?.focus());
         }} /> : <p role="status">Choose one of your linked children.</p>}
       </div>}
-      {view.kind === "inbox" && state.kind === "loaded" && <div key="inbox">{renderInbox ? renderInbox() : <p role="status">Inbox is not available yet.</p>}</div>}
+      {view.kind === "inbox" && inboxAvailable && <div key="inbox">{renderInbox ? renderInbox() : <p role="status">Inbox is not available yet.</p>}</div>}
       {view.kind === "children" && state.kind === "loaded" && (
         <div className="flex flex-col items-start" style={{ gap: spacing.sm }}>
           <Button variant="secondary" disabled={refreshing} onClick={refresh} style={{ minHeight: sizing.tapTarget }}>{refreshing ? "Refreshing…" : "Refresh transport details"}</Button>

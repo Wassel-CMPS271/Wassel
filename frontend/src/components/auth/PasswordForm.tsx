@@ -7,7 +7,7 @@ import { AuthCard, authFieldProps } from "@/components/auth/AuthCard";
 import { CtaButton } from "@/components/ui/Button";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { setPassword as savePassword } from "@/lib/api/auth";
-import { ApiError, ApiValidationError } from "@/lib/api/errors";
+import { ApiError, ApiValidationError, rateLimitMessage } from "@/lib/api/errors";
 import { colors, spacing } from "@/styles/tokens";
 
 type PasswordFormMode = "setup" | "reset";
@@ -82,6 +82,8 @@ export function PasswordForm({ mode, token }: PasswordFormProps) {
       } else if (error instanceof ApiError && error.status === 400) {
         // One generic answer for a bad, expired or already used link.
         setFormError(error.message);
+      } else if (rateLimitMessage(error)) {
+        setFormError(rateLimitMessage(error)!);
       } else {
         setFormError(GENERIC_ERROR);
       }

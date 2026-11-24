@@ -1,0 +1,60 @@
+07:34:13
+wassel-loadtest-backend-1 cpu=30.29% mem=353.8MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=3.92% mem=47.26MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=16.6MiB / 128MiB
+07:35:01
+wassel-loadtest-backend-1 cpu=32.29% mem=385MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=1.17% mem=50.98MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.33% mem=19.19MiB / 128MiB
+07:35:49
+wassel-loadtest-backend-1 cpu=28.95% mem=479.4MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=4.01% mem=60.35MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=18.84MiB / 128MiB
+07:36:37
+wassel-loadtest-backend-1 cpu=11.32% mem=485.5MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=2.35% mem=61.7MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=25.25MiB / 128MiB
+07:37:25
+wassel-loadtest-backend-1 cpu=12.90% mem=489.8MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=5.32% mem=61.84MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.01% mem=25.25MiB / 128MiB
+07:38:13
+wassel-loadtest-backend-1 cpu=6.77% mem=491.2MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=6.89% mem=63.18MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=25.25MiB / 128MiB
+07:39:02
+wassel-loadtest-backend-1 cpu=7.90% mem=491.7MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=7.91% mem=62.31MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.01% mem=25.25MiB / 128MiB
+07:39:50
+wassel-loadtest-backend-1 cpu=18.25% mem=491.8MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=7.75% mem=63.14MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=25.25MiB / 128MiB
+07:40:38
+wassel-loadtest-backend-1 cpu=14.90% mem=492.7MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=3.94% mem=62.67MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.13% mem=26.12MiB / 128MiB
+07:41:26
+wassel-loadtest-backend-1 cpu=13.66% mem=494.9MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=6.32% mem=63.62MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.03% mem=25.53MiB / 128MiB
+07:42:14
+wassel-loadtest-backend-1 cpu=35.69% mem=495.2MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=42.21% mem=63.12MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=25.5MiB / 128MiB
+07:43:02
+wassel-loadtest-backend-1 cpu=8.36% mem=494.9MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=6.47% mem=72.66MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=25.5MiB / 128MiB
+07:43:51
+wassel-loadtest-backend-1 cpu=10.26% mem=499.4MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=4.50% mem=63.56MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=25.5MiB / 128MiB
+07:44:39
+wassel-loadtest-backend-1 cpu=5.79% mem=499.9MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=3.07% mem=63.9MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=25.5MiB / 128MiB
+07:45:27
+wassel-loadtest-backend-1 cpu=0.06% mem=498MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=3.92% mem=62.34MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=25.5MiB / 128MiB

@@ -157,7 +157,10 @@ it("reconnects and sends exactly once, with the same key, ending up Done", async
 
   fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Picked up" }));
   await flush();
-  expect(within(card("Dana Fares")).getByText(/Couldn't send/)).toBeInTheDocument();
+  // A network failure is shown as waiting, not as a failure (SCRUM-298): no Try
+  // again, since the backoff already resends it with the same key on its own.
+  expect(within(card("Dana Fares")).getByText(/Saved on phone/)).toBeInTheDocument();
+  expect(within(card("Dana Fares")).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
   expect(backend.calls).toHaveLength(1);
 
   // No extra tap needed: the backoff retries it on its own once it's due. The
@@ -165,6 +168,54 @@ it("reconnects and sends exactly once, with the same key, ending up Done", async
   // to end in queue.test.ts and useOfflineQueue.test.ts; this just checks the
   // page reflects it.
   await act(() => vi.advanceTimersByTimeAsync(2_000));
+
+  expect(backend.calls).toHaveLength(2);
+  expect(backend.calls[1].body.clientRequestId).toBe(backend.calls[0].body.clientRequestId);
+  expect(within(card("Dana Fares")).getByText("Done · Picked up")).toBeInTheDocument();
+});
+
+it("Send now resends a network-waiting tap at once, with the same key (SCRUM-298)", async () => {
+  // Fake timers throughout, as above: the point is that Send now doesn't need the
+  // 2s backoff to elapse, so the clock is never advanced in this test.
+  vi.useFakeTimers();
+  backend.reply("network"); // the resend (via Send now) is unscripted: applied as a 200
+  render(<DriverTodayPage />);
+  await flush();
+
+  fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Picked up" }));
+  await flush();
+  expect(within(card("Dana Fares")).getByText(/Saved on phone/)).toBeInTheDocument();
+  expect(backend.calls).toHaveLength(1);
+
+  fireEvent.click(screen.getByRole("button", { name: "Send now" }));
+  await flush();
+
+  expect(backend.calls).toHaveLength(2);
+  expect(backend.calls[1].body.clientRequestId).toBe(backend.calls[0].body.clientRequestId);
+  expect(within(card("Dana Fares")).getByText("Done · Picked up")).toBeInTheDocument();
+});
+
+it("the browser's own online event (real createConnectivity, not a fake) resends a network-waiting tap at once, with the same key (SCRUM-298)", async () => {
+  // Fake timers throughout, as above: the point is that the real "online" event
+  // doesn't need the 2s backoff to elapse either, so the clock is never advanced.
+  vi.useFakeTimers();
+  backend.reply("network"); // the resend (via the online event) is unscripted: applied as a 200
+  render(<DriverTodayPage />);
+  await flush();
+
+  fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Picked up" }));
+  await flush();
+  expect(within(card("Dana Fares")).getByText(/Saved on phone/)).toBeInTheDocument();
+  expect(backend.calls).toHaveLength(1);
+
+  // page.tsx builds the real createConnectivity (lib/offline/connectivity.ts), not a
+  // fake, so dispatching the actual window events exercises useOfflineQueue's real
+  // connectivity-subscribe effect end to end, not a mock of it: offline (the failed
+  // send already reported this; the explicit event just makes it unambiguous), then
+  // the browser saying the connection is back.
+  act(() => window.dispatchEvent(new Event("offline")));
+  act(() => window.dispatchEvent(new Event("online")));
+  await flush();
 
   expect(backend.calls).toHaveLength(2);
   expect(backend.calls[1].body.clientRequestId).toBe(backend.calls[0].body.clientRequestId);
@@ -293,8 +344,9 @@ it("shows no failure for a 409 when the reloaded stop already has the tapped sta
 });
 
 it("sends the next tap after a refused move (409 while the run is still in progress), with its own key", async () => {
-  // Offline: Not present, then Picked up, both saved. Back online, the first is refused.
-  backend.reply("network");
+  // The first tap gets a 503 (Couldn't send, with Try again), not a network failure
+  // (which would show as waiting instead, SCRUM-298, with no Try again to click).
+  backend.reply({ status: 503, body: { detail: "Unavailable" } });
   await renderPage();
   fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Not present" }));
   await within(card("Dana Fares")).findByText(/Couldn't send/);
@@ -318,7 +370,9 @@ it("says how many later taps weren't sent when a 409 comes back for a run that i
     ...DAY,
     runs: DAY.runs.map((run, i) => (i === 0 ? { ...run, state: "FINISHED" as const } : run)),
   };
-  backend.reply("network");
+  // The first tap gets a 503 (Couldn't send, with Try again), not a network failure
+  // (which would show as waiting instead, SCRUM-298, with no Try again to click).
+  backend.reply({ status: 503, body: { detail: "Unavailable" } });
   await renderPage();
   fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Picked up" }));
   await within(card("Dana Fares")).findByText(/Couldn't send/);
@@ -366,7 +420,7 @@ it("never sends a tap directly while an older saved tap for the same stop is uns
   // Saved on the phone, not sent yet (offline).
   fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Picked up" }));
   await flush();
-  expect(within(card("Dana Fares")).getByText(/Couldn't send/)).toBeInTheDocument();
+  expect(within(card("Dana Fares")).getByText(/Saved on phone/)).toBeInTheDocument();
 
   // Storage then fails: Dropped off can't be saved, and mustn't overtake Picked up.
   const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
@@ -390,11 +444,18 @@ it("never sends a tap directly while an older saved tap for the same stop is uns
 });
 
 it("shows the offline banner once connectivity is reported down, with the saved count", async () => {
+  // Fake timers, then a plain getByText once settled (not findByText): the item is
+  // briefly "queued" ("Saved on phone" too) before the send rejects, so a real-timer
+  // findByText could pass on that transient state alone without proving the item
+  // settled as waiting rather than as a failure (SCRUM-298).
+  vi.useFakeTimers();
   backend.reply("network");
-  await renderPage();
+  render(<DriverTodayPage />);
+  await flush();
 
   fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Picked up" }));
-  await within(card("Dana Fares")).findByText(/Couldn't send/);
+  await flush();
+  expect(within(card("Dana Fares")).getByText(/Saved on phone/)).toBeInTheDocument();
 
   const banners = screen.getAllByRole("status");
   expect(banners.some((el) => /You're offline/.test(el.textContent ?? ""))).toBe(true);
@@ -475,6 +536,36 @@ describe("a 401 (the session expired)", () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
+  it("Send now while the queue is paused also sends an earlier network-waiting tap at once (SCRUM-298)", async () => {
+    vi.useFakeTimers();
+    backend.reply("network"); // Dana: no answer at all, backing off
+    render(<DriverTodayPage />);
+    await flush();
+    fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Picked up" }));
+    await flush();
+    expect(within(card("Dana Fares")).getByText(/Saved on phone/)).toBeInTheDocument();
+    const danaKey = backend.calls[0].body.clientRequestId;
+
+    // Rami's tap gets a 401; /me can't answer yet, so the queue stays paused rather
+    // than redirecting (the sign-in-expiry flow), and only Send now resumes it.
+    vi.mocked(me).mockRejectedValue(new TypeError("Failed to fetch"));
+    backend.reply({ status: 401 }); // Rami's attempt; both resends after Send now are unscripted
+    fireEvent.click(within(card("Rami Nasr")).getByRole("button", { name: "Dropped off" }));
+    await flush();
+    expect(screen.getByText(/Sending is paused while your sign-in is checked/)).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Send now" }));
+    await flush();
+    await flush();
+
+    // Both land Done without ever advancing the clock past Dana's 2s backoff: Send
+    // now resumes the queue and speeds up the network-waiting tap in one stroke.
+    expect(within(card("Dana Fares")).getByText("Done · Picked up")).toBeInTheDocument();
+    expect(within(card("Rami Nasr")).getByText("Done · Dropped off")).toBeInTheDocument();
+    expect(backend.calls.filter((call) => call.body.clientRequestId === danaKey)).toHaveLength(2);
+  });
+
   it("checks /me again on the tick after it couldn't answer, and redirects once it says signed out", async () => {
     vi.useFakeTimers();
     backend.reply({ status: 401 }); // the queue stays paused, so no further call happens
@@ -502,6 +593,32 @@ describe("a 401 (the session expired)", () => {
     await within(card("Dana Fares")).findByText("Done · Picked up");
     expect(backend.calls).toHaveLength(2);
     expect(backend.calls[1].body.clientRequestId).toBe(backend.calls[0].body.clientRequestId);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("resuming after /me confirms the session also sends an earlier network-waiting tap at once (SCRUM-298)", async () => {
+    vi.useFakeTimers();
+    backend.reply("network"); // Dana: no answer at all, backing off
+    render(<DriverTodayPage />);
+    await flush();
+    fireEvent.click(within(card("Dana Fares")).getByRole("button", { name: "Picked up" }));
+    await flush();
+    expect(within(card("Dana Fares")).getByText(/Saved on phone/)).toBeInTheDocument();
+    const danaKey = backend.calls[0].body.clientRequestId;
+
+    // Rami's tap gets a 401; /me says the session is still fine (a stray 401), so the
+    // queue resumes once on its own, without the driver pressing anything.
+    vi.mocked(me).mockResolvedValue({ id: "driver-1", email: "karim@wassel.local", role: "DRIVER", schoolId: "s-1" });
+    backend.reply({ status: 401 }); // Rami's attempt; both resends after resume are unscripted
+    fireEvent.click(within(card("Rami Nasr")).getByRole("button", { name: "Dropped off" }));
+    await flush();
+    await flush();
+
+    // Both land Done without ever advancing the clock past Dana's 2s backoff:
+    // resume() (page.tsx) also calls sendWaitingNow(), not only drain().
+    expect(within(card("Dana Fares")).getByText("Done · Picked up")).toBeInTheDocument();
+    expect(within(card("Rami Nasr")).getByText("Done · Dropped off")).toBeInTheDocument();
+    expect(backend.calls.filter((call) => call.body.clientRequestId === danaKey)).toHaveLength(2);
     expect(replace).not.toHaveBeenCalled();
   });
 

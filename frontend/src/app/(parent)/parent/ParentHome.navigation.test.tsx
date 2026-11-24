@@ -19,15 +19,11 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
-it("enables accepted GPS navigation lazily while unmerged inbox stays unavailable", async () => {
+it("enables both accepted parent features lazily without requesting data before navigation", async () => {
   render(<ParentPage />); await screen.findByText("Lina Navigation");
-  const nav = screen.getByRole("navigation", { name: "Family views" });
-  expect(nav).toBeVisible();
+  expect(screen.getByRole("navigation", { name: "Family views" })).toBeVisible();
   expect(screen.getByRole("button", { name: "Bus tracking" })).toBeEnabled();
-  for (const label of ["Inbox"]) {
-    expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
-    expect(screen.getByText(label).closest('[aria-disabled="true"]')).toHaveTextContent("Soon");
-  }
+  expect(screen.getByRole("button", { name: "Inbox" })).toBeEnabled();
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
 it("navigates absences and switches only among the authenticated linked children", async () => {
