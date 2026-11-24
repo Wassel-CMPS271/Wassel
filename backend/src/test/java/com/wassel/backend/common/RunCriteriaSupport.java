@@ -5,6 +5,7 @@ import com.wassel.backend.common.config.ClockConfig;
 import com.wassel.backend.drivers.entity.Driver;
 import com.wassel.backend.drivers.entity.DriverStatus;
 import com.wassel.backend.drivers.repository.DriverRepository;
+import com.wassel.backend.routes.repository.RouteRepository;
 import com.wassel.backend.schools.entity.HalfDay;
 import com.wassel.backend.schools.entity.Holiday;
 import com.wassel.backend.schools.entity.SchoolSettings;
@@ -100,6 +101,9 @@ public abstract class RunCriteriaSupport {
 
 	@Autowired
 	protected VehicleRepository vehicleRepository;
+
+	@Autowired
+	protected RouteRepository routeRepository;
 
 	@Autowired
 	protected DriverRepository driverRepository;

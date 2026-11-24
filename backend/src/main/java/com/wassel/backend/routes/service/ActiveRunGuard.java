@@ -29,4 +29,10 @@ public interface ActiveRunGuard {
 
 	/** Why the route's driver or vehicle cannot change now (one of its runs is in progress today), or empty. */
 	Optional<String> blockReasonForRouteChange(UUID schoolId, UUID routeId, String routeName);
+
+	/**
+	 * Why the route cannot be deleted now (one of its runs is in progress today), or empty. Deleting it would leave
+	 * the run in progress with no driver able to end it, and its children "on a bus" for the rest of the day.
+	 */
+	Optional<String> blockReasonForRouteDelete(UUID schoolId, UUID routeId, String routeName);
 }

@@ -393,7 +393,9 @@ class LiveEtaTests extends RunCriteriaSupport {
 		fix(gone.bus(), gone.run(), BEFORE_FIRST);
 		fix(kept.bus(), kept.run(), BEFORE_FIRST);
 
-		assertEquals(204, send(delete(ROUTES + "/" + gone.bus().routeId()).with(head())).getStatus());
+		// The API now answers 409 while the run is in progress (SCRUM-284), so the route row is removed behind it: readers
+		// must still cope with a run whose route is gone (a run is never listed or reassigned without its route).
+		routeRepository.deleteById(java.util.UUID.fromString(gone.bus().routeId()));
 
 		String head = headSees();
 		List<Object> listed = JsonPath.read(head, "$[?(@.runId == '" + gone.run() + "')]");

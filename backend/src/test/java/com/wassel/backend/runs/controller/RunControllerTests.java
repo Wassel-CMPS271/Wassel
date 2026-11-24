@@ -749,6 +749,85 @@ class RunControllerTests {
 				.andExpect(jsonPath("$.runs[0].vehicle.capacity").value(20));
 	}
 
+	// SCRUM-284 review, finding 2: deleting a route mid-run used to leave the run IN_PROGRESS with nobody able to end it.
+
+	@ParameterizedTest
+	@CsvSource({ "MORNING,morning", "AFTERNOON,afternoon" })
+	void aRouteWithARunInProgressTodayCannotBeDeletedAndNothingChanges(RunDirection direction, String words)
+			throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		driverToday(schoolA, f.userId());
+		setRunState(f.route(), direction, RunState.IN_PROGRESS);
+
+		deleteRoute(f.route())
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value(
+						"Route \"Hamra morning run\" has its %s run in progress. Delete it after it ends.".formatted(words)));
+
+		assertTrue(routeRepository.findById(f.route().getId()).isPresent());
+		assertEquals(3, studentRepository.findAll().stream()
+				.filter(student -> f.route().getId().equals(student.getRouteId())).count());
+		mockMvc.perform(get(DRIVER_URL).with(loggedInAs(Role.DRIVER, schoolA, f.userId())))
+				.andExpect(jsonPath("$.runs.length()").value(2))
+				.andExpect(jsonPath("$.runs[?(@.direction == '" + direction + "')].state").value("IN_PROGRESS"));
+	}
+
+	@Test
+	void theRouteCanBeDeletedOnceItsRunHasEnded() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		driverToday(schoolA, f.userId());
+		setRunState(f.route(), RunDirection.MORNING, RunState.IN_PROGRESS);
+		deleteRoute(f.route()).andExpect(status().isConflict());
+
+		mockMvc.perform(post(RUN_URL + runId(f.route(), RunDirection.MORNING) + "/end")
+				.with(loggedInAs(Role.DRIVER, schoolA, f.userId()))).andExpect(status().isOk());
+
+		deleteRoute(f.route()).andExpect(status().isNoContent());
+		assertTrue(routeRepository.findById(f.route().getId()).isEmpty());
+	}
+
+	@Test
+	void aRunInProgressOnAnotherRouteDoesNotBlockTheDelete() throws Exception {
+		Fixture running = driverWithRoute(schoolA, "Hamra morning run");
+		Fixture idle = driverWithRoute(schoolA, "Verdun morning run");
+		driverToday(schoolA, running.userId());
+		driverToday(schoolA, idle.userId());
+		setRunState(running.route(), RunDirection.MORNING, RunState.IN_PROGRESS);
+
+		deleteRoute(idle.route()).andExpect(status().isNoContent());
+
+		assertTrue(routeRepository.findById(running.route().getId()).isPresent());
+	}
+
+	@Test
+	void aRunInProgressOnAnEarlierDayDoesNotFreezeItsRoute() throws Exception {
+		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
+		driverToday(schoolA, f.userId());
+		setRunState(f.route(), RunDirection.MORNING, RunState.IN_PROGRESS);
+		clock.set(WEDNESDAY.plusSeconds(24 * 3600)); // Thursday: Wednesday's run was never ended
+
+		deleteRoute(f.route()).andExpect(status().isNoContent());
+	}
+
+	private ResultActions deleteRoute(Route route) throws Exception {
+		return mockMvc.perform(delete("/api/head-of-transport/routes/" + route.getId())
+				.with(loggedInAs(Role.HEAD_OF_TRANSPORT, schoolA)));
+	}
+
+	private void setRunState(Route route, RunDirection direction, RunState state) {
+		Run run = runRepository.findAll().stream()
+				.filter(r -> r.getRouteId().equals(route.getId()) && r.getDirection() == direction).findFirst()
+				.orElseThrow();
+		run.setState(state);
+		runRepository.save(run);
+	}
+
+	private UUID runId(Route route, RunDirection direction) {
+		return runRepository.findAll().stream()
+				.filter(r -> r.getRouteId().equals(route.getId()) && r.getDirection() == direction).findFirst()
+				.orElseThrow().getId();
+	}
+
 	@Test
 	void aRouteDeletedThroughTheApiLeavesItsDriverWithNoRuns() throws Exception {
 		Fixture f = driverWithRoute(schoolA, "Hamra morning run");
