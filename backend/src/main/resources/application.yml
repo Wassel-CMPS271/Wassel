@@ -115,8 +115,10 @@ wassel:
     # in each window, then 429 with Retry-After. In memory, so it resets on a restart and assumes ONE backend instance.
     # trusted-proxy-hops is how many proxies in front of the backend each append to X-Forwarded-For; 0 ignores the
     # header (the connection's own address is used). Read the README ("Rate limit") before changing it on a host.
+    # OFF unless RATE_LIMIT_ENABLED=true: with trusted-proxy-hops 0 everyone behind Railway shares one bucket, so turning
+    # it on before the hop count is confirmed for the host could lock the whole school out of signing in.
     rate-limit:
-      enabled: ${RATE_LIMIT_ENABLED:true}
+      enabled: ${RATE_LIMIT_ENABLED:false}
       window: ${RATE_LIMIT_WINDOW:1m}
       trusted-proxy-hops: ${RATE_LIMIT_TRUSTED_PROXY_HOPS:0}
       limits:

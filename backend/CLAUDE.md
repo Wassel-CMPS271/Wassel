@@ -84,7 +84,7 @@ that's the structure this codebase moved away from.
   carries CORS headers; `Retry-After` is an exposed header for the direct-to-backend dev setup). `service/RateLimiter` is a
   fixed-window counter per `endpoint:address` in a `ConcurrentHashMap` (so up to twice the limit across a window edge; expired
   keys are purged once a window; past 100,000 keys new ones pass unchecked rather than lock everyone out). `config/RateLimitProperties`
-  (`wassel.auth.rate-limit.*`, env `RATE_LIMIT_*`, defaults per minute: login 30, 2FA verify 60, resend 20, logout 60,
+  (`wassel.auth.rate-limit.*`, env `RATE_LIMIT_*`; **off unless `RATE_LIMIT_ENABLED=true`**, because with `trusted-proxy-hops` 0 everyone behind Railway shares one bucket; defaults per minute: login 30, 2FA verify 60, resend 20, logout 60,
   forgot-password 10, set-password 30). **The address:** `config/ClientAddressResolver`. `trusted-proxy-hops` 0 (default) ignores
   `X-Forwarded-For` and uses the connection's address, so a forged header can never choose the bucket; N takes the Nth entry from
   the right (each trusted proxy appends), falls back to the connection when the chain is shorter than N or the entry is not an
