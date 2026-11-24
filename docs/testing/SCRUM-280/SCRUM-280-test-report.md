@@ -1,5 +1,37 @@
 # SCRUM-280 — Parent inbox and notification preferences
 
+## Sprint 5 CI repair — 24 November 2026 (pre-push verification)
+
+The four acceptance failures are resolved in branch-owned test copies, with production wording **1 unread update** preserved. No production, backend, dependency, teammate branch, develop branch, Jira status or PR Draft state is changed. This candidate continues PR #150's exact head `917be71c4671c4a7b9ceae57a4378932e51ea96d`; all existing GPS/ETA, Inbox, preference, Home/Absences, authentication and account-reset code remains.
+
+### Changes reviewed
+
+- Added `tracking.acceptance.test.tsx`, `authorization.acceptance.test.tsx`, `inbox.acceptance.test.tsx`, `preferences.acceptance.test.tsx` and the unchanged copied harness `parentAcceptance.owned.ts`, originating from immutable independent snapshot `da61dfb6a7951221ceb38092a5c117eaa9216d6e`.
+- Corrected exactly six matchers in the owned authorization/inbox copies. Every position requires the exact singular string; the HTTP-500 recovery case now requires count one rather than any numeric count. All other source bytes match the snapshot after the mechanical helper-import rename. Tracking/preferences assertions, the shared harness, all 245 explicit expect calls, awaited queries and every functional/privacy/receipt/refetch/reload/retry check are preserved. All 80 cases remain ordinary tests.
+- Updated `frontend/e2e/review-parent-acceptance.mjs` and `.github/workflows/parent-independent-acceptance.yml` to run these checked-in copies without fetching or injecting the old snapshot. Missing suite files and failing tests still fail the job; the full regression step still executes after a focused failure. No skip, expected-failure, continue-on-error, filter exclusion or production text workaround was added.
+- Updated this report and `SCRUM-169-wording-conflict.md` with source provenance, the exact six-line map and current evidence. Older sections remain historical.
+
+The original five untracked overlays in the existing SCRUM-280 worktree are preserved byte-for-byte. Tests were run in the isolated clean continuation worktree, so normal full regression contains all tracked frontend tests and all 80 owned cases, matching a clean CI checkout. No original source, case or assertion was removed. The independent owner's latest PR #169 at `88f8db8c30c263424cc52a08c9ec1a0596f66e81` already contains its own six matcher corrections; that PR/branch remains untouched. Our copies use stricter exact singular matches instead of accepting either plural or singular.
+
+### Actual executed checks
+
+| Check | Result |
+| --- | --- |
+| Revised runner before the six corrections | **76 passed / 4 failed / 0 skipped**, exit 1; same four failures reproduced |
+| Complete corrected independent suite | **80 passed / 0 failed / 0 skipped / 0 expected failures**, exit 0 |
+| Independent subsets | Tracking **43/43**; authorization **8/8**; Inbox **16/16**; preferences **13/13** |
+| Complete frontend regression, normal discovery | **1,486 passed / 0 unexpected failures**, one existing expected failure and five existing skips (**1,492 total; 93 files**), exit 0 |
+| ESLint | Passed, exit 0 |
+| Runner syntax and whitespace | `node --check` and `git diff --check` passed |
+| Source-preservation audit | All five copies match the exact allowed transformations; original local overlays and copied harness unchanged |
+| Standalone TypeScript | Exit 2, the same **13** diagnostic messages as the previous verified #150 head; **zero introduced**, exact diagnostic comparison |
+| New hosted CI / production build / real-browser execution | Not yet executed for this unpublished candidate at pre-push report time; no new success claimed |
+
+The existing expected failure and skips belong to unrelated baseline tests and remain unchanged. The previously failing privacy, ownership, receipt, authoritative-count, remount and recovery assertions now execute and pass; they are not replaced by a smaller supplementary suite.
+
+Evidence remains ignored under `tmp/acceptance-verification/` in the continuation worktree: red/green runner logs, full regression JSON/log, lint and TypeScript logs, exact baseline comparison, original file archives and SHA-256/source-audit manifests. Generated evidence and installed dependencies are excluded from the commit. Current-head GitHub checks must be verified after publishing; this local report does not grant merge approval.
+
+
 ## After PR #149 merged — 17 November 2026
 
 PR #149 is confirmed merged as develop **dec60bcb3f3de01a4e27c548f3e2f80bef3ca808**. Normally merged that accepted base into the existing #150 branch without conflicts. All earlier Inbox, preferences, GPS/ETA, navigation, account-reset code and evidence remain. The #149 merge dependency is resolved; no teammate branch, Jira status or Draft state was changed.
