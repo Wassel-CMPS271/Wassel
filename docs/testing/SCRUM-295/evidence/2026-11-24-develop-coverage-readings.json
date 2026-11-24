@@ -1,0 +1,27 @@
+{
+  "scope": "Independent extraction of real develop CI artifacts; does not modify the owner daily document.",
+  "readings": [
+    {
+      "date": "2026-11-23",
+      "run": 45239996621,
+      "sourceSha": "c23bbea0caac2438631e29060199317c5477affc",
+      "backend": 14851112225,
+      "frontend": 14849234777,
+      "backendPercent": 96.71797850711589,
+      "frontendPercent": 90.0933820544052,
+      "backendFloor": 94.7,
+      "frontendFloor": 86.6
+    },
+    {
+      "date": "2026-11-24",
+      "run": 45298409430,
+      "sourceSha": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b",
+      "backend": 14876664767,
+      "frontend": 14877801125,
+      "backendPercent": 96.65988963113564,
+      "frontendPercent": 90.34045922406968,
+      "backendFloor": 94.7,
+      "frontendFloor": 86.6
+    }
+  ]
+}

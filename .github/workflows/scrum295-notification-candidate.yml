@@ -1,0 +1,49 @@
+name: SCRUM-295 independent notification metrics
+on:
+  push:
+    branches: [test/SCRUM-295-independent-s5-checks]
+    paths:
+      - 'verification/scrum295-notifications/**'
+      - '.github/workflows/scrum295-notification-candidate.yml'
+permissions:
+  contents: read
+jobs:
+  delivery-metrics-candidate:
+    name: Real delivery outcome metrics against pinned PR 187
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: e8bca50722324279df6be686843949b06a212500
+          path: candidate-metrics
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: candidate-metrics/backend/pom.xml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Add only independent notification criteria
+        run: |
+          test "$(git -C candidate-metrics rev-parse HEAD)" = e8bca50722324279df6be686843949b06a212500
+          mkdir -p candidate-metrics/backend/src/test/java/independent/scrum295
+          cp verification/scrum295-notifications/java/independent/scrum295/*.java candidate-metrics/backend/src/test/java/independent/scrum295/
+      - name: Real PostgreSQL confirmation outbox retry expiry and mute criteria
+        working-directory: candidate-metrics/backend
+        run: sh ./mvnw -B test -Dtest=IndependentNotificationMetricsCriteriaTests -DfailIfNoTests=true
+      - name: Extract only independent test counts and identities
+        if: always()
+        run: node scripts/scrum295-junit-summary.mjs candidate-metrics/backend/target/surefire-reports tmp/scrum295-notification-results.json
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('tmp/scrum295-notification-results.json') != ''
+        with:
+          name: scrum295-independent-notification-results
+          path: tmp/scrum295-notification-results.json
+          retention-days: 7

@@ -14,6 +14,8 @@ for (const service of ["backend","postgres","mail-stub"]) {
   const data=JSON.parse(execFileSync("docker",["inspect",id],{encoding:"utf8"}))[0];
   assert.equal(data.Config.Labels["com.docker.compose.project"],project);
   services[service]={nanoCpus:data.HostConfig.NanoCpus,memoryBytes:data.HostConfig.Memory};
+  assert.equal(data.HostConfig.NanoCpus, service === "mail-stub" ? 250_000_000 : 1_000_000_000, "required CPU cap differs");
+  assert.equal(data.HostConfig.Memory, service === "mail-stub" ? 128 * 1024 * 1024 : 1024 * 1024 * 1024, "required memory cap differs");
   if(service==="backend") {
     const env=Object.fromEntries(data.Config.Env.map(value=>{const pos=value.indexOf("=");return [value.slice(0,pos),value.slice(pos+1)];}));
     assert.equal(env.WASSEL_MAIL_BREVO_BASE_URL,"http://mail-stub:9000");assert.equal(env.ORS_API_KEY,"");

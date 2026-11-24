@@ -175,15 +175,27 @@ jobs:
           mkdir -p candidate-load/loadtest/results
           chmod 777 candidate-load/loadtest/results
       - name: Start only a uniquely named network-isolated disposable stack
-        run: docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml up -d --build postgres mail-stub backend
+        run: |
+          # Retry setup only for transient registry/Maven downloads; test exits are never retried into success.
+          for attempt in 1 2 3; do
+            if docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml up -d --build postgres mail-stub backend; then break; fi
+            test "$attempt" -lt 3 || exit 1
+            sleep 15
+          done
       - name: Wait for disposable health then seed and verify the exact dataset
         run: |
           ready=0
           for attempt in $(seq 1 90); do
-            if curl -fsS http://127.0.0.1:18080/actuator/health | grep -q '"UP"'; then ready=1; break; fi
+            # Probe inside the same internal-only network as k6, without enabling external egress.
+            if docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml exec -T mail-stub node --input-type=module -e 'try { const r = await fetch("http://backend:8080/actuator/health", {signal:AbortSignal.timeout(1500)}); process.exit(r.ok && (await r.json()).status === "UP" ? 0 : 1); } catch { process.exit(1); }'; then ready=1; break; fi
             sleep 2
           done
-          test "$ready" = 1
+          if [ "$ready" != 1 ]; then
+            # Before seeding/authentication only: useful startup diagnostics contain no session material.
+            docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml ps -a
+            docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml logs --no-color --tail 100 backend
+            exit 1
+          fi
           docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml exec -T postgres psql -U loadtest -d wassel -v ON_ERROR_STOP=1 -f /seed/seed.sql
           dataset=$(docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml exec -T postgres psql -U loadtest -d wassel -At -c "SELECT (SELECT count(*) FROM students),(SELECT count(*) FROM vehicles),(SELECT count(*) FROM users WHERE role='PARENT'),(SELECT count(*) FROM drivers),(SELECT count(*) FROM routes)")
           test "$dataset" = '1000|40|800|40|40'
