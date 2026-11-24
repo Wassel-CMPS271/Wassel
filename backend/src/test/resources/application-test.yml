@@ -27,6 +27,10 @@ wassel:
       daily-cap: 100000
       reset-daily-cap: 100000
       per-account-daily-cap: 100000
+    # Every test signs in from the same address (127.0.0.1), so the per-address limit would throttle unrelated tests.
+    # The tests of the limit itself turn it back on (RateLimitTests).
+    rate-limit:
+      enabled: false
   school:
     latitude: 33.896
     longitude: 35.484

@@ -113,11 +113,11 @@ class AuthEmailCapContractTests extends AuthEmailSupport {
 	}
 
 	@Test
-	void aSendThatFailedStillCountsAndARefusedOrCooldownBlockedOneDoesNot() throws Exception {
+	void aSendThatFailedGivesItsSlotBackAndARefusedOrCooldownBlockedOneNeverTookOne() throws Exception {
 		User failing = saveUser();
 		mailer.refuseNext(1);
 		assertEquals(500, login(failing).getResponse().getStatus());
-		assertEquals(1, authEmailRows(failing, "LOGIN_CODE"), "the provider was asked");
+		assertEquals(0, authEmailRows(failing, "LOGIN_CODE"), "the provider took nothing, so nothing is counted");
 		jdbc.update("delete from auth_emails");
 
 		User resending = saveUser();
@@ -125,19 +125,32 @@ class AuthEmailCapContractTests extends AuthEmailSupport {
 		ageCode(resending);
 		mailer.refuseNext(1);
 		assertEquals(500, resend(pending).getResponse().getStatus());
-		assertEquals(1, authEmailRows(resending, "RESEND_CODE"), "a failed resend took its slot too");
+		assertEquals(0, authEmailRows(resending, "RESEND_CODE"), "a failed resend gives its slot back too");
 		jdbc.update("delete from auth_emails");
 
 		User forgetful = saveUser();
 		mailer.refuseNext(1);
 		assertEquals(204, forgotPassword(forgetful.getEmail()).getResponse().getStatus());
-		assertEquals(1, authEmailRows(forgetful, "RESET_LINK"), "and so did a failed reset");
+		assertEquals(0, authEmailRows(forgetful, "RESET_LINK"), "and so does a failed reset");
 		jdbc.update("delete from auth_emails");
 
 		User user = saveUser();
 		assertEquals(204, login(user).getResponse().getStatus());
 		assertEquals(429, login(user).getResponse().getStatus());
 		assertEquals(1, authEmailRows(user, "LOGIN_CODE"), "a cooldown-blocked login takes no slot");
+	}
+
+	@Test
+	void aMailOutageDoesNotUseUpAnAccountsLimitSoItCanSignInOnceTheProviderIsBack() throws Exception {
+		User user = saveUser();
+		mailer.refuseNext(3);
+		for (int attempt = 0; attempt < 3; attempt++) {
+			assertEquals(500, login(user).getResponse().getStatus(), "attempt " + attempt);
+		}
+		assertEquals(0, authEmailRows(user, "LOGIN_CODE"));
+
+		assertEquals(204, login(user).getResponse().getStatus(), "the outage must not leave a 503 behind it");
+		assertEquals(1, authEmailRows(user, "LOGIN_CODE"));
 	}
 
 	@Test

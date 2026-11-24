@@ -33,7 +33,7 @@ A failed login or resend answers a generic 500 as before. The exception that car
 
 ## The daily cap
 
-Table `auth_emails`, one row per send attempt: user id, kind (`LOGIN_CODE`, `RESEND_CODE`, `RESET_LINK`, `INVITE_LINK`) and time. It holds no email address. Counted from midnight in `Asia/Beirut`, across the deployment. A failed login, resend or reset still counts: the provider was asked, as in [`notification-delivery.md`](notification-delivery.md). An invite counts only once it is kept: it is sent inside the transaction that creates the account, so a failed send rolls its row back with the account (counting it anyway would need a second connection while the first is held, which can deadlock the pool).
+Table `auth_emails`, one row per send that was not undone: user id, kind (`LOGIN_CODE`, `RESEND_CODE`, `RESET_LINK`, `INVITE_LINK`) and time. It holds no email address. Counted from midnight in `Asia/Beirut`, across the deployment. A failed login, resend or reset gives its slot back in the same transaction that undoes its code or link: the provider took nothing, and counting it would let a mail outage of a few minutes, with users retrying at once, use up their per-account limit and lock them out until midnight, long after the provider is back. (Notifications differ: a failed delivery there still counts, because nobody is locked out by it.) An invite counts only once it is kept: it is sent inside the transaction that creates the account, so a failed send rolls its row back with the account (counting it anyway would need a second connection while the first is held, which can deadlock the pool).
 
 A login, resend or reset is refused when any one of these holds:
 
@@ -54,7 +54,7 @@ The notification cap ([`notification-delivery.md`](notification-delivery.md)) an
 - A provider that accepts the mail and then times out makes us delete or restore a code the user did receive. They ask again, and that is allowed at once.
 - A crash between the commit and the send leaves a code nobody received: for resend until it expires (5 minutes), and for login it blocks a new login for 60 seconds.
 - An undo that itself fails (no connection in a storm) leaves the same, and is logged at ERROR.
-- A failing provider uses up the cap faster than the number of emails delivered suggests.
+- If the provider took the mail and only its reply timed out, the slot is given back for a mail that was sent, so the day can send a few more than the cap. The margin in the sum rule covers it. An undo that itself fails keeps the slot (and is logged at ERROR).
 - If voiding the older links fails after a reset link was sent, they keep working until they expire (logged at ERROR).
 - A sustained mail outage is invisible to forgot-password users, who always get 204. The only signal is one ERROR line per failed send; there is no counter yet (S5-D).
 - Someone who knows an address can use up its reset limit (10 a day, one a minute) and, with many addresses, the reset share (30 a day). That stops password resets for the day, never sign-ins.

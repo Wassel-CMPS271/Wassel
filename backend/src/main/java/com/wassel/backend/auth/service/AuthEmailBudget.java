@@ -53,13 +53,14 @@ public class AuthEmailBudget {
 	}
 
 	/**
-	 * Takes a slot, or throws {@link AuthEmailCapException} and takes nothing. Call it last in the caller's transaction.
+	 * Takes a slot and returns its id, or throws {@link AuthEmailCapException} and takes nothing. Call it last in the
+	 * caller's transaction. Keep the id: a send that then fails gives the slot back with {@link #refund}.
 	 * A refusal does not mark the transaction rollback-only: it wrote nothing, and forgot-password catches it and commits.
 	 * The per-account limit counts the account's own kind of email only: sign-in codes and resends for a login, reset
 	 * links for a reset. Anyone can ask for a reset link for any address, so a reset must never use up the sign-in's share.
 	 */
 	@Transactional(propagation = Propagation.MANDATORY, noRollbackFor = AuthEmailCapException.class)
-	public void claim(UUID userId, AuthEmailKind kind) {
+	public UUID claim(UUID userId, AuthEmailKind kind) {
 		lock();
 		Instant start = dayStart();
 		long today = repository.countByCreatedAtGreaterThanEqual(start);
@@ -83,8 +84,21 @@ public class AuthEmailBudget {
 			log.warn("An authentication email of kind {} for user {} was refused by {}", kind, userId, refusedBy);
 			throw new AuthEmailCapException(retryAfterSeconds());
 		}
-		insert(userId, kind);
+		UUID slot = insert(userId, kind);
 		warnOnCrossing(today, today + 1);
+		return slot;
+	}
+
+	/**
+	 * Gives back a slot whose send failed, in the same transaction that undoes the code or link: the provider did not
+	 * take the mail, so the failure must not count towards the cap. Otherwise a mail outage of a few minutes, with
+	 * users retrying at once, uses up their per-account limit and locks them out of signing in until midnight, long
+	 * after the provider is back. If the provider took the mail and only the reply timed out, the slot is given back
+	 * for a mail that was sent, which the margin of the sum rule covers. Takes no lock: the count only goes down.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public void refund(UUID slot) {
+		repository.deleteSlot(slot);
 	}
 
 	/**
@@ -109,8 +123,8 @@ public class AuthEmailBudget {
 				: List.of(AuthEmailKind.LOGIN_CODE, AuthEmailKind.RESEND_CODE);
 	}
 
-	private void insert(UUID userId, AuthEmailKind kind) {
-		repository.save(AuthEmail.of(userId, kind, Instant.now(clock)));
+	private UUID insert(UUID userId, AuthEmailKind kind) {
+		return repository.save(AuthEmail.of(userId, kind, Instant.now(clock))).getId();
 	}
 
 	/** One WARN per threshold per day (as far as parallel unlocked invites allow), whichever path moved the count. */

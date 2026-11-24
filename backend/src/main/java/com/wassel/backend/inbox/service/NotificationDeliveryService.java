@@ -9,6 +9,7 @@ import com.wassel.backend.inbox.entity.InboxEvent;
 import com.wassel.backend.inbox.entity.NotificationDelivery;
 import com.wassel.backend.inbox.repository.InboxEventRepository;
 import com.wassel.backend.inbox.repository.NotificationDeliveryRepository;
+import com.wassel.backend.monitoring.service.OperationalMetrics;
 import com.wassel.backend.runs.entity.RunDirection;
 import com.wassel.backend.students.dto.StudentResponse;
 import com.wassel.backend.students.exception.StudentNotFoundException;
@@ -88,10 +89,13 @@ public class NotificationDeliveryService {
 
 	private final String frontendBaseUrl;
 
+	private final OperationalMetrics metrics;
+
 	public NotificationDeliveryService(NotificationDeliveryRepository deliveryRepository,
 			InboxEventRepository eventRepository, UserService userService, StudentService studentService,
 			NotificationPreferenceService preferenceService, Mailer mailer, NotificationDeliveryProperties properties,
-			Clock clock, TransactionTemplate transactions, @Value("${wassel.frontend-base-url}") String frontendBaseUrl) {
+			Clock clock, TransactionTemplate transactions, @Value("${wassel.frontend-base-url}") String frontendBaseUrl,
+			OperationalMetrics metrics) {
 		this.deliveryRepository = deliveryRepository;
 		this.eventRepository = eventRepository;
 		this.userService = userService;
@@ -102,6 +106,7 @@ public class NotificationDeliveryService {
 		this.clock = clock;
 		this.transactions = transactions;
 		this.frontendBaseUrl = frontendBaseUrl;
+		this.metrics = metrics;
 	}
 
 	/**
@@ -123,10 +128,12 @@ public class NotificationDeliveryService {
 		Instant now = Instant.now(clock);
 		int expired = deliveryRepository.expire(now.minus(EXPIRES_AFTER));
 		if (expired > 0) {
+			metrics.notificationsFailed(expired);
 			log.warn("{} notification deliveries expired unsent", expired);
 		}
 		int interrupted = deliveryRepository.interrupt(now.minus(INTERRUPTED_AFTER));
 		if (interrupted > 0) {
+			metrics.notificationsFailed(interrupted);
 			log.warn("{} notification deliveries were interrupted and will not be sent", interrupted);
 		}
 		deliveryRepository.discover(now.minus(EXPIRES_AFTER), now);
@@ -208,6 +215,7 @@ public class NotificationDeliveryService {
 			failed(delivery, e);
 			return false;
 		}
+		metrics.notificationSent();
 		if (deliveryRepository.markSent(id, Instant.now(clock)) == 0) {
 			// The email went out, but a sweep ended the row while the provider was slow: the row is wrong, not the email.
 			log.warn("Delivery {} was sent but was no longer SENDING when it finished; it is not marked SENT", id);
@@ -228,6 +236,7 @@ public class NotificationDeliveryService {
 		if (attempt >= MAX_ATTEMPTS) {
 			if (deliveryRepository.end(delivery.getId(), DeliveryStatus.SENDING, DeliveryStatus.FAILED,
 					DeliveryReason.PROVIDER_ERROR) == 1) {
+				metrics.notificationsFailed(1);
 				log.warn("Delivery {} of inbox entry {} attempt {} failed ({}); giving up", delivery.getId(),
 						delivery.getInboxEventId(), attempt, error);
 			}

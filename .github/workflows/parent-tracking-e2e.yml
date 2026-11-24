@@ -1,7 +1,7 @@
 name: Parent tracking E2E
 on:
   push:
-    branches: [feature/SCRUM-279-parent-live-map, develop]
+    branches: [feature/SCRUM-279-parent-live-map, feature/SCRUM-280-parent-notifications, develop]
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [develop]

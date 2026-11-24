@@ -67,7 +67,7 @@ public class PasswordService {
 	}
 
 	/** A stored token and the email that carries it, for the send that comes after the transaction. */
-	private record Link(UUID tokenId, User user, String subject, String body) {
+	private record Link(UUID tokenId, UUID slot, User user, String subject, String body) {
 
 		/** Not the generated one: the body holds the raw token, which must never reach a log. */
 		@Override
@@ -84,7 +84,7 @@ public class PasswordService {
 	@Transactional
 	public void sendInvite(User user) {
 		budget.record(user.getId(), AuthEmailKind.INVITE_LINK);
-		Link link = issueLink(user);
+		Link link = issueLink(user, null);
 		tokenRepository.voidUnusedExcept(user.getId(), link.tokenId(), Instant.now());
 		try {
 			mailer.send(user.getEmail(), link.subject(), link.body());
@@ -112,8 +112,11 @@ public class PasswordService {
 		catch (RuntimeException ex) {
 			// Answered 204 like every other outcome; this line is the only trace, and never holds the address or text.
 			log.error("The reset link for user {} was not sent ({})", link.user().getId(), ex.getClass().getSimpleName());
-			SendUndo.run(transactions, () -> tokenRepository.deleteUnused(link.tokenId()), AuthEmailKind.RESET_LINK,
-					link.user().getId());
+			SendUndo.run(transactions, () -> {
+				int removed = tokenRepository.deleteUnused(link.tokenId());
+				budget.refund(link.slot());
+				return removed;
+			}, AuthEmailKind.RESET_LINK, link.user().getId());
 			return;
 		}
 		try {
@@ -141,17 +144,18 @@ public class PasswordService {
 		if (coolingDown) {
 			return null;
 		}
+		UUID slot;
 		try {
-			budget.claim(user.get().getId(), AuthEmailKind.RESET_LINK);
+			slot = budget.claim(user.get().getId(), AuthEmailKind.RESET_LINK);
 		}
 		catch (AuthEmailCapException ex) {
 			return null;
 		}
-		return issueLink(user.get());
+		return issueLink(user.get(), slot);
 	}
 
-	/** Stores a new link token for the user. Joins the caller's transaction, and voids nothing. */
-	private Link issueLink(User user) {
+	/** Stores a new link token for the user. Joins the caller's transaction, and voids nothing. {@code slot} is the cap's, or null for an invite. */
+	private Link issueLink(User user, UUID slot) {
 		boolean invite = !user.hasPassword();
 		Instant now = Instant.now();
 		String token = randomToken();
@@ -163,7 +167,7 @@ public class PasswordService {
 				.build());
 
 		String link = "%s/%s?token=%s".formatted(frontendBaseUrl, invite ? "set-password" : "reset-password", token);
-		return new Link(saved.getId(), user, invite ? "Set your Wassel password" : "Reset your Wassel password",
+		return new Link(saved.getId(), slot, user, invite ? "Set your Wassel password" : "Reset your Wassel password",
 				"%s\n\n%s\n\nThis link expires in %s and can be used once."
 						.formatted(invite ? "You've been invited to Wassel. Set your password here:"
 								: "Reset your Wassel password here:", link, invite ? "24 hours" : "30 minutes"));

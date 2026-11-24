@@ -111,6 +111,7 @@ class RoleAccessMatrixTests {
 		TABLE.put("GET /api/admin/school-settings/times", Access.ADMIN_ONLY);
 		TABLE.put("PUT /api/admin/school-settings/times", Access.ADMIN_ONLY);
 		TABLE.put("GET /api/admin/notification-deliveries/summary", Access.ADMIN_ONLY);
+		TABLE.put("GET /api/admin/metrics", Access.ADMIN_ONLY);
 
 		// head of transportation
 		TABLE.put("GET /api/head-of-transport/parents", Access.HEAD_OF_TRANSPORT_ONLY);

@@ -84,8 +84,9 @@ that's the structure this codebase moved away from.
   counts an account's own kind only, sign-in codes and resends for a login and reset links for a reset, so a reset
   flood can never refuse a sign-in), counted from Beirut midnight, and answers login and resend with 503 +
   `Retry-After` (`AuthEmailCapException`) and forgot-password with 204. `forgotPassword` takes the lock (`lock()`)
-  before it reads its cooldown, so parallel requests send one link. A failed send still counts, except an invite,
-  which is recorded in the invite's own transaction and rolls back with it. Invites are never refused. A failed
+  before it reads its cooldown, so parallel requests send one link. A failed send gives its slot back (`AuthEmailBudget.refund`, in the same
+  transaction as the undo, so an outage cannot use up an account's limit), and an invite's slot is recorded in the
+  invite's own transaction and rolls back with it. Invites are never refused. A failed
   send is rethrown as `AuthEmailSendException` (kind, user id and the provider's class only, never its message:
   SMTP errors carry the address). Figures, the sum rule's numbers, the tests and the measurement are in
   `docs/testing/SCRUM-289/report.md`; the numbers for the caps are in `docs/contracts/auth-email.md`. The test profile
@@ -106,6 +107,25 @@ that's the structure this codebase moved away from.
   `MAIL_USERNAME`/`MAIL_PASSWORD` are then unused. Same failure rule as SMTP: a rejected or timed-out send
   (5 s) throws, so the user retries (nothing is left behind: see where the send runs, above). The exception carries only its
   type: never the key or the response body, which can echo the recipient. Local and staging keep SMTP.
+  Rate limit (SCRUM-288): `config/RateLimitFilter` refuses repeated POSTs from one address to the six public endpoints
+  (`login`, `2fa/verify`, `2fa/resend`, `logout`, `forgot-password`, `password`) with a 429 problem detail and `Retry-After`,
+  before the body is read and before any account is looked up. It sits after `CorsFilter` in `SecurityConfig` (so the 429
+  carries CORS headers; `Retry-After` is an exposed header for the direct-to-backend dev setup). `service/RateLimiter` is a
+  fixed-window counter per `endpoint:address` in a `ConcurrentHashMap` (so up to twice the limit across a window edge; expired
+  keys are purged once a window; past 100,000 keys new ones pass unchecked rather than lock everyone out). `config/RateLimitProperties`
+  (`wassel.auth.rate-limit.*`, env `RATE_LIMIT_*`; **off unless `RATE_LIMIT_ENABLED=true`**, because with `trusted-proxy-hops` 0 everyone behind Railway shares one bucket; defaults per minute: login 30, 2FA verify 60, resend 20, logout 60,
+  forgot-password 10, set-password 30). **The address:** `config/ClientAddressResolver`. `trusted-proxy-hops` 0 (default) ignores
+  `X-Forwarded-For` and uses the connection's address, so a forged header can never choose the bucket; N takes the Nth entry from
+  the right (each trusted proxy appends), falls back to the connection when the chain is shorter than N or the entry is not an
+  IP literal (no name is ever resolved), reduces IPv6 to its /64 and maps `::ffff:a.b.c.d` to IPv4. The first refusal of a window
+  is logged at WARN with the connection address and the raw header, so what the backend really sees behind Vercel and Railway can
+  be read off the log (README, "Rate limit on the sign-in endpoints"; **not yet confirmed against the live hosts**, so production
+  runs at 0 until it is). **In memory: resets on a restart and assumes one backend instance.** The other 429 of the flow
+  (`CodeCooldownException`, a code sent under a minute ago) has no `Retry-After`; the frontend tells the two apart by that header.
+  Turned off in the `test` and `e2e` profiles (every test signs in from 127.0.0.1); `RateLimitTests` turns it on. Length limits
+  (same ticket): the login and forgot-password email is at most 255 characters (the column), the login password at most 72 bytes
+  (BCrypt's limit, `dto/MaxBytes`: no account can have a longer one), the set-password token at most 200 (a real one is 43), and
+  a driver's names 100 and email 255 (`CreateDriverRequest`), each a 400 naming the field instead of a 500 from the database.
   Known limits: a password change does not revoke existing sessions (tokens are stateless); the
   fix is a "tokens valid from" timestamp on `User` checked by `JwtAuthenticationFilter`. And
   anyone who knows an email can call forgot-password once a minute; each new link voids the
@@ -663,9 +683,20 @@ that's the structure this codebase moved away from.
   assumed 300 a day on Brevo's free plan, unverified), and a due delivery over it is `SKIPPED`/`DAILY_CAP`. The cap check and the `claim` run in one short transaction under a Postgres advisory lock (`lockForCap`), so two instances cannot both take the last attempt; entries are sent oldest first (`discover` sets `next_attempt_at` from the entry's time). `deliverDue` never throws: a failure outside one delivery is logged as an error with the class only. The three scheduled jobs get `spring.task.scheduling.pool.size: 3` so a slow provider cannot hold up the late alerts. **Privacy:** the email has the first name,
   the type, the school-local time and a link (`DeliveryEmail`, pinned by `docs/contracts/samples/notification-delivery/email-picked-up.txt`); logs hold
   the delivery id, the entry id, the attempt and the exception's class only, never `e.getMessage()` (an SMTP error can hold the recipient) or the
-  exception itself. No Micrometer and no new actuator endpoint (`HealthEndpointTests` stays): the summary is the monitoring. Tests use a
+  exception itself. No Micrometer and no new actuator endpoint (`HealthEndpointTests` stays): the summary is the monitoring (and, since SCRUM-290, `monitoring` counts the sends). Tests use a
   `RecordingMailer` (a real class that stands in for the provider and can refuse) through `DeliverySupport`, which empties the outbox and the inbox
   first because the sender looks at every school's entries. Known limits: see the contract (at most once against a crash only, a rejected address is retried, the cap counts attempts, English plain text, no unsubscribe link).
+- `monitoring` — the platform health numbers for the admin (SCRUM-290): `GET /api/admin/metrics` (ADMIN). Shapes, rules and sample in
+  `docs/contracts/admin-metrics.md`. A **leaf module** (imports no other module), so `auth` and `inbox` call
+  `service/OperationalMetrics` without a cycle. It is our own small counter, not Micrometer/actuator: the only actuator endpoint stays
+  `/actuator/health`. `config/RequestMetricsFilter` is the outermost servlet filter (`HIGHEST_PRECEDENCE + 10`, before Spring Security) and times
+  every request with `System.nanoTime`: 5xx (or an exception, counted as 500) and 429 are counted, the latest 2,000 times feed an exact
+  nearest-rank p95, `/actuator/*` and the metrics path are skipped, and failed sign-ins are counted from the answers (401 on login, 400 on
+  2FA verify), so no other module needs a hook for them. `AuthService` calls `accountLocked()` where it logs a lock, and
+  `NotificationDeliveryService` calls `notificationSent()` after a send and `notificationsFailed(n)` where a delivery ends `FAILED`
+  (given up, expired, interrupted). **In memory: resets on a restart or redeploy, one instance only**, and the answer says so
+  (`since`, `resetsOnRestart`). No admin page yet (a stretch of the ticket). Tests: `OperationalMetricsTests`,
+  `RequestMetricsFilterTests`, `AdminMetricsControllerTests` (roles and a scripted run), and a row in `RoleAccessMatrixTests`.
 - `roster` — pausing and archiving a student and placing a student on the best route (SCRUM-270):
   `PUT /api/head-of-transport/students/{id}/status`, `GET` and `POST .../students/{id}/best-route`. Shapes and rules are in
   `docs/contracts/roster.md`. A new module because both touch the students and the routes, and `students` never imports

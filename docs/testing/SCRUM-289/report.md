@@ -114,8 +114,8 @@ reset-share claims). Removing the `budget.lock()` call from forgot-password make
 `expected: <1> but was: <6>`.
 
 Also added: the undo and restore race tests (`TwoFactorEmailAfterCommitTests`), a parallel-login test that proves a request
-that loses the race takes no slot, Beirut midnight at exactly 22:00:00Z and the March clock change, the failed-send count for
-resend and reset, driver invites, and whole-log leak checks (no address, code or token). The 500 for a failed send no longer
+that loses the race takes no slot, Beirut midnight at exactly 22:00:00Z and the March clock change, the slot a failed send gives back (login, resend
+and reset) and a mail outage that leaves an account able to sign in once the provider is back, driver invites, and whole-log leak checks (no address, code or token). The 500 for a failed send no longer
 carries the provider's message, which can hold the address (`AuthEmailSendException`).
 
 Full suite: `sh ./mvnw clean verify`, 1,915 tests, 0 failures, 5 skipped (one is the gated measurement), the JaCoCo floor met.

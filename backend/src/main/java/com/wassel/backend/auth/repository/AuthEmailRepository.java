@@ -3,6 +3,7 @@ package com.wassel.backend.auth.repository;
 import com.wassel.backend.auth.entity.AuthEmail;
 import com.wassel.backend.auth.entity.AuthEmailKind;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -17,6 +18,11 @@ public interface AuthEmailRepository extends JpaRepository<AuthEmail, UUID> {
 	long countByKindAndCreatedAtGreaterThanEqual(AuthEmailKind kind, Instant start);
 
 	long countByUserIdAndKindInAndCreatedAtGreaterThanEqual(UUID userId, Collection<AuthEmailKind> kinds, Instant start);
+
+	/** Takes back one slot: 0 if it is already gone, which is not an error. */
+	@Modifying
+	@Query("delete from AuthEmail a where a.id = :id")
+	int deleteSlot(@Param("id") UUID id);
 
 	/** Held until the surrounding transaction ends: the cap check and the claim are one step at a time across instances. */
 	@Query(value = "SELECT 1 FROM (SELECT pg_advisory_xact_lock(:key)) AS locked", nativeQuery = true)
