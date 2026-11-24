@@ -60,7 +60,9 @@ class IndependentNotificationMetricsCriteriaTests extends DeliverySupport {
         assertEquals(0, mailer.calls());
     }
     @Test void mutedDeliveryIsSkippedWithoutIncrementingSentOrFailed() throws Exception {
-        var scene = aChild("MutedCase"); pickedUpOff(scene.parent()); tap(scene, "PICKED_UP");
+        var scene = aChild("MutedCase"); tap(scene, "PICKED_UP");
+        // The event must exist before muting; preferences can suppress an event before it reaches the outbox.
+        pickedUpOff(scene.parent());
         var before = counters(); deliveries.deliverDue();
         assertEquals(DeliveryStatus.SKIPPED, theDelivery().getStatus());
         assertEquals(DeliveryReason.PREFERENCE_OFF, theDelivery().getReason());
