@@ -7,6 +7,11 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: false
+wassel:
+  auth:
+    # The browser tests sign in many times from one address; the limit is covered by the backend's own tests.
+    rate-limit:
+      enabled: false
 logging:
   level:
     org.springframework.security: WARN

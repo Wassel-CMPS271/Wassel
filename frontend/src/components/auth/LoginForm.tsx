@@ -10,12 +10,12 @@ import { focusRingClass, focusRingStyle } from "@/components/ui/focusRing";
 import { Input } from "@/components/ui/Input";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { login } from "@/lib/api/auth";
-import { ApiError, ApiValidationError } from "@/lib/api/errors";
+import { ApiError, ApiValidationError, rateLimitMessage } from "@/lib/api/errors";
 import { colors, darkTheme, radius, sizing, spacing } from "@/styles/tokens";
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 
-// A 429 only comes after a correct password: a code went out under a minute
+// A 429 without Retry-After only comes after a correct password: a code went out under a minute
 // ago. It sets no cookie, so that code may not belong to this browser. Say so
 // and offer the code step, rather than sending the user there blind.
 const CODE_ALREADY_SENT =
@@ -82,6 +82,9 @@ export function LoginForm({ notice }: LoginFormProps) {
         if (!emailMessage && !passwordMessage) setFormError(GENERIC_ERROR);
       } else if (error instanceof ApiError && error.status === 401) {
         setFormError(error.message);
+      } else if (rateLimitMessage(error)) {
+        // Too many requests from this address; not the code cooldown below.
+        setFormError(rateLimitMessage(error)!);
       } else if (error instanceof ApiError && error.status === 429) {
         setFormError(CODE_ALREADY_SENT);
         setCodeAlreadySent(true);

@@ -78,6 +78,25 @@ that's the structure this codebase moved away from.
   `MAIL_USERNAME`/`MAIL_PASSWORD` are then unused. Same failure rule as SMTP: a rejected or timed-out send
   (5 s) throws, so the caller's transaction rolls back and the user retries. The exception carries only its
   type: never the key or the response body, which can echo the recipient. Local and staging keep SMTP.
+  Rate limit (SCRUM-288): `config/RateLimitFilter` refuses repeated POSTs from one address to the six public endpoints
+  (`login`, `2fa/verify`, `2fa/resend`, `logout`, `forgot-password`, `password`) with a 429 problem detail and `Retry-After`,
+  before the body is read and before any account is looked up. It sits after `CorsFilter` in `SecurityConfig` (so the 429
+  carries CORS headers; `Retry-After` is an exposed header for the direct-to-backend dev setup). `service/RateLimiter` is a
+  fixed-window counter per `endpoint:address` in a `ConcurrentHashMap` (so up to twice the limit across a window edge; expired
+  keys are purged once a window; past 100,000 keys new ones pass unchecked rather than lock everyone out). `config/RateLimitProperties`
+  (`wassel.auth.rate-limit.*`, env `RATE_LIMIT_*`; **off unless `RATE_LIMIT_ENABLED=true`**, because with `trusted-proxy-hops` 0 everyone behind Railway shares one bucket; defaults per minute: login 30, 2FA verify 60, resend 20, logout 60,
+  forgot-password 10, set-password 30). **The address:** `config/ClientAddressResolver`. `trusted-proxy-hops` 0 (default) ignores
+  `X-Forwarded-For` and uses the connection's address, so a forged header can never choose the bucket; N takes the Nth entry from
+  the right (each trusted proxy appends), falls back to the connection when the chain is shorter than N or the entry is not an
+  IP literal (no name is ever resolved), reduces IPv6 to its /64 and maps `::ffff:a.b.c.d` to IPv4. The first refusal of a window
+  is logged at WARN with the connection address and the raw header, so what the backend really sees behind Vercel and Railway can
+  be read off the log (README, "Rate limit on the sign-in endpoints"; **not yet confirmed against the live hosts**, so production
+  runs at 0 until it is). **In memory: resets on a restart and assumes one backend instance.** The other 429 of the flow
+  (`CodeCooldownException`, a code sent under a minute ago) has no `Retry-After`; the frontend tells the two apart by that header.
+  Turned off in the `test` and `e2e` profiles (every test signs in from 127.0.0.1); `RateLimitTests` turns it on. Length limits
+  (same ticket): the login and forgot-password email is at most 255 characters (the column), the login password at most 72 bytes
+  (BCrypt's limit, `dto/MaxBytes`: no account can have a longer one), the set-password token at most 200 (a real one is 43), and
+  a driver's names 100 and email 255 (`CreateDriverRequest`), each a 400 naming the field instead of a 500 from the database.
   Known limits: a password change does not revoke existing sessions (tokens are stateless); the
   fix is a "tokens valid from" timestamp on `User` checked by `JwtAuthenticationFilter`. And
   anyone who knows an email can call forgot-password once a minute; each new link voids the

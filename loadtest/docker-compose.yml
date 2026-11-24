@@ -61,6 +61,9 @@ services:
       WASSEL_MAIL_BREVO_BASE_URL: http://mail-stub:9000
       # No key: the road client never calls out and every route time is straight-line, so no quota is spent.
       ORS_API_KEY: ""
+      # Every virtual user signs in from this one address, so the per-address limit (SCRUM-288) is off by default
+      # here. To size it (SCRUM-S5-G), run with RATE_LIMIT_ENABLED=true and read the 429s in the results.
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-false}
       SCHOOL_LATITUDE: "33.8938"
       SCHOOL_LONGITUDE: "35.5018"
     ports:
