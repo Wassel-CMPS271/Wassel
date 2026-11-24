@@ -1,18 +1,19 @@
 import { expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { backendLog, logEvents } from "./backend-log";
 
 export type Role = "ADMIN" | "HEAD_OF_TRANSPORT" | "DRIVER" | "PARENT";
 export const homes: Record<Role, string> = { ADMIN: "/admin", HEAD_OF_TRANSPORT: "/head-of-transport", DRIVER: "/driver", PARENT: "/parent" };
 export function credentials() {
   return JSON.parse(readFileSync(resolve("e2e-artifacts/credentials.json"), "utf8")) as { password: string; accounts: Record<Role, string> };
 }
-export async function passwordStep(page: Page, role: Role) {
-  const data = credentials();
-  const offset = readFileSync(resolve("e2e-artifacts/backend.log"), "utf8").length;
+/** The password step of a sign-in. `email` defaults to the suite's account for `role`; pass another seeded account to use it. */
+export async function passwordStep(page: Page, role: Role, email = credentials().accounts[role]) {
+  const offset = backendLog().length;
   await page.goto("/login");
-  await page.getByLabel("Email", { exact: true }).fill(data.accounts[role]);
-  await page.getByLabel("Password", { exact: true }).fill(data.password);
+  await page.getByLabel("Email", { exact: true }).fill(email);
+  await page.getByLabel("Password", { exact: true }).fill(credentials().password);
   const response = page.waitForResponse(r => new URL(r.url()).pathname === "/api/auth/login" && r.request().method() === "POST");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   expect((await response).status()).toBe(204);
@@ -24,17 +25,9 @@ export async function passwordStep(page: Page, role: Role) {
   expect((await page.request.get("/api/auth/me")).status()).toBe(401);
   let code = "";
   await expect.poll(() => {
-    const lines = readFileSync(resolve("e2e-artifacts/backend.log"), "utf8").slice(offset).split(/\r?\n/);
-    for (const line of lines.toReversed()) {
-      try {
-        const message = JSON.parse(line).message as string;
-        if (message?.includes(`Email to ${data.accounts[role]} | Your Wassel verification code`)) {
-          code = message.match(/Your verification code is (\d{6})\./)?.[1] ?? "";
-          return code.length === 6;
-        }
-      } catch { /* Non-JSON JVM startup output is not a mail event. */ }
-    }
-    return false;
+    const mail = logEvents(offset).map(e => e.message).findLast(m => m?.includes(`Email to ${email} | Your Wassel verification code`));
+    code = mail?.match(/Your verification code is (\d{6})\./)?.[1] ?? "";
+    return code.length === 6;
   }, { message: "Read this login's code from the isolated LoggingMailer log" }).toBe(true);
   return code;
 }
@@ -54,3 +47,5 @@ export async function verifyStep(page: Page, role: Role, code: string) {
   await expect(page.getByRole("main")).toBeVisible();
 }
 export async function signIn(page: Page, role: Role) { await verifyStep(page, role, await passwordStep(page, role)); }
+/** Sign in as any seeded account (password plus the emailed code) and check the role, for tests that need a second driver. */
+export async function signInAs(page: Page, email: string, role: Role) { await verifyStep(page, role, await passwordStep(page, role, email)); }
