@@ -4,6 +4,8 @@ Owner: Wassim. Updated **24 November 2026 (Asia/Beirut)**. PR #183 remains **Dra
 This branch contains verification tools and test fixtures only. No teammate production
 source, branch, acceptance test, or Jira status was changed.
 
+Latest continuation: [follow-up from commit 2e0a9f7](2026-11-24-follow-up.md), including the exact unapplied metrics fix proposal and newly prepared isolated post-SCRUM-289 checks.
+
 ## Current evidence and verdict
 
 Acceptance is **incomplete**. Checker self-tests are not feature acceptance.

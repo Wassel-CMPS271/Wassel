@@ -1,0 +1,144 @@
+name: SCRUM-295 isolated post-H and live metrics verification
+on:
+  push:
+    branches: [test/SCRUM-295-independent-s5-checks]
+    paths:
+      - 'verification/scrum295-post-h/**'
+      - '.github/workflows/scrum295-post-h.yml'
+permissions:
+  contents: read
+jobs:
+  evidence-parser-controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test verification/scrum295-post-h/pool-measurements.test.mjs
+
+  isolated-candidate-runtime:
+    name: Isolated ${{ matrix.mode }} candidate verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: full
+            project: scrum295-posth-full
+            source: cab56d67dabe1acf69884607c87bf936c92309e4
+          - mode: burst
+            project: scrum295-posth-burst
+            source: cab56d67dabe1acf69884607c87bf936c92309e4
+          - mode: metrics-http
+            project: scrum295-metrics-http
+            source: e8bca50722324279df6be686843949b06a212500
+    env:
+      SCRUM295_MODE: ${{ matrix.mode }}
+      SCRUM295_LOAD_PROJECT: ${{ matrix.project }}-${{ github.run_id }}
+      SCRUM295_CANDIDATE_BACKEND: ${{ github.workspace }}/candidate-backend/backend
+      SCRUM295_VERIFIER_ROOT: ${{ github.workspace }}
+      DURATION: 10m
+      BURST_START: 5m
+      PARENT_VUS: '260'
+      DRIVER_VUS: '40'
+      BURST_SIGNINS: '100'
+      MAIL_DELAY_MS: '800'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.source }}
+          path: candidate-backend
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 7a938f500228f6aff0c86c1a79ed029ed0e4f65b
+          path: candidate-load
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Prepare fresh private result paths and the scoped runner
+        run: |
+          mkdir -p tmp candidate-load/loadtest/results
+          chmod 777 candidate-load/loadtest/results
+          test ! -e candidate-load/loadtest/scrum295-entry.js
+          if [ "$SCRUM295_MODE" = full ]; then
+            python3 -c "from datetime import datetime; from zoneinfo import ZoneInfo; assert datetime.now(ZoneInfo('Asia/Beirut')).weekday() < 5, 'Full morning-run replay needs a school weekday'"
+            cp verification/scrum295/k6-independent-entry.js candidate-load/loadtest/scrum295-entry.js
+          elif [ "$SCRUM295_MODE" = burst ]; then
+            cp verification/scrum295-post-h/k6-burst.js candidate-load/loadtest/scrum295-entry.js
+          fi
+      - name: Start unmodified candidate and verify real Flyway dataset quotas and limits
+        run: node verification/scrum295-post-h/start-seed.mjs
+      - name: Execute actual full or targeted post-H workload with unchanged default quotas
+        if: matrix.mode != 'metrics-http'
+        run: node verification/scrum295-post-h/run-k6.mjs
+      - name: Real HTTP roles prefix regression and controlled backend restart
+        if: matrix.mode == 'metrics-http'
+        run: node verification/scrum295-post-h/run-metrics.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scrum295-candidate-${{ matrix.mode }}
+          path: |
+            tmp/candidate-environment.json
+            tmp/posth-*-result.json
+            tmp/metrics-http-result.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Clean up only this uniquely named disposable project
+        if: always()
+        run: docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml -f verification/scrum295-post-h/candidate.yml down -v
+
+  post-h-full-backend:
+    name: Unchanged SCRUM-289 full Maven and enabled pool measurement
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: cab56d67dabe1acf69884607c87bf936c92309e4
+          path: candidate-backend
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: candidate-backend/backend/pom.xml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Execute every backend test and explicitly enable the gated measurement
+        working-directory: candidate-backend/backend
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tmp"
+          test "$(git rev-parse HEAD)" = cab56d67dabe1acf69884607c87bf936c92309e4
+          set +e
+          sh ./mvnw -B verify -Dmeasure.SCRUM-289=true > "$GITHUB_WORKSPACE/tmp/posth-maven-native.log" 2>&1
+          native_exit=$?
+          set -e
+          echo "$native_exit" > "$GITHUB_WORKSPACE/tmp/posth-maven-exit.txt"
+          exit "$native_exit"
+      - name: Extract real test counts coverage and only numeric measurement rows
+        if: always()
+        run: node verification/scrum295-post-h/backend-report.mjs
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('tmp/posth-backend-results.json') != ''
+        with:
+          name: scrum295-posth-full-backend
+          path: tmp/posth-backend-results.json
+          retention-days: 7
+# Native failures remain red. No teammate source is patched, no caps are raised,
+# and no logs containing test credentials, codes, cookies or mail are uploaded.

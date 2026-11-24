@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import {test} from "node:test";
+import {poolMeasurements,completePoolMeasurements} from "./pool-measurements.mjs";
+const row=(scenario="100 logins over 60 s, provider takes 800 ms",statuses="{204=100}")=>`SCRUM-289 | ${scenario} | max active 1 | max waiting 0 | login statuses ${statuses} | login ms p50 850 / p95 900 / max 950 | probe ms p50 2 / p95 3 / max 5 (non-200: 0)`;
+test("parses real numerical measurement shape",()=>assert.deepEqual(poolMeasurements(row())[0],{scenario:"100 logins over 60 s, provider takes 800 ms",maxActive:1,maxWaiting:0,loginStatuses:{204:100},loginMillis:{p50:850,p95:900,max:950},probeMillis:{p50:2,p95:3,max:5},probeNon200:0}));
+test("never copies raw HTTP cookies or mail text",()=>{const source='Cookie: secret-value\nmail code 123456\n'+row()+'\nAuthorization: secret-value';const output=JSON.stringify(poolMeasurements(source));assert.ok(!output.includes('secret-value'));assert.ok(!output.includes('123456'));});
+test("retains genuine 500 and transport-error counts",()=>assert.deepEqual(poolMeasurements(row(undefined,"{-1=1, 204=97, 500=2}"))[0].loginStatuses,{'-1':1,204:97,500:2}));
+test("refuses credential-like text in a measurement status field",()=>assert.equal(poolMeasurements(row(undefined,"{Cookie=secret-value}")).length,0));
+test("all four actual scenarios are required",()=>{const rows=[800,3000,5000].map(n=>row(`100 logins over 60 s, provider takes ${n} ms`));rows.push(row('100 logins at once, provider takes 5000 ms'));assert.equal(completePoolMeasurements(poolMeasurements(rows.join('\n'))),true);});
+test("a duplicate scenario cannot stand in for a missing scenario",()=>assert.equal(completePoolMeasurements(poolMeasurements([row(),row(),row(),row()].join('\n'))),false));
