@@ -4,7 +4,9 @@ Owner: Wassim. Updated **24 November 2026 (Asia/Beirut)**. PR #183 remains **Dra
 This branch contains verification tools and test fixtures only. No teammate production
 source, branch, acceptance test, or Jira status was changed.
 
-Latest continuation: [follow-up from commit 2e0a9f7](2026-11-24-follow-up.md), including the exact unapplied metrics fix proposal and newly prepared isolated post-SCRUM-289 checks.
+Latest continuation: [follow-up from commit 2e0a9f7](2026-11-24-follow-up.md), including the exact unapplied metrics fix proposal, executed post-SCRUM-289 checks and actual HTTP restart evidence.
+
+Current continuation results: real HTTP roles/2FA, backend outage/recovery and process counter reset executed; post-H full Maven/gated measurements passed; exact-100 burst exceeded 1s p95 and full-school defaults hit the 120-email cap. See the linked follow-up for the complete verdict.
 
 ## Current evidence and verdict
 
@@ -18,7 +20,7 @@ Acceptance is **incomplete**. Checker self-tests are not feature acceptance.
 | X2-04: external uptime / outage alerts | SCRUM-291 Jira and comments reviewed; README describes health checks but supplies no verified external monitor dashboard | BLOCKED: provider links/settings, both monitored targets, alert receipt and genuine disposable outage/recovery evidence |
 | X2-05: coverage readings | Actual PR #187 CI artifacts: backend **3408/3521 = 96.7907%**, frontend **4253/4735 = 89.8205%** | Both above configured floors; genuine develop daily readings independently extracted below; owner document still lacks rows; rounding discrepancy below |
 | X2-06: native coverage rejection | Disposable workflows add uncovered code and run all tests with unchanged native floors | Both native gates rejected actual below-floor regressions after zero unexpected functional failures; details below |
-| X2-07: school load replay | Three author summaries audited, then independently replayed: **37,721 requests**, p95 **6.8531 ms**, zero 5xx/failed checks, **606.183 s**, 260 parent + 40 driver actors, 100 successful burst sign-ins | Latency/errors pass at **60.2475 steady backend RPS**; strict 40–50 ticket band fails; post-SCRUM-289 replay outstanding |
+| X2-07: school load replay | Three author summaries audited, then independently replayed: **37,721 requests**, p95 **6.8531 ms**, zero 5xx/failed checks, **606.183 s**, 260 parent + 40 driver actors, 100 successful burst sign-ins | Latency/errors pass at **60.2475 steady backend RPS**; strict 40â€“50 ticket band fails; post-SCRUM-289 replay outstanding |
 | X2-08: isolated resource-capped stack | Real SQL dataset and Docker CPU/RAM/network settings checked; fake-mail/no-road-key configuration and hashes captured | Independent disposable-stack constraints passed and cleanup succeeded; measurements apply to the recorded host, not an unknown production plan |
 
 Frozen sources inspected:
@@ -94,7 +96,7 @@ PostgreSQL outbox/delivery state and the production sender with only the mail
 provider replaced by the existing recording stand-in. The prefix defect remains
 a genuine failing criterion.
 
-## Completed independent load replay — 24 November
+## Completed independent load replay â€” 24 November
 
 [Run 45319942145 / job 138195791968](https://github.com/Wassel-CMPS271/Wassel/actions/runs/45319942145/job/138195791968),
 source develop `7a938f500228f6aff0c86c1a79ed029ed0e4f65b`, test commit
@@ -118,7 +120,7 @@ source develop `7a938f500228f6aff0c86c1a79ed029ed0e4f65b`, test commit
 | Safety / cleanup | Internal-only network, fake mail, no road API key; only this uniquely named project removed successfully |
 
 All original k6 thresholds **passed**, as did the added duration/actor/burst
-measurements. The independent audit returned **exit 1 solely for the 40–50 RPS
+measurements. The independent audit returned **exit 1 solely for the 40â€“50 RPS
 band**; all four other original audit gates passed and no evidence field was
 missing. This is positive latency/error evidence at a higher load, with a
 workload-specification discrepancy still requiring owner/team resolution.
@@ -280,7 +282,7 @@ Synthetic response tests are not genuine uptime acceptance.
 1. Complete SCRUM-291 with genuine external-monitor outage, alert receipt and recovery evidence on a disposable stack. The app restart can also be observed during that coordinated run.
 2. Moustafa fixes the confirmed prefix exclusion; rerun independent criteria against his new head. Notification outcome counters already have independent PostgreSQL/service evidence. Real provider delivery was deliberately outside this isolated test.
 3. Mohamad supplies monitor/outage evidence, coverage rounding clarification and
-   publishes the independently recovered daily readings in the owner document; reconciles the 40–50 RPS model and 1s login guard with the owner script. Measured duration, burst counts and complete timings now exist in our independent evidence.
+   publishes the independently recovered daily readings in the owner document; reconciles the 40â€“50 RPS model and 1s login guard with the owner script. Measured duration, burst counts and complete timings now exist in our independent evidence.
 4. Once SCRUM-289 is accepted, rerun the real one-minute login burst against it.
 5. The lightweight combined metrics/security/delivery workflow now runs on every own-branch push, including report-only commits, so the unresolved normal failure remains visible on the current head. The longer pinned coverage/load probes retain their actual run links.
 6. Keep #183 Draft until all X2-01 through X2-08 are evidenced. Do not label

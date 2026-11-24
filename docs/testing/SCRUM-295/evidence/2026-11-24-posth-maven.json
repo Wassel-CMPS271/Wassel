@@ -1,0 +1,232 @@
+{
+  "runId": 45339167598,
+  "jobId": 138258375519,
+  "testCommit": "01955af7519060d121114a3e51688c059ab2aaa6",
+  "artifactId": 14895608196,
+  "zipSha256": "d96137ca731d4ec3f26ac813c66628d85846322f9c0f94e116bafb3db84d9249",
+  "result": {
+    "candidateSource": "cab56d67dabe1acf69884607c87bf936c92309e4",
+    "command": "./mvnw -B verify -Dmeasure.SCRUM-289=true",
+    "scope": "Author full backend tests rerun unchanged; gated pool measurement explicitly enabled. Author test-profile quotas differ from deployment defaults and do not prove full default-quota school acceptance.",
+    "nativeExit": 0,
+    "totals": {
+      "tests": 1915,
+      "passed": 1911,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 4
+    },
+    "failedCases": [],
+    "gatedMeasurementSuite": {
+      "name": "com.wassel.backend.auth.controller.AuthEmailPoolMeasurementTests",
+      "cases": [
+        {
+          "name": "measure",
+          "status": "passed"
+        }
+      ],
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 1
+    },
+    "poolMeasurements": [
+      {
+        "scenario": "100 logins over 60 s, provider takes 800 ms",
+        "maxActive": 1,
+        "maxWaiting": 0,
+        "loginStatuses": {
+          "204": 100
+        },
+        "loginMillis": {
+          "p50": 880,
+          "p95": 883,
+          "max": 901
+        },
+        "probeMillis": {
+          "p50": 3,
+          "p95": 6,
+          "max": 25
+        },
+        "probeNon200": 0
+      },
+      {
+        "scenario": "100 logins over 60 s, provider takes 3000 ms",
+        "maxActive": 1,
+        "maxWaiting": 0,
+        "loginStatuses": {
+          "204": 100
+        },
+        "loginMillis": {
+          "p50": 3080,
+          "p95": 3082,
+          "max": 3083
+        },
+        "probeMillis": {
+          "p50": 3,
+          "p95": 3,
+          "max": 5
+        },
+        "probeNon200": 0
+      },
+      {
+        "scenario": "100 logins over 60 s, provider takes 5000 ms",
+        "maxActive": 2,
+        "maxWaiting": 0,
+        "loginStatuses": {
+          "204": 100
+        },
+        "loginMillis": {
+          "p50": 5080,
+          "p95": 5081,
+          "max": 5083
+        },
+        "probeMillis": {
+          "p50": 3,
+          "p95": 3,
+          "max": 5
+        },
+        "probeNon200": 0
+      },
+      {
+        "scenario": "100 logins at once, provider takes 5000 ms",
+        "maxActive": 10,
+        "maxWaiting": 25,
+        "loginStatuses": {
+          "204": 100
+        },
+        "loginMillis": {
+          "p50": 7695,
+          "p95": 7926,
+          "max": 7988
+        },
+        "probeMillis": {
+          "p50": 3,
+          "p95": 180,
+          "max": 180
+        },
+        "probeNon200": 0
+      }
+    ],
+    "measurementsComplete": true,
+    "backendLineCoverage": 96.73001676914477,
+    "passed": true
+  },
+  "repeatedRun": {
+    "runId": 45339924397,
+    "jobId": 138260850461,
+    "testCommit": "b22080b11e979ae1e1cf535af65cc123e2f95a37",
+    "artifactId": 14896650409,
+    "zipSha256": "8aefcf607a405e96e0224f7173aee1fd55ebe69d9d1e46f0309b5ecd26f471a3",
+    "result": {
+      "candidateSource": "cab56d67dabe1acf69884607c87bf936c92309e4",
+      "command": "./mvnw -B verify -Dmeasure.SCRUM-289=true",
+      "scope": "Author full backend tests rerun unchanged; gated pool measurement explicitly enabled. Author test-profile quotas differ from deployment defaults and do not prove full default-quota school acceptance.",
+      "nativeExit": 0,
+      "totals": {
+        "tests": 1915,
+        "passed": 1911,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 4
+      },
+      "failedCases": [],
+      "gatedMeasurementSuite": {
+        "name": "com.wassel.backend.auth.controller.AuthEmailPoolMeasurementTests",
+        "cases": [
+          {
+            "name": "measure",
+            "status": "passed"
+          }
+        ],
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "passed": 1
+      },
+      "poolMeasurements": [
+        {
+          "scenario": "100 logins over 60 s, provider takes 800 ms",
+          "maxActive": 1,
+          "maxWaiting": 0,
+          "loginStatuses": {
+            "204": 100
+          },
+          "loginMillis": {
+            "p50": 870,
+            "p95": 873,
+            "max": 876
+          },
+          "probeMillis": {
+            "p50": 5,
+            "p95": 6,
+            "max": 9
+          },
+          "probeNon200": 0
+        },
+        {
+          "scenario": "100 logins over 60 s, provider takes 3000 ms",
+          "maxActive": 1,
+          "maxWaiting": 0,
+          "loginStatuses": {
+            "204": 100
+          },
+          "loginMillis": {
+            "p50": 3068,
+            "p95": 3070,
+            "max": 3084
+          },
+          "probeMillis": {
+            "p50": 4,
+            "p95": 5,
+            "max": 7
+          },
+          "probeNon200": 0
+        },
+        {
+          "scenario": "100 logins over 60 s, provider takes 5000 ms",
+          "maxActive": 1,
+          "maxWaiting": 0,
+          "loginStatuses": {
+            "204": 100
+          },
+          "loginMillis": {
+            "p50": 5066,
+            "p95": 5068,
+            "max": 5070
+          },
+          "probeMillis": {
+            "p50": 3,
+            "p95": 4,
+            "max": 7
+          },
+          "probeNon200": 0
+        },
+        {
+          "scenario": "100 logins at once, provider takes 5000 ms",
+          "maxActive": 10,
+          "maxWaiting": 50,
+          "loginStatuses": {
+            "204": 100
+          },
+          "loginMillis": {
+            "p50": 6799,
+            "p95": 6950,
+            "max": 7024
+          },
+          "probeMillis": {
+            "p50": 4,
+            "p95": 182,
+            "max": 182
+          },
+          "probeNon200": 0
+        }
+      ],
+      "measurementsComplete": true,
+      "backendLineCoverage": 96.73001676914477,
+      "passed": true
+    }
+  }
+}

@@ -1,0 +1,405 @@
+{
+  "runId": 45339167598,
+  "jobId": 138258375753,
+  "testCommit": "01955af7519060d121114a3e51688c059ab2aaa6",
+  "artifactId": 14894929185,
+  "zipSha256": "648af3f771e4800840e8d152ceb1e545c57ba87adb98dc96e66b8401cab28b79",
+  "environment": {
+    "mode": "full",
+    "candidateSource": "cab56d67dabe1acf69884607c87bf936c92309e4",
+    "loadSource": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b",
+    "flywayVersion": "18",
+    "host": {
+      "platform": "linux",
+      "release": "7.0.0-1020-azure",
+      "cpus": 4,
+      "memoryBytes": 16759431168
+    },
+    "services": {
+      "backend": {
+        "nanoCpus": 1000000000,
+        "memoryBytes": 1073741824
+      },
+      "postgres": {
+        "nanoCpus": 1000000000,
+        "memoryBytes": 1073741824
+      },
+      "mail-stub": {
+        "nanoCpus": 250000000,
+        "memoryBytes": 134217728
+      }
+    },
+    "internalOnlyNetwork": true,
+    "mailDelayMillis": 800,
+    "noExternalMailOrRoadTraffic": true,
+    "emailCapOverrides": false,
+    "authDailyCap": 120,
+    "dataset": {
+      "students": 1000,
+      "buses": 40,
+      "parents": 800,
+      "drivers": 40,
+      "routes": 40
+    },
+    "extraAdminFixture": false,
+    "loadScriptSha256": "79dd5d4667f2499f287906fe6cf4fc8a88c9f3e94c8f9e52711d3d608e8a709f",
+    "seedSha256": "5a5c4d9b18d2f9d139b1207cb598af772d2441d5c6907a79f67dd09957f57214"
+  },
+  "result": {
+    "mode": "full",
+    "candidateSource": "cab56d67dabe1acf69884607c87bf936c92309e4",
+    "nativeExit": 99,
+    "scope": "Unchanged full school scenario on SCRUM-289 defaults; no quota override",
+    "authEmailRows": 120,
+    "checks": [
+      {
+        "name": "login answered 204",
+        "passes": 0,
+        "fails": 1765
+      },
+      {
+        "name": "children 200",
+        "passes": 120,
+        "fails": 0
+      },
+      {
+        "name": "bus location 200",
+        "passes": 11656,
+        "fails": 0
+      },
+      {
+        "name": "unread count 200",
+        "passes": 2280,
+        "fails": 0
+      }
+    ],
+    "nativeThresholds": {
+      "http_req_duration{phase:steady}": {
+        "p(95)<1000": {
+          "ok": true
+        }
+      },
+      "sign_in_failures": {
+        "count==0": {
+          "ok": false
+        }
+      },
+      "scrum295_steady_elapsed_ms": {
+        "max>=600000": {
+          "ok": true
+        }
+      },
+      "http_req_duration{phase:signin-password}": {
+        "p(95)<3000": {
+          "ok": false
+        }
+      },
+      "sign_in_duration": {
+        "p(95)<3000": {
+          "ok": true
+        }
+      },
+      "scrum295_driver_actors": {
+        "count==40": {
+          "ok": true
+        }
+      },
+      "http_reqs{phase:steady}": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "checks": {
+        "rate==1": {
+          "ok": false
+        }
+      },
+      "scrum295_burst_completed": {
+        "count>=100": {
+          "ok": true
+        }
+      },
+      "scrum295_parent_actors": {
+        "count==260": {
+          "ok": true
+        }
+      },
+      "http_req_failed": {
+        "rate<0.001": {
+          "ok": false
+        }
+      },
+      "http_req_duration{phase:signin-code}": {
+        "p(95)<1000": {
+          "ok": true
+        }
+      },
+      "server_errors": {
+        "count==0": {
+          "ok": false
+        }
+      }
+    },
+    "observed": {
+      "steadyBackendRequests": 15016,
+      "steadyElapsedMs": 624494,
+      "parentActors": 260,
+      "driverActors": 40,
+      "completedBurst": 101
+    },
+    "audit": {
+      "requests": 17681,
+      "checks": [
+        {
+          "name": "p95 under 1000 ms",
+          "actual": 1090.784343,
+          "pass": false
+        },
+        {
+          "name": "zero HTTP 5xx",
+          "actual": 1765,
+          "pass": false
+        },
+        {
+          "name": "40-50 requests/sec achieved",
+          "actual": 24.045066886151027,
+          "pass": false
+        },
+        {
+          "name": "300 peak active VUs",
+          "actual": 301,
+          "pass": true
+        },
+        {
+          "name": "10 minutes measured",
+          "actual": 624.494,
+          "pass": true
+        }
+      ],
+      "complete": true,
+      "missing": [],
+      "pass": false,
+      "observations": {
+        "aggregateRequestsPerSecond": 25.8516152842872,
+        "backendSteadyRequestsPerSecond": 24.045066886151027,
+        "parentActors": 260,
+        "driverActors": 40,
+        "completedBurst": 101,
+        "steadyP95Millis": 86.79037100000001,
+        "passwordP95Millis": 16972.564586999997,
+        "codeP95Millis": 0,
+        "signInP95Millis": 0,
+        "failedSignIns": 1765,
+        "failedRequestRate": 0.1303659295288728,
+        "failedChecks": 1765
+      },
+      "scope": "Aggregate HTTP metrics may include setup and mail-stub calls. Peak VUs do not alone prove 300 sustained users. Duration is never inferred from count/rate or intended configuration."
+    }
+  },
+  "limitations": [
+    "The custom server_errors counter covers runtime app() calls, not direct setup http.batch calls; 1765 is the recorded runtime count, not a proved all-phase status breakdown.",
+    "Source cap contract returns 503 once 120 auth-email rows exist; the artifact has no per-status breakdown, so not every recorded 5xx is individually classified.",
+    "Only 120 initial parents authenticated; driver function participation counts do not prove successful driver authentication. No successful driver-start/GPS check exists.",
+    "Empty code/whole-sign-in trends of zero are not successful latency measurements; no runtime successful verification was recorded.",
+    "The capped default scenario cannot satisfy full 300-authenticated-user acceptance. No quota was raised or disabled."
+  ],
+  "repeatedRun": {
+    "runId": 45339924397,
+    "jobId": 138260850524,
+    "testCommit": "b22080b11e979ae1e1cf535af65cc123e2f95a37",
+    "artifactId": 14895734984,
+    "zipSha256": "446459199afa98d4a820347cf1f1f4b113f82accb2ba012e8fabdc9c0bfb75a5",
+    "environment": {
+      "mode": "full",
+      "candidateSource": "cab56d67dabe1acf69884607c87bf936c92309e4",
+      "loadSource": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b",
+      "flywayVersion": "18",
+      "host": {
+        "platform": "linux",
+        "release": "7.0.0-1020-azure",
+        "cpus": 4,
+        "memoryBytes": 16759431168
+      },
+      "services": {
+        "backend": {
+          "nanoCpus": 1000000000,
+          "memoryBytes": 1073741824
+        },
+        "postgres": {
+          "nanoCpus": 1000000000,
+          "memoryBytes": 1073741824
+        },
+        "mail-stub": {
+          "nanoCpus": 250000000,
+          "memoryBytes": 134217728
+        }
+      },
+      "internalOnlyNetwork": true,
+      "mailDelayMillis": 800,
+      "noExternalMailOrRoadTraffic": true,
+      "emailCapOverrides": false,
+      "authDailyCap": 120,
+      "dataset": {
+        "students": 1000,
+        "buses": 40,
+        "parents": 800,
+        "drivers": 40,
+        "routes": 40
+      },
+      "extraAdminFixture": false,
+      "loadScriptSha256": "79dd5d4667f2499f287906fe6cf4fc8a88c9f3e94c8f9e52711d3d608e8a709f",
+      "seedSha256": "5a5c4d9b18d2f9d139b1207cb598af772d2441d5c6907a79f67dd09957f57214"
+    },
+    "result": {
+      "mode": "full",
+      "candidateSource": "cab56d67dabe1acf69884607c87bf936c92309e4",
+      "nativeExit": 99,
+      "scope": "Unchanged full school scenario on SCRUM-289 defaults; no quota override",
+      "authEmailRows": 120,
+      "checks": [
+        {
+          "name": "children 200",
+          "passes": 120,
+          "fails": 0
+        },
+        {
+          "name": "login answered 204",
+          "passes": 0,
+          "fails": 1754
+        },
+        {
+          "name": "bus location 200",
+          "passes": 11601,
+          "fails": 0
+        },
+        {
+          "name": "unread count 200",
+          "passes": 2280,
+          "fails": 0
+        }
+      ],
+      "nativeThresholds": {
+        "sign_in_duration": {
+          "p(95)<3000": {
+            "ok": true
+          }
+        },
+        "sign_in_failures": {
+          "count==0": {
+            "ok": false
+          }
+        },
+        "http_req_duration{phase:signin-code}": {
+          "p(95)<1000": {
+            "ok": true
+          }
+        },
+        "http_reqs{phase:steady}": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "http_req_failed": {
+          "rate<0.001": {
+            "ok": false
+          }
+        },
+        "http_req_duration{phase:steady}": {
+          "p(95)<1000": {
+            "ok": true
+          }
+        },
+        "server_errors": {
+          "count==0": {
+            "ok": false
+          }
+        },
+        "scrum295_burst_completed": {
+          "count>=100": {
+            "ok": true
+          }
+        },
+        "http_req_duration{phase:signin-password}": {
+          "p(95)<3000": {
+            "ok": false
+          }
+        },
+        "scrum295_driver_actors": {
+          "count==40": {
+            "ok": true
+          }
+        },
+        "checks": {
+          "rate==1": {
+            "ok": false
+          }
+        },
+        "scrum295_parent_actors": {
+          "count==260": {
+            "ok": true
+          }
+        },
+        "scrum295_steady_elapsed_ms": {
+          "max>=600000": {
+            "ok": true
+          }
+        }
+      },
+      "observed": {
+        "steadyBackendRequests": 14961,
+        "steadyElapsedMs": 628931,
+        "parentActors": 260,
+        "driverActors": 40,
+        "completedBurst": 101
+      },
+      "audit": {
+        "requests": 17615,
+        "checks": [
+          {
+            "name": "p95 under 1000 ms",
+            "actual": 1093.9323038999996,
+            "pass": false
+          },
+          {
+            "name": "zero HTTP 5xx",
+            "actual": 1754,
+            "pass": false
+          },
+          {
+            "name": "40-50 requests/sec achieved",
+            "actual": 23.787983101484897,
+            "pass": false
+          },
+          {
+            "name": "300 peak active VUs",
+            "actual": 302,
+            "pass": true
+          },
+          {
+            "name": "10 minutes measured",
+            "actual": 628.931,
+            "pass": true
+          }
+        ],
+        "complete": true,
+        "missing": [],
+        "pass": false,
+        "observations": {
+          "aggregateRequestsPerSecond": 25.763920229975685,
+          "backendSteadyRequestsPerSecond": 23.787983101484897,
+          "parentActors": 260,
+          "driverActors": 40,
+          "completedBurst": 101,
+          "steadyP95Millis": 66.811743,
+          "passwordP95Millis": 19681.138727049998,
+          "codeP95Millis": 0,
+          "signInP95Millis": 0,
+          "failedSignIns": 1754,
+          "failedRequestRate": 0.13022991768379222,
+          "failedChecks": 1754
+        },
+        "scope": "Aggregate HTTP metrics may include setup and mail-stub calls. Peak VUs do not alone prove 300 sustained users. Duration is never inferred from count/rate or intended configuration."
+      }
+    }
+  }
+}
