@@ -1,0 +1,27 @@
+{
+  "suite": "transport",
+  "status": "failed",
+  "durationSeconds": 412,
+  "tests": [
+    {
+      "title": "reassignment journey: Head UI, old driver 404 on every write, new driver continues",
+      "file": "transport-reassignment.e2e.ts",
+      "status": "passed",
+      "durationSeconds": 141
+    },
+    {
+      "title": "offline replay: taps survive a reload, send once, and a repeated key or a second key changes nothing",
+      "file": "transport-replay.e2e.ts",
+      "status": "failed",
+      "durationSeconds": 96,
+      "failure": {
+        "line": 58,
+        "step": "reconnecting sends each tap once: one record and one inbox entry per status",
+        "lastApiCall": { "method": "PUT", "path": "/api/driver/runs/{id}/students/{id}/confirmation", "status": 409 },
+        "assertion": { "matcher": "toBe", "expected": "200", "received": "409" }
+      }
+    }
+  ],
+  "serverErrors": [{ "logger": "c.w.b.runs.service.RunService", "level": "ERROR", "count": 1 }],
+  "leakCheck": "passed"
+}
