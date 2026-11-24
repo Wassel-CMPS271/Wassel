@@ -33,21 +33,8 @@ const show = () => render(<ParentLayout><ParentPage /></ParentLayout>);
 
 const squash = (text: string | null | undefined) => (text ?? "").replace(/\s+/g, " ").trim();
 
-/**
- * The smallest element that holds one child's details: walk up from the child's name until the next
- * step would also contain another child's name. Structure-agnostic on purpose (no card markup assumed).
- */
-function cardFor(name: string, others: string[]): HTMLElement {
-  const [first] = screen.getAllByText((_, el) => el !== null && el.children.length === 0 && squash(el.textContent).includes(name));
-  let node = first as HTMLElement;
-  while (node.parentElement && node.parentElement !== document.body
-    && !others.some(other => squash(node.parentElement!.textContent).includes(other))) {
-    node = node.parentElement;
-  }
-  return node;
-}
-const tarekCard = () => cardFor(expected.tarek.name, [expected.layla.name]);
-const laylaCard = () => cardFor(expected.layla.name, [expected.tarek.name]);
+/** One child's card: the region named by the card's heading. Exact name, because the list's own section is a region too. */
+const card = (name: string) => screen.getByRole("region", { name });
 
 beforeEach(() => { router.replace.mockReset(); });
 afterEach(() => {
@@ -60,15 +47,15 @@ describe("SCRUM-248 Parent Home (independent, SCRUM-246)", () => {
   it("H1: shows every linked child from the contract sample, by name", async () => {
     serve();
     show();
-    expect(await screen.findByText(new RegExp(expected.tarek.name))).toBeInTheDocument();
-    expect(screen.getByText(new RegExp(expected.layla.name))).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: expected.tarek.name })).toBeInTheDocument();
+    expect(card(expected.layla.name)).toBeInTheDocument();
   });
 
   it("H1: shows the route name, driver's name, vehicle plate and expected pickup time inside the child's own card", async () => {
     serve();
     show();
-    await screen.findByText(new RegExp(expected.tarek.name));
-    const text = squash(tarekCard().textContent);
+    await screen.findByRole("region", { name: expected.tarek.name });
+    const text = squash(card(expected.tarek.name).textContent);
     expect(text).toContain(expected.tarek.route);
     expect(text).toContain(expected.tarek.driver);
     expect(text).toContain(expected.tarek.plate);
@@ -79,8 +66,8 @@ describe("SCRUM-248 Parent Home (independent, SCRUM-246)", () => {
   it("H2: 'Call driver' is a tel: link that dials the driver's phone", async () => {
     serve();
     show();
-    await screen.findByText(new RegExp(expected.tarek.name));
-    const call = within(tarekCard()).getByRole("link", { name: /call/i });
+    await screen.findByRole("region", { name: expected.tarek.name });
+    const call = within(card(expected.tarek.name)).getByRole("link", { name: /call/i });
     const href = call.getAttribute("href") ?? "";
     expect(href.startsWith("tel:")).toBe(true);
     // Display spaces/dashes/brackets are not digits; the dialled number must be exactly the driver's.
@@ -90,12 +77,12 @@ describe("SCRUM-248 Parent Home (independent, SCRUM-246)", () => {
   it("H3: a child with no route gets a clear message and no transport details or call link", async () => {
     serve();
     show();
-    await screen.findByText(new RegExp(expected.layla.name));
-    const card = laylaCard();
+    await screen.findByRole("region", { name: expected.layla.name });
+    const layla = card(expected.layla.name);
     // Matched per element: textContent joins sibling elements without a space ("MansourNo route…").
-    expect(within(card).getByText(/\b(no|not)\b[^.]{0,40}\b(route|assigned)\b/i)).toBeVisible();
-    expect(within(card).queryByRole("link", { name: /call/i })).toBeNull();
-    const text = squash(card.textContent);
+    expect(within(layla).getByText(/\b(no|not)\b[^.]{0,40}\b(route|assigned)\b/i)).toBeVisible();
+    expect(within(layla).queryByRole("link", { name: /call/i })).toBeNull();
+    const text = squash(layla.textContent);
     for (const value of [expected.tarek.route, expected.tarek.driver, expected.tarek.plate, expected.tarek.pickup]) {
       expect(text).not.toContain(value);
     }
@@ -112,7 +99,7 @@ describe("SCRUM-248 Parent Home (independent, SCRUM-246)", () => {
     serve({ children: [HANG] });
     show();
     expect(await screen.findByText(/loading/i)).toBeInTheDocument();
-    expect(screen.queryByText(new RegExp(expected.tarek.name))).toBeNull();
+    expect(screen.queryByRole("region", { name: expected.tarek.name })).toBeNull();
   });
 
   it.each([
@@ -125,10 +112,10 @@ describe("SCRUM-248 Parent Home (independent, SCRUM-246)", () => {
     const text = squash(alert.textContent);
     expect(text.length).toBeGreaterThan(0);
     expect(text).not.toMatch(/\b500\b|[{}]|TypeError|Failed to fetch|undefined|null/);
-    expect(screen.queryByText(new RegExp(expected.tarek.name))).toBeNull();
+    expect(screen.queryByRole("region", { name: expected.tarek.name })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /retry|try again/i }));
-    expect(await screen.findByText(new RegExp(expected.tarek.name))).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: expected.tarek.name })).toBeInTheDocument();
     expect(server.requests("/api/parent/children", "GET")).toHaveLength(2);
   });
 
@@ -139,19 +126,19 @@ describe("SCRUM-248 Parent Home (independent, SCRUM-246)", () => {
     window.dispatchEvent(new Event("resize"));
     serve();
     show();
-    await screen.findByText(new RegExp(expected.tarek.name));
-    const call = within(tarekCard()).getByRole("link", { name: /call/i });
+    await screen.findByRole("region", { name: expected.tarek.name });
+    const call = within(card(expected.tarek.name)).getByRole("link", { name: /call/i });
     expect(call.tagName).toBe("A");
     expect(call).toBeVisible();
     for (const value of [expected.tarek.route, expected.tarek.driver, expected.tarek.plate, expected.tarek.pickup]) {
-      expect(squash(tarekCard().textContent)).toContain(value);
+      expect(squash(card(expected.tarek.name).textContent)).toContain(value);
     }
   });
 
   it("H6: loads the children from the real cookie-authenticated endpoint, with no parent or child id sent", async () => {
     serve();
     show();
-    await screen.findByText(new RegExp(expected.tarek.name));
+    await screen.findByRole("region", { name: expected.tarek.name });
     const calls = server.requests("/api/parent/children", "GET");
     expect(calls).toHaveLength(1);
     expect(calls[0].credentials).toBe("include");

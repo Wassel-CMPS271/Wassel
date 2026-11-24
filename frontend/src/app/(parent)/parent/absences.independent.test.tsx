@@ -57,13 +57,17 @@ async function openAbsences(name: string) {
 async function listLoaded(childId: string) {
   await waitFor(() => expect(server.requests(absencePath(childId), "GET")).toHaveLength(1));
 }
-/** The listed absences: every list item that carries its own Cancel button. */
+/**
+ * The listed absences: the list items inside the child's absences panel, none when it is not open.
+ * No button is involved, so a row whose Cancel button is swapped for its confirmation step still counts.
+ */
 function rows(): HTMLElement[] {
-  return screen.queryAllByRole("button", { name: "Cancel absence" })
-    .map(button => button.closest<HTMLElement>("li,[role='listitem']")!)
-    .filter(Boolean);
+  const panel = screen.queryByRole("region", { name: /^Absences for / });
+  return panel ? within(panel).queryAllByRole("listitem") : [];
 }
 const rowWith = (text: string) => rows().find(row => squash(row.textContent).includes(text));
+/** The Cancel buttons on screen, or in one row. A row in its confirmation step has none. */
+const cancelButtons = (row?: HTMLElement) => (row ? within(row) : screen).queryAllByRole("button", { name: "Cancel absence" });
 
 function setDate(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -100,7 +104,11 @@ describe("SCRUM-249 parent absences (independent, SCRUM-246)", () => {
       expect(squash(first.textContent)).toContain("2026-10-21");
       expect(squash(first.textContent)).toContain("2026-10-23");
       expect(squash(second.textContent)).toContain("2026-11-02");
-      for (const row of rows()) expect(within(row).getByRole("button", { name: "Cancel absence" })).toBeEnabled();
+      for (const row of rows()) {
+        const buttons = cancelButtons(row);
+        expect(buttons).toHaveLength(1);
+        expect(buttons[0]).toBeEnabled();
+      }
     });
 
     it("A3/empty: a child with no upcoming absences gets an empty-state message and no Cancel buttons", async () => {
@@ -256,6 +264,7 @@ describe("SCRUM-249 parent absences (independent, SCRUM-246)", () => {
 
       const confirm = await within(row).findByRole("button", { name: "Confirm cancellation" });
       expect(within(row).getByRole("button", { name: "Keep absence" })).toBeVisible();
+      expect(cancelButtons(row)).toHaveLength(0);
       await waitFor(() => expect(document.activeElement).toBe(confirm));
       expect(deletes()).toHaveLength(0);
     });
@@ -277,7 +286,8 @@ describe("SCRUM-249 parent absences (independent, SCRUM-246)", () => {
       await waitFor(() => expect(screen.queryByRole("button", { name: "Confirm cancellation" })).toBeNull());
       expect(rows()).toHaveLength(2);
       expect(deletes()).toHaveLength(0);
-      const cancel = within(rowWith("2026-10-21")!).getByRole("button", { name: "Cancel absence" });
+      const [cancel] = cancelButtons(rowWith("2026-10-21")!);
+      expect(cancel).toBeDefined();
       await waitFor(() => expect(document.activeElement).toBe(cancel));
     });
 
@@ -358,11 +368,16 @@ describe("SCRUM-249 parent absences (independent, SCRUM-246)", () => {
       fireEvent.click(within(rowWith("2026-10-21")!).getByRole("button", { name: "Cancel absence" }));
       fireEvent.click(await screen.findByRole("button", { name: "Confirm cancellation" }));
 
+      // Everything but the message is already right, so this case fails only on the missing reason.
+      await waitFor(() => expect(deletes()).toHaveLength(1));
+      const row = rowWith("2026-10-21");
+      expect(row).toBeDefined();
+      const step = within(row!).getByRole("group", { name: /^Confirm cancellation / });
+      await waitFor(() => expect(within(step).getByRole("button", { name: "Confirm cancellation" })).toBeEnabled());
+      expect(within(step).getByRole("button", { name: "Keep absence" })).toBeVisible();
       const message = await screen.findByText(problems.endedBeforeToday, { exact: false });
       expect(message).toBeVisible();
       expectPlainWords(squash(message.textContent));
-      expect(deletes()).toHaveLength(1);
-      expect(rowWith("2026-10-21")).toBeDefined();
     });
 
     it("A5: cancelling an absence that is already gone (404) is explained in plain words", async () => {
@@ -393,7 +408,7 @@ describe("SCRUM-249 parent absences (independent, SCRUM-246)", () => {
       expect(screen.getByLabelText("Absence date").tagName).toBe("INPUT");
       expect(screen.getByLabelText("Report a date range").tagName).toBe("INPUT");
       expect(screen.getByRole("button", { name: "Report absence" }).tagName).toBe("BUTTON");
-      for (const row of rows()) expect(within(row).getByRole("button", { name: "Cancel absence" }).tagName).toBe("BUTTON");
+      for (const row of rows()) expect(cancelButtons(row).map(button => button.tagName)).toEqual(["BUTTON"]);
     });
   });
 
