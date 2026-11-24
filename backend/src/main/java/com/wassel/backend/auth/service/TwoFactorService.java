@@ -5,6 +5,7 @@ import com.wassel.backend.auth.exception.CodeCooldownException;
 import com.wassel.backend.auth.exception.InvalidCodeException;
 import com.wassel.backend.auth.exception.LoginExpiredException;
 import com.wassel.backend.auth.repository.LoginCodeRepository;
+import com.wassel.backend.monitoring.service.OperationalMetrics;
 import com.wassel.backend.users.entity.User;
 import com.wassel.backend.users.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -41,10 +42,14 @@ public class TwoFactorService {
 
 	private final Mailer mailer;
 
-	public TwoFactorService(LoginCodeRepository codeRepository, UserService userService, Mailer mailer) {
+	private final OperationalMetrics metrics;
+
+	public TwoFactorService(LoginCodeRepository codeRepository, UserService userService, Mailer mailer,
+			OperationalMetrics metrics) {
 		this.codeRepository = codeRepository;
 		this.userService = userService;
 		this.mailer = mailer;
+		this.metrics = metrics;
 	}
 
 	/** Emails a code and returns the pending token that the verify step must present. */
@@ -123,6 +128,8 @@ public class TwoFactorService {
 			int attempt = stored.getAttempts() + 1;
 			log.warn("Wrong or expired login code for user {} (attempt {} of {})", stored.getUserId(), attempt,
 					MAX_ATTEMPTS);
+			// Counted here, not from the answer: the fifth wrong code is answered 401, like a vanished login.
+			metrics.signInFailed();
 			throw attempt >= MAX_ATTEMPTS ? new LoginExpiredException() : new InvalidCodeException();
 		}
 		if (codeRepository.markUsed(stored.getId(), now) == 0) {

@@ -4,6 +4,7 @@ import com.wassel.backend.common.Parallel;
 import com.wassel.backend.inbox.entity.DeliveryReason;
 import com.wassel.backend.inbox.entity.DeliveryStatus;
 import com.wassel.backend.inbox.entity.NotificationDelivery;
+import com.wassel.backend.monitoring.service.OperationalMetrics;
 import com.wassel.backend.users.entity.Role;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,6 +46,17 @@ class NotificationDeliveryTests extends DeliverySupport {
 
 	@Autowired
 	private Environment environment;
+
+	@Autowired
+	private OperationalMetrics metrics;
+
+	private long metricsSent() {
+		return metrics.snapshot().notifications().sent();
+	}
+
+	private long metricsFailed() {
+		return metrics.snapshot().notifications().failed();
+	}
 
 	// ---------------------------------------------------------------- what is sent
 
@@ -205,6 +217,66 @@ class NotificationDeliveryTests extends DeliverySupport {
 
 		assertTrue(ourLog(output).contains("1 notification deliveries were interrupted and will not be sent"));
 		assertNothingPrivateIn(output, lina.parent(), "Lina");
+	}
+
+	// ---------------------------------------------------------------- the admin's numbers (SCRUM-290)
+
+	@Test
+	void aSentEmailMovesTheSentCounterAndNothingElse() throws Exception {
+		Scene lina = aChild("Lina");
+		tap(lina, "PICKED_UP");
+		long sent = metricsSent();
+		long failed = metricsFailed();
+
+		deliveries.deliverDue();
+
+		assertEquals(sent + 1, metricsSent());
+		assertEquals(failed, metricsFailed());
+	}
+
+	@Test
+	void aRetriedSendIsNotFailedUntilItGivesUpAndThenCountsOnce() throws Exception {
+		Scene lina = aChild("Lina");
+		tap(lina, "PICKED_UP");
+		mailer.refuseAll(true);
+		long sent = metricsSent();
+		long failed = metricsFailed();
+
+		deliveries.deliverDue();
+		assertEquals(failed, metricsFailed(), "the first failure is retried, not ended");
+
+		walkTheRetries();
+
+		assertEquals(failed + 1, metricsFailed());
+		assertEquals(sent, metricsSent());
+	}
+
+	@Test
+	void anExpiredDeliveryCountsAsFailed() throws Exception {
+		Scene lina = aChild("Lina");
+		tap(lina, "PICKED_UP");
+		mailer.refuseAll(true);
+		deliveries.deliverDue();
+		mailer.refuseAll(false);
+		long failed = metricsFailed();
+
+		later(Duration.ofMinutes(61));
+		deliveries.deliverDue();
+
+		assertEquals(failed + 1, metricsFailed());
+	}
+
+	@Test
+	void anInterruptedDeliveryCountsAsFailed() throws Exception {
+		Scene lina = aChild("Lina");
+		tap(lina, "PICKED_UP");
+		inFlight(lina);
+		long failed = metricsFailed();
+
+		later(Duration.ofMinutes(6));
+		deliveries.deliverDue();
+
+		assertEquals(failed + 1, metricsFailed());
 	}
 
 	// ---------------------------------------------------------------- retry, bound and expiry
