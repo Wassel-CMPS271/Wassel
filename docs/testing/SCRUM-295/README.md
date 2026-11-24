@@ -14,13 +14,13 @@ Acceptance is **incomplete**. Checker self-tests are not feature acceptance.
 
 | Gate | Actual evidence | Result / remaining work |
 | --- | --- | --- |
-| X2-01: admin-only metrics | PR #187 author CI ran four controller tests; independent PostgreSQL/security tests prepared against its exact head | Independent real PostgreSQL/security assertions passed; injected principals are not browser/2FA proof |
-| X2-02: metric values, units, resets | Local Java: **7 passed, 1 failed**; hosted Java: **11 passed, 1 failed**, 0 errors/skips; canonical checker controls pass | Confirmed prefix-exclusion defect remains; all five delivery integration criteria pass; new-instance reset and restart disclosure verified |
-| X2-03: minimal health / private actuator | Candidate contract and existing tests reviewed; independent real-application assertions prepared | Independent real-application health/privacy assertions passed (PostgreSQL 16.16, Flyway v17) |
-| X2-04: external uptime / outage alerts | SCRUM-291 Jira and comments reviewed; README describes health checks but supplies no verified external monitor dashboard | BLOCKED: provider links/settings, both monitored targets, alert receipt and genuine disposable outage/recovery evidence |
+| X2-01: admin-only metrics | Independent PostgreSQL/security tests and actual HTTP password/2FA sessions for all four roles | VERIFIED: ADMIN 200; head/driver/parent 403; no session 401; no metric fields in denied responses |
+| X2-02: metric values, units, resets | Java 16/17 pass; five delivery criteria pass; actual HTTP invalid-login deltas and process restart/reset pass | FAILED namespace exclusion remains; proposed fix in follow-up; existing cookie accepted after actual restart with all counters zero |
+| X2-03: minimal health / private actuator | Spring privacy/access assertions pass; actual HTTP health returns status UP plus groups | Strict status-only shape assertion FAILED; no component/details payload observed; owner must clarify exact contract |
+| X2-04: external uptime / outage alerts | Two private backend down/up observations and process reset executed; Jira has no supplied provider links, attachments or alert receipts | BLOCKED: genuine external frontend/backend monitoring, alert delivery and vendor-counted downtime |
 | X2-05: coverage readings | Actual PR #187 CI artifacts: backend **3408/3521 = 96.7907%**, frontend **4253/4735 = 89.8205%** | Both above configured floors; genuine develop daily readings independently extracted below; owner document still lacks rows; rounding discrepancy below |
 | X2-06: native coverage rejection | Disposable workflows add uncovered code and run all tests with unchanged native floors | Both native gates rejected actual below-floor regressions after zero unexpected functional failures; details below |
-| X2-07: school load replay | Three author summaries audited, then independently replayed: **37,721 requests**, p95 **6.8531 ms**, zero 5xx/failed checks, **606.183 s**, 260 parent + 40 driver actors, 100 successful burst sign-ins | Latency/errors pass at **60.2475 steady backend RPS**; strict 40–50 ticket band fails; post-SCRUM-289 replay outstanding |
+| X2-07: school load replay | Pre-H replay p95 6.8531 ms / zero 5xx at 60.2475 RPS; post-H full defaults failed twice at 120 auth emails; exact 100/100 burst succeeded but p95 1217.2911 ms | FAILED: workload-band, default-quota capacity and strict 1s candidate latency; no integrated-develop acceptance claimed |
 | X2-08: isolated resource-capped stack | Real SQL dataset and Docker CPU/RAM/network settings checked; fake-mail/no-road-key configuration and hashes captured | Independent disposable-stack constraints passed and cleanup succeeded; measurements apply to the recorded host, not an unknown production plan |
 
 Frozen sources inspected:
@@ -283,7 +283,7 @@ Synthetic response tests are not genuine uptime acceptance.
 2. Moustafa fixes the confirmed prefix exclusion; rerun independent criteria against his new head. Notification outcome counters already have independent PostgreSQL/service evidence. Real provider delivery was deliberately outside this isolated test.
 3. Mohamad supplies monitor/outage evidence, coverage rounding clarification and
    publishes the independently recovered daily readings in the owner document; reconciles the 40–50 RPS model and 1s login guard with the owner script. Measured duration, burst counts and complete timings now exist in our independent evidence.
-4. Once SCRUM-289 is accepted, rerun the real one-minute login burst against it.
+4. Isolated SCRUM-289 candidate verification has executed (full Maven/gated measurements pass; full default-quota school and strict 1s burst fail). After owners resolve quota/latency and the code is integrated, rerun the complete accepted school workload.
 5. The lightweight combined metrics/security/delivery workflow now runs on every own-branch push, including report-only commits, so the unresolved normal failure remains visible on the current head. The longer pinned coverage/load probes retain their actual run links.
 6. Keep #183 Draft until all X2-01 through X2-08 are evidenced. Do not label
    synthetic checks, author reports or pre-dependency runs as full acceptance.
