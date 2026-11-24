@@ -98,8 +98,22 @@ const QUEUE_LABELS: Record<QueueItem["state"], string> = {
   blocked: "Waiting to send",
 };
 
-function queuePillStyle(state: QueueItem["state"]): CSSProperties | undefined {
-  switch (state) {
+// A retryable send that got no answer at all (offline, timeout): still saved and
+// resent automatically with the same key, so it reads as waiting, not as a failure
+// (driver-gps-offline.md, "Status mapping").
+function isWaitingForNetwork(item: QueueItem): boolean {
+  return (
+    item.state === "error" && item.lastError?.kind === "retryable" && item.lastError.network === true
+  );
+}
+
+function queueLabel(item: QueueItem): string {
+  return isWaitingForNetwork(item) ? QUEUE_LABELS.queued : QUEUE_LABELS[item.state];
+}
+
+function queuePillStyle(item: QueueItem): CSSProperties | undefined {
+  if (isWaitingForNetwork(item)) return undefined; // The plain neutral pill, like queued.
+  switch (item.state) {
     case "sending":
       return { backgroundColor: queuePill.sendingBg, color: queuePill.sendingText };
     case "synced":
@@ -133,7 +147,8 @@ function QueueStatus({
   onDismiss: () => void;
 }) {
   const [confirmingDismiss, setConfirmingDismiss] = useState(false);
-  const retryable = item.state === "error" && item.lastError?.kind === "retryable";
+  const retryable =
+    item.state === "error" && item.lastError?.kind === "retryable" && !isWaitingForNetwork(item);
   const rejected = item.state === "error" && item.lastError?.kind === "rejected";
   const dismissable = item.state === "conflict" || rejected;
   const dismissRef = useRef<HTMLButtonElement>(null);
@@ -173,9 +188,9 @@ function QueueStatus({
         style={{ gap: spacing.sm }}
         aria-live="polite"
       >
-        <Pill style={queuePillStyle(item.state)}>
+        <Pill style={queuePillStyle(item)}>
           {item.state === "synced" && <CheckIcon size={14} />}
-          {QUEUE_LABELS[item.state]}
+          {queueLabel(item)}
           {" · "}
           {CONFIRMATION_LABELS[item.status]}
         </Pill>

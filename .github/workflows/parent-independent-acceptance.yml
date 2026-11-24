@@ -24,12 +24,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
-      - name: Fetch immutable independent test snapshot, without merging its branch
-        run: git fetch --depth=1 origin da61dfb6a7951221ceb38092a5c117eaa9216d6e
-      - name: All 80 unchanged independent acceptance tests
+      - name: All 80 branch-owned independent acceptance tests
         run: node e2e/review-parent-acceptance.mjs
         working-directory: frontend
-      - name: Full frontend regression including independent tests
+      - name: Full frontend regression including branch-owned independent tests
         if: ${{ !cancelled() }}
         run: npm test -- --maxWorkers=2
         working-directory: frontend

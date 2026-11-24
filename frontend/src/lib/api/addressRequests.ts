@@ -1,7 +1,9 @@
 // Address change requests (SCRUM-269): docs/contracts/address-requests.md. The head of
-// transportation's side only; the parent's submit/list endpoints have no screen yet.
+// transportation's side (list/approve/reject) and the parent's side (submit/list for one
+// child, SCRUM-281).
 
 import { request } from "./client";
+import { isMoment, isRecord } from "./shape";
 
 export interface AddressRequest {
   /** The request's own id, not the student's. */
@@ -53,3 +55,81 @@ export const addressRequestsApi: AddressRequestsApi = {
   approve: approveAddressRequest,
   reject: rejectAddressRequest,
 };
+
+// ---- Parent side (SCRUM-281) ----
+
+export interface AddressRequestInput {
+  address: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+const parentChildPath = (studentId: string) =>
+  "/api/parent/children/" + encodeURIComponent(studentId) + "/address-requests";
+
+const nullableText = (x: unknown) => x === null || typeof x === "string";
+// Plain decimal text only, so "abc", "33.8e" or "0x10" can't pass as a number (or as a blank field).
+const decimalText = /^[+-]?(\d+\.?\d*|\.\d+)$/;
+function validPin(lat: unknown, lng: unknown): boolean {
+  return (lat === null && lng === null) ||
+    (typeof lat === "number" && Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
+      typeof lng === "number" && Number.isFinite(lng) && lng >= -180 && lng <= 180);
+}
+/** A 2xx answer whose body is not a valid AddressRequest; after a POST the request was probably saved. */
+export class InvalidAddressRequestResponse extends Error {
+  constructor() {
+    super("Invalid address-request response");
+    this.name = "InvalidAddressRequestResponse";
+  }
+}
+function parseRequest(value: unknown, studentId: string): AddressRequest {
+  if (!isRecord(value) || typeof value.id !== "string" || value.studentId !== studentId ||
+    typeof value.studentName !== "string" || !nullableText(value.currentAddress) ||
+    typeof value.requestedAddress !== "string" || !validPin(value.requestedLat, value.requestedLng) ||
+    !isRecord(value.requestedBy) || typeof value.requestedBy.parentUserId !== "string" ||
+    typeof value.requestedBy.email !== "string" ||
+    !["pending", "approved", "rejected"].includes(String(value.status)) ||
+    !isMoment(value.createdAt) || (value.decidedAt !== null && !isMoment(value.decidedAt)) ||
+    !nullableText(value.rejectionReason)) {
+    throw new InvalidAddressRequestResponse();
+  }
+  return value as unknown as AddressRequest;
+}
+
+export function addressInputErrors(input: { address: string; latitude: string; longitude: string }) {
+  const errors: Record<string, string> = {};
+  const address = input.address.trim();
+  if (!address || address.length > 255) errors.address = "Enter an address of 1 to 255 characters.";
+  const lat = input.latitude.trim(), lng = input.longitude.trim();
+  if (!!lat !== !!lng) {
+    errors.latitude = "Enter both coordinates or leave both blank.";
+    errors.longitude = "Enter both coordinates or leave both blank.";
+  } else if (lat && lng) {
+    if (!decimalText.test(lat) || Number(lat) < -90 || Number(lat) > 90)
+      errors.latitude = "Latitude must be between -90 and 90.";
+    if (!decimalText.test(lng) || Number(lng) < -180 || Number(lng) > 180)
+      errors.longitude = "Longitude must be between -180 and 180.";
+  }
+  return errors;
+}
+
+export async function listParentAddressRequests(studentId: string): Promise<AddressRequest[]> {
+  const value = await request<unknown>(parentChildPath(studentId));
+  if (!Array.isArray(value)) throw new Error("Invalid address-request list");
+  return value.map(item => parseRequest(item, studentId));
+}
+
+export async function submitParentAddressRequest(
+  studentId: string, input: AddressRequestInput,
+): Promise<AddressRequest> {
+  const address = input.address.trim();
+  const body: AddressRequestInput = { address };
+  if (input.latitude !== undefined && input.longitude !== undefined) {
+    body.latitude = input.latitude;
+    body.longitude = input.longitude;
+  }
+  return parseRequest(
+    await request<unknown>(parentChildPath(studentId), { method: "POST", body }),
+    studentId,
+  );
+}

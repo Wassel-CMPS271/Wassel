@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCurrentUser } from "@/components/auth/RoleGuard";
 import { Button } from "@/components/ui/Button";
 import { logout, type Role } from "@/lib/api/auth";
+import { rateLimitMessage } from "@/lib/api/errors";
 import { colors, darkTheme, spacing } from "@/styles/tokens";
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -30,7 +31,7 @@ export function UserBlock({ confirmSignOut }: UserBlockProps = {}) {
   const router = useRouter();
   const user = useCurrentUser();
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [signOutFailed, setSignOutFailed] = useState(false);
+  const [signOutFailed, setSignOutFailed] = useState<string | false>(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -53,8 +54,8 @@ export function UserBlock({ confirmSignOut }: UserBlockProps = {}) {
     try {
       await logout();
       router.replace("/login");
-    } catch {
-      setSignOutFailed(true);
+    } catch (error) {
+      setSignOutFailed(rateLimitMessage(error) ?? "Couldn't sign out. Please try again.");
       setIsSigningOut(false);
     }
   }
@@ -138,7 +139,7 @@ export function UserBlock({ confirmSignOut }: UserBlockProps = {}) {
       )}
       {signOutFailed && (
         <p role="alert" className="text-sm" style={{ marginTop: spacing.sm, color: colors.error[500] }}>
-          Couldn&apos;t sign out. Please try again.
+          {signOutFailed}
         </p>
       )}
     </>

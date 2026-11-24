@@ -1,4 +1,50 @@
-# PR #169 independent-test wording conflict — original expectations preserved
+# PR #169 acceptance wording — preserved originals and branch-owned corrections
+
+## 24 November 2026 — authorized corrections in PR #150's own copies
+
+The current request explicitly authorizes corrected copies owned by this branch. Earlier decisions and 76/80 results below are retained as history. Neither PR #169 nor its branch is modified. Production still says exactly **1 unread update**; no production file is changed.
+
+### Root cause and scope
+
+The CI workflow fetched immutable snapshot `da61dfb6a7951221ceb38092a5c117eaa9216d6e`. Five literal matchers required the incorrect plural for count one; a sixth required a numeric count followed by the plural. Together they stopped four cases before their functional assertions could complete: foreign-entry 404/no fake receipt, mid-session 401 privacy, read/refetch/reload persistence, and recovery after HTTP 500.
+
+On 24 November the revised runner reproduced **76 passed / 4 failed / 0 skipped**, exit 1, before applying corrections. This confirms the runner still propagates genuine test failures.
+
+GitHub inspection also found that the independent owner has already corrected those six incidental matchers on PR #169 at `88f8db8c30c263424cc52a08c9ec1a0596f66e81`, accepting singular or plural. This branch uses strict singular matches instead: all six positions require exactly **1 unread update**, consistent with the existing dedicated singular-wording test. The HTTP-500 recovery fixture contains exactly one unread entry, so its former any-count matcher becomes more specific.
+
+| Branch-owned file | Original line | Original expectation | Corrected expectation |
+| --- | --- | --- | --- |
+| authorization.acceptance.test.tsx | 71 | `1 unread updates` | `1 unread update` |
+| authorization.acceptance.test.tsx | 84 | `1 unread updates` | `1 unread update` |
+| authorization.acceptance.test.tsx | 100 | `1 unread updates` | `1 unread update` |
+| inbox.acceptance.test.tsx | 72 | `1 unread updates` | `1 unread update` |
+| inbox.acceptance.test.tsx | 83 | `1 unread updates` | `1 unread update` |
+| inbox.acceptance.test.tsx | 157 | `/^\d+ unread updates$/` | `1 unread update` |
+
+### Provenance and preservation
+
+All copies originate from the immutable snapshot above. Distinct filenames avoid overwriting the original local overlays or colliding with future canonical files from PR #169:
+
+| Original relative to frontend/src | Branch-owned relative to frontend/src |
+| --- | --- |
+| app/(parent)/parent/tracking.independent.test.tsx | app/(parent)/parent/tracking.acceptance.test.tsx |
+| app/(parent)/parent/authorization.independent.test.tsx | app/(parent)/parent/authorization.acceptance.test.tsx |
+| app/(parent)/parent/inbox.independent.test.tsx | app/(parent)/parent/inbox.acceptance.test.tsx |
+| app/(parent)/parent/preferences.independent.test.tsx | app/(parent)/parent/preferences.acceptance.test.tsx |
+| test-support/parentAcceptance.ts | test-support/parentAcceptance.owned.ts |
+
+A byte-level source audit verifies that the only differences are the six matchers listed above and the mechanical helper-module rename in test imports, including the tracking MapView mock's dynamic import. The copied helper is byte-identical to its original. All test bodies, fixtures, 245 explicit expect calls, awaited queries, API request checks, authorization/privacy checks, receipt/refetch assertions, reload behavior and retry assertions remain. Tracking and preferences have no assertion edits. No case is removed, skipped, made optional or marked expected-failure. Inherited comments about previously suspected product bugs are original historical annotations; current outcomes are recorded below and in the test report.
+
+The five original untracked overlays in the existing SCRUM-280 worktree remain byte-identical and are not staged. Validation runs in a clean continuation worktree from PR #150's current head `917be71c4671c4a7b9ceae57a4378932e51ea96d`, with all tracked frontend tests plus the 80 owned cases. This matches a clean CI checkout without mixing the preserved untracked raw overlays into the corrected suite.
+
+### CI behavior
+
+The existing `parent-independent-acceptance` job now runs checked-in copies through `frontend/e2e/review-parent-acceptance.mjs`. It no longer fetches or writes the contradictory snapshot at runtime. Missing suite files fail immediately; Vitest's nonzero exit remains a job failure. The full frontend regression step still runs with `if: !cancelled()`, even if focused acceptance fails. Triggers, job identity, timeout, normal test execution and failure propagation remain enabled. No runtime rewriting, production text substitution, relaxed matcher or continue-on-error is used.
+
+Executed validation results are recorded in the newest section of SCRUM-280-test-report.md. Historical results and restrictions below describe previous requests, not the currently authorized owned copies.
+
+---
+
 
 No independent test has been changed. Raw test snapshot: `da61dfb6a7951221ceb38092a5c117eaa9216d6e`.
 

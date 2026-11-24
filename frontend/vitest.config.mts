@@ -26,13 +26,18 @@ export default defineConfig({
     // the whole suite runs at once (routing.independent and pin.independent timed out on busy machines and
     // CI). A test that passes is not slower; this only gives a slow one room.
     testTimeout: 15000,
-    // Only used by `npm run test:coverage` (SCRUM-151). A report, not a gate: no thresholds.
+    // Only used by `npm run test:coverage` (SCRUM-151). json-summary is what CI reads for its job summary
+    // (SCRUM-292).
     coverage: {
       provider: "v8",
-      reporter: ["text-summary", "html"],
+      reporter: ["text-summary", "html", "json-summary"],
       reportsDirectory: "coverage",
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/**/*.test.{ts,tsx}", "src/test-support/**"],
+      // The floor (SCRUM-292): `npm run test:coverage` fails when line coverage drops below this. It was
+      // 88.58% on 2026-11-22; the floor is two points below it and is never lowered. Raise it only by a
+      // deliberate change here, together with the reading in docs/quality/.
+      thresholds: { lines: 86.6 },
     },
   },
 });

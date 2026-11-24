@@ -2,6 +2,7 @@ package com.wassel.backend.auth.controller;
 
 import com.wassel.backend.auth.repository.LoginCodeRepository;
 import com.wassel.backend.auth.service.Mailer;
+import com.wassel.backend.monitoring.service.OperationalMetrics;
 import com.wassel.backend.users.entity.Role;
 import com.wassel.backend.users.entity.User;
 import com.wassel.backend.users.repository.UserRepository;
@@ -32,6 +33,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
@@ -73,6 +75,9 @@ class TwoFactorControllerTests {
 
 	@Autowired
 	private JdbcTemplate jdbc;
+
+	@Autowired
+	private OperationalMetrics metrics;
 
 	@MockitoBean
 	private Mailer mailer;
@@ -161,6 +166,39 @@ class TwoFactorControllerTests {
 				.andExpect(jsonPath("$.detail").value("Your sign-in has expired. Please sign in again."));
 
 		verifyCode(pending, code).andExpect(status().isUnauthorized());
+	}
+
+	// SCRUM-290: the admin's failed-sign-in number moves for every wrong code, the fifth one (answered 401) included,
+	// and not for a malformed code (rejected before the check) or a right one.
+	@Test
+	void everyWrongCodeIsAFailedSignInInTheMetricsButAMalformedOrRightOneIsNot() throws Exception {
+		saveUser();
+		Cookie pending = pendingCookie(login());
+		String code = lastCode();
+		long before = metrics.snapshot().signIns().failed();
+
+		verifyCode(pending, "12").andExpect(status().isBadRequest());
+		assertEquals(before, metrics.snapshot().signIns().failed(), "a malformed code is not a wrong code");
+
+		for (int i = 0; i < 4; i++) {
+			verifyCode(pending, wrongCodeFor(code)).andExpect(status().isBadRequest());
+		}
+		verifyCode(pending, wrongCodeFor(code)).andExpect(status().isUnauthorized());
+		assertEquals(before + 5, metrics.snapshot().signIns().failed(), "five wrong codes, the fifth answered 401");
+
+		verifyCode(pending, code).andExpect(status().isUnauthorized());
+		assertEquals(before + 5, metrics.snapshot().signIns().failed(), "a login that is already over adds nothing");
+	}
+
+	@Test
+	void aRightCodeIsNotAFailedSignIn() throws Exception {
+		saveUser();
+		Cookie pending = pendingCookie(login());
+		long before = metrics.snapshot().signIns().failed();
+
+		verifyCode(pending, lastCode()).andExpect(status().isOk());
+
+		assertEquals(before, metrics.snapshot().signIns().failed());
 	}
 
 	@Test
