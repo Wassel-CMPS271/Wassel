@@ -78,3 +78,17 @@ test("disagreeing Vitest percentage and counters fail closed", () => {
 test("missing baseline fails closed", () => {
   assert.throws(() => verifyCoverage({}, jacoco(81, 19), vitest(71, 100)), /Missing\/invalid/);
 });
+
+
+test("raising either coverage floor is allowed without accepting a lower floor", () => {
+  const stricter = structuredClone(contract);
+  stricter.backend.floor = 80.5;
+  stricter.frontend.floor = 70.5;
+  assert.equal(verifyCoverage(stricter, jacoco(81, 19), vitest(71, 100)).pass, true);
+});
+
+test("a rounded floor even 0.02pp below the minimum is still refused", () => {
+  const lower = structuredClone(contract);
+  lower.backend = { metric: "LINE", baseline: 96.72, floor: 94.7 };
+  assert.throws(() => verifyCoverage(lower, jacoco(97, 3), vitest(71, 100)), /minus 2/);
+});

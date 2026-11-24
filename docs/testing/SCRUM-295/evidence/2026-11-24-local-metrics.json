@@ -1,0 +1,47 @@
+{
+  "candidateSha": "e8bca50722324279df6be686843949b06a212500",
+  "suites": [
+    {
+      "name": "independent.scrum295.IndependentRequestMetricsCriteriaTests",
+      "cases": [
+        {
+          "name": "nearestRankIsInMillisecondsAndUsesOnlyTheLatestTwoThousand",
+          "status": "passed"
+        },
+        {
+          "name": "genuineActuatorPathsAndMetricsReadsAreExcluded",
+          "status": "passed"
+        },
+        {
+          "name": "aNewInstanceResetsAllCountersRatherThanClaimingLifetimeTotals",
+          "status": "passed"
+        },
+        {
+          "name": "aLookalikePrefixIsNotAnActuatorEndpointAndMustBeCounted",
+          "status": "failed"
+        },
+        {
+          "name": "finishedResponsesClassifyServerErrorsAnd429Separately",
+          "status": "passed"
+        },
+        {
+          "name": "emptyCountersUseNullRatesAndDiscloseRestart",
+          "status": "passed"
+        },
+        {
+          "name": "notificationOutcomeArithmeticUsesFinalFailuresAndFractionUnits",
+          "status": "passed"
+        },
+        {
+          "name": "failedSignInsAreOnlyTheDocumentedPostResponses",
+          "status": "passed"
+        }
+      ],
+      "tests": 8,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 7
+    }
+  ]
+}

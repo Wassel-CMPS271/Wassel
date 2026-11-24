@@ -1,0 +1,206 @@
+name: SCRUM-295 independent candidate and acceptance probes
+
+on:
+  push:
+    branches: [test/SCRUM-295-independent-s5-checks]
+    paths:
+      - 'verification/scrum295/**'
+      - 'scripts/scrum295-*.mjs'
+      - '.github/workflows/scrum295-metrics-candidate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  independent-metrics-candidate:
+    if: github.event_name == 'push' || github.head_ref == 'test/SCRUM-295-independent-s5-checks'
+    name: Independent metrics criteria against pinned PR 187
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: e8bca50722324279df6be686843949b06a212500
+          path: candidate-metrics
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: candidate-metrics/backend/pom.xml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Add only independent test fixtures to the disposable candidate checkout
+        run: |
+          test "$(git -C candidate-metrics rev-parse HEAD)" = e8bca50722324279df6be686843949b06a212500
+          mkdir -p candidate-metrics/backend/src/test/java/independent/scrum295
+          cp verification/scrum295/java/independent/scrum295/*.java candidate-metrics/backend/src/test/java/independent/scrum295/
+      - name: Real PostgreSQL Flyway security and metrics criteria
+        working-directory: candidate-metrics/backend
+        run: sh ./mvnw -B test -Dtest=IndependentRequestMetricsCriteriaTests,IndependentAdminMetricsCriteriaTests -DfailIfNoTests=true
+      - name: Extract only test counts and identities
+        if: always()
+        run: node scripts/scrum295-junit-summary.mjs candidate-metrics/backend/target/surefire-reports tmp/scrum295-metrics-independent-results.json
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('tmp/scrum295-metrics-independent-results.json') != ''
+        with:
+          name: scrum295-independent-metrics-results
+          path: tmp/scrum295-metrics-independent-results.json
+          retention-days: 7
+
+# Candidate production files are never patched or pushed. All failures remain
+# failures, including any independently exposed defect. A red candidate check is
+# evidence to resolve with the feature owner, not permission to weaken a test.
+
+  backend-coverage-negative-control:
+    name: Prove native backend coverage rejection
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 7a938f500228f6aff0c86c1a79ed029ed0e4f65b
+          path: candidate-coverage
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: candidate-coverage/backend/pom.xml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Add only an uncovered regression fixture
+        run: node verification/scrum295/add-coverage-probe.mjs backend candidate-coverage/backend
+      - name: Run every backend test and the unchanged native coverage gate
+        working-directory: candidate-coverage/backend
+        run: |
+          set +e
+          sh ./mvnw -B verify > "$GITHUB_WORKSPACE/backend-coverage-probe.log" 2>&1
+          probe_exit=$?
+          set -e
+          echo "$probe_exit" > "$GITHUB_WORKSPACE/backend-coverage-exit.txt"
+      - name: Require a real coverage rejection and zero functional failures
+        run: node scripts/scrum295-coverage-probe-result.mjs backend candidate-coverage/backend backend-coverage-probe.log backend-coverage-exit.txt tmp/backend-coverage-control.json
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('tmp/backend-coverage-control.json') != ''
+        with:
+          name: scrum295-backend-coverage-control
+          path: tmp/backend-coverage-control.json
+          retention-days: 7
+
+  frontend-coverage-negative-control:
+    name: Prove native frontend coverage rejection
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 7a938f500228f6aff0c86c1a79ed029ed0e4f65b
+          path: candidate-coverage
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: candidate-coverage/frontend/package-lock.json
+      - run: npm ci
+        working-directory: candidate-coverage/frontend
+      - name: Add only an uncovered regression fixture
+        run: node verification/scrum295/add-coverage-probe.mjs frontend candidate-coverage/frontend
+      - name: Run every frontend test and the unchanged native coverage gate
+        working-directory: candidate-coverage/frontend
+        run: |
+          set +e
+          npm run test:coverage -- --maxWorkers=2 --reporter=default --reporter=json --outputFile=scrum295-functional-results.json > "$GITHUB_WORKSPACE/frontend-coverage-probe.log" 2>&1
+          probe_exit=$?
+          set -e
+          echo "$probe_exit" > "$GITHUB_WORKSPACE/frontend-coverage-exit.txt"
+      - name: Require a real coverage rejection and zero functional failures
+        run: node scripts/scrum295-coverage-probe-result.mjs frontend candidate-coverage/frontend frontend-coverage-probe.log frontend-coverage-exit.txt tmp/frontend-coverage-control.json
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('tmp/frontend-coverage-control.json') != ''
+        with:
+          name: scrum295-frontend-coverage-control
+          path: tmp/frontend-coverage-control.json
+          retention-days: 7
+
+  isolated-load-rerun:
+    name: Independent ten-minute normal-school load replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SCRUM295_LOAD_PROJECT: scrum295-load-${{ github.run_id }}
+      DURATION: 10m
+      BURST_START: 5m
+      PARENT_VUS: '260'
+      DRIVER_VUS: '40'
+      BURST_SIGNINS: '100'
+      MAIL_DELAY_MS: '800'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 7a938f500228f6aff0c86c1a79ed029ed0e4f65b
+          path: candidate-load
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Refuse a weekend replay that cannot exercise real runs
+        run: |
+          python3 - <<'PY'
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          assert datetime.now(ZoneInfo('Asia/Beirut')).weekday() < 5, 'A real morning-run replay requires a school weekday'
+          PY
+      - name: Add reporting-only entry point without changing the authored load script
+        run: |
+          test ! -e candidate-load/loadtest/scrum295-entry.js
+          cp verification/scrum295/k6-independent-entry.js candidate-load/loadtest/scrum295-entry.js
+          mkdir -p candidate-load/loadtest/results
+          chmod 777 candidate-load/loadtest/results
+      - name: Start only a uniquely named network-isolated disposable stack
+        run: docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml up -d --build postgres mail-stub backend
+      - name: Wait for disposable health then seed and verify the exact dataset
+        run: |
+          ready=0
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:18080/actuator/health | grep -q '"UP"'; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" = 1
+          docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml exec -T postgres psql -U loadtest -d wassel -v ON_ERROR_STOP=1 -f /seed/seed.sql
+          dataset=$(docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml exec -T postgres psql -U loadtest -d wassel -At -c "SELECT (SELECT count(*) FROM students),(SELECT count(*) FROM vehicles),(SELECT count(*) FROM users WHERE role='PARENT'),(SELECT count(*) FROM drivers),(SELECT count(*) FROM routes)")
+          test "$dataset" = '1000|40|800|40|40'
+          node verification/scrum295/capture-load-environment.mjs "$SCRUM295_LOAD_PROJECT" tmp/load-environment.json
+      - name: Execute the unchanged full workload and all its original thresholds
+        run: docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml run --rm --no-deps k6 run /work/scrum295-entry.js
+      - name: Apply the independent ticket thresholds without inferring missing measurements
+        if: always()
+        run: node scripts/scrum295-load-audit.mjs candidate-load/loadtest/results/scrum295-summary.json server_errors
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('candidate-load/loadtest/results/scrum295-summary.json') != ''
+        with:
+          name: scrum295-independent-load-results
+          path: |
+            candidate-load/loadtest/results/scrum295-summary.json
+            tmp/load-environment.json
+          retention-days: 7
+      - name: Clean up only this run's disposable project
+        if: always()
+        run: docker compose -p "$SCRUM295_LOAD_PROJECT" -f candidate-load/loadtest/docker-compose.yml -f verification/scrum295/docker-isolated.yml down -v

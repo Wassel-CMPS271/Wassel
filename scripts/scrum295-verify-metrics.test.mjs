@@ -9,6 +9,7 @@ import { once } from "node:events";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { METRIC_FIELDS } from "./scrum295-metrics-contract.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const verifier = join(here, "scrum295-verify-metrics.mjs");
@@ -34,12 +35,12 @@ async function fixture(options = {}) {
       code = 200; data = { status: "UP" };
     } else if (request.method === "GET" && request.url === "/actuator/env") {
       code = role ? 404 : 401;
-    } else if (request.method === "GET" && request.url === "/api/admin/test-metrics") {
+    } else if (request.method === "GET" && (request.url === "/api/admin/test-metrics" || request.url === "/api/admin/metrics")) {
       code = !role ? 401 : role === "admin" ? 200
         : (role === options.unauthorizedAllowedRole ? 200 : 403);
-      if (code === 200) data = options.omitCounter
+      if (code === 200) data = options.payload ?? (options.omitCounter
         ? Object.fromEntries(Object.entries(metrics).filter(([key]) => key !== options.omitCounter))
-        : metrics;
+        : metrics);
     }
     response.writeHead(code, { "content-type": "application/json" });
     response.end(JSON.stringify(data ?? { status: code }));
@@ -112,5 +113,44 @@ test("fails closed on missing admin API path", async () => {
     const result = await runVerifier(origin, { SCRUM295_METRICS_PATH: "/actuator/env" });
     assert.notEqual(result.code, 0);
     assert.match(result.output, /relative \/api\/admin/);
+  });
+});
+
+
+const canonical = () => ({
+  since: "2026-11-23T06:00:00Z", resetsOnRestart: true,
+  requests: { total: 10, serverErrors: 1, errorRate: 0.1, tooManyRequests: 1, p95Millis: 25, latencySample: 10 },
+  signIns: { failed: 2, lockouts: 1 }, notifications: { sent: 3, failed: 1, successRate: 0.75 },
+});
+const canonicalEnv = { SCRUM295_METRICS_PATH: "/api/admin/metrics", SCRUM295_FIELDS: JSON.stringify(METRIC_FIELDS) };
+
+test("canonical endpoint performs all seven smoke checks using the actual nested contract", async () => {
+  await againstFixture({ payload: canonical() }, async origin => {
+    const result = await runVerifier(origin, canonicalEnv);
+    assert.equal(result.code, 0, result.output);
+    assert.match(result.output, /tests 7/);
+  });
+});
+test("canonical cold-start null p95 is not replaced with a fabricated zero", async () => {
+  const payload = canonical();
+  payload.requests = { total: 0, serverErrors: 0, errorRate: null, tooManyRequests: 0, p95Millis: null, latencySample: 0 };
+  payload.signIns = { failed: 0, lockouts: 0 }; payload.notifications = { sent: 0, failed: 0, successRate: null };
+  await againstFixture({ payload }, async origin => {
+    const result = await runVerifier(origin, canonicalEnv);
+    assert.equal(result.code, 0, result.output); assert.match(result.output, /tests 7/);
+  });
+});
+test("canonical endpoint must disclose restart semantics", async () => {
+  const payload = canonical(); payload.resetsOnRestart = false;
+  await againstFixture({ payload }, async origin => {
+    const result = await runVerifier(origin, canonicalEnv);
+    assert.notEqual(result.code, 0); assert.match(result.output, /resetsOnRestart/);
+  });
+});
+test("canonical endpoint rejects a fabricated success ratio", async () => {
+  const payload = canonical(); payload.notifications.successRate = 1;
+  await againstFixture({ payload }, async origin => {
+    const result = await runVerifier(origin, canonicalEnv);
+    assert.notEqual(result.code, 0); assert.match(result.output, /disagrees with its counters/);
   });
 });

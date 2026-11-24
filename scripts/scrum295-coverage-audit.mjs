@@ -90,8 +90,8 @@ export function verifyCoverage(contract, jacocoXml, vitestSummary) {
         setting.baseline < 2 || setting.baseline > 100 || setting.floor < 0 || setting.floor > 100) {
       throw new Error("Missing/invalid " + name + " baseline, floor, or coverage metric");
     }
-    if (Math.abs((setting.baseline - 2) - setting.floor) > 0.000001) {
-      throw new Error(name + " floor must equal Day 1 baseline minus 2 percentage points");
+    if (setting.floor + 0.000001 < setting.baseline - 2) {
+      throw new Error(name + " floor must not be below Day 1 baseline minus 2 percentage points");
     }
     actuals[name] = name === "backend"
       ? jacocoPercent(jacocoXml, setting.metric)

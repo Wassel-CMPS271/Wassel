@@ -9,6 +9,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { verifyMetricsSnapshot } from "./scrum295-metrics-contract.mjs";
 
 const needed = [
   "SCRUM295_BASE_URL",
@@ -101,13 +102,16 @@ for (const role of ["head", "driver", "parent"]) {
   });
 }
 
-test("admin receives all seven required finite, nonnegative metric values", async () => {
+test("admin receives all required measurements with contract-valid values", async () => {
   const res = await request(metricsPath, cookies.admin);
   assert.equal(res.status, 200);
   assert.match(res.headers.get("content-type") || "", /application\/json/i);
   const body = await res.json();
+  const canonical = metricsPath === "/api/admin/metrics";
+  if (canonical) verifyMetricsSnapshot(body);
   for (const metric of required) {
     const value = fieldAt(body, paths[metric]);
+    if (canonical && metric === "p95Latency" && body.requests.latencySample === 0 && value === null) continue;
     assert.equal(typeof value, "number", metric + " must be numeric at " + paths[metric]);
     assert.ok(Number.isFinite(value) && value >= 0, metric + " must be finite and nonnegative");
   }
