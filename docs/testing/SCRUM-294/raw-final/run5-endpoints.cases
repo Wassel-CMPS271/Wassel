@@ -1,0 +1,6 @@
+login limit=30 pass=30 limited=5 first429=31 noretry=0
+forgot limit=10 pass=10 limited=5 first429=11 noretry=0
+password limit=30 pass=30 limited=5 first429=31 noretry=0
+verify limit=60 pass=60 limited=5 first429=61 noretry=0
+resend limit=20 pass=20 limited=5 first429=21 noretry=0
+logout limit=60 pass=60 limited=5 first429=61 noretry=0
