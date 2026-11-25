@@ -1,0 +1,1 @@
+{"run":"oversized","vus":1,"requests":15,"seconds":0.7,"statuses":{"forgot_204":3,"verify_400":1,"password_400":4,"login_401":7},"first429At":null,"latencyMs":{"avg":42,"p95":83,"max":87}}
