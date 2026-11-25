@@ -1,0 +1,1 @@
+{"run":"hammer-one","vus":20,"limited":true,"requests":200,"seconds":2.2,"statuses":{"login_401":30,"login_429":170},"first429At":31,"latencyMs":{"avg":197,"p95":1243,"max":1939}}
