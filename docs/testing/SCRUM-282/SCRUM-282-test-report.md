@@ -1,5 +1,28 @@
 # SCRUM-282 — Independent operations UI tests
 
+## 26 November 2026 — develop synchronization and push-CI fix
+
+The earlier green PR workflow used GitHub's test merge with current develop, while push CI tested the older feature branch and failed 11 live-control delivery gates. At Wassim's explicit request, merged accepted develop **6d20edfa0ac82aad86a2eb2e43a26ef7d9c4a383** into the existing `test/SCRUM-282-operations-ui-tests` branch. Merge commit **794fedaa7738bd7e8ab97585ce318560233d0496** preserves both parents (`5cd9e83` and `6d20edf`); the merge completed without unresolved conflicts or a history rewrite. `liveRuns.ts` and the real `getRunLocations` export are now in the branch itself.
+
+All six independent suites and their loader remain byte-identical to the preserved originals. Candidate overrides were cleared: the 58 tests use actual merged **HEAD**, not an archive, draft candidate or selected external ref. The merged source tree `626ad43395102f5be39e2794f9dca6b7667029c2` exactly matches the previous green PR test merge `480f67a`, confirming the push/PR source discrepancy is resolved. No compatibility change or assertion relaxation was necessary.
+
+| Verification on merged branch | Actual result |
+| --- | --- |
+| All independent operations acceptance | **58 passed / 0 failed / 0 skipped**, 6 files, exit 0, 34.60 seconds |
+| Complete frontend regression with V8 coverage | **1,878 passed / 0 failed / 1 existing expected failure / 5 existing skips**, 1,884 cases, all 115 files passed, exit 0, 573.01 seconds |
+| Line coverage | **92.02% (4,663 / 5,067)**; unchanged required floor **86.6%** passed |
+| Full frontend ESLint | Passed, exit 0 |
+| Production build | Passed, exit 0; known local Windows standalone tracing/symlink EPERM warning retained in the log |
+| `git diff --check` / independent-suite SHA-256 checks | Passed; no original test or loader changed |
+
+No test was removed, newly skipped, marked expected-failure or weakened. The expected-failure and five skips above are existing develop tests whose declarations were not edited. Existing React `act(...)` and jsdom navigation notices are preserved in the raw full-run log. The production implementation matches accepted develop; the PR diff contains only SCRUM-282 infrastructure, independent tests and reports. No teammate branch or Jira status was modified, and PR #151 was not merged into develop.
+
+Before this synchronization, shared [push CI 45768064262](https://github.com/Wassel-CMPS271/Wassel/actions/runs/45768064262) failed, while shared [PR CI 45768072583](https://github.com/Wassel-CMPS271/Wassel/actions/runs/45768072583) passed. The corresponding PR independent operations jobs and both real address/replay browser scenarios also passed; those runs used the earlier PR integration checkout and are not claimed as new runs for this merge. Following publication of this report, inspect the new **push** and **pull_request** workflows separately on the actual new branch head. Their results were not available at report commit time; no queued or unexecuted check is counted as passed here.
+
+**Remaining acceptance scope:** the push-CI missing-module cause is fixed. Keep #151 Draft while the documented SCRUM-274 Head late/not-started API/UI requirement is unresolved (accepted code still has `serverLateFlag: null`, with no recorded scope deferral), and until required current-head CI and remaining real live-control/reassignment acceptance are verified. GPS freshness or a parent LATE Inbox entry must not be used to invent a Head lateness contract. No Jira status, Draft status or merge permission was bypassed.
+
+Preserved ignored evidence: main repository `tmp/SCRUM-282-sync-20261126/`, containing the original-suite hash manifest, `independent-58.log` / `.json`, `frontend-coverage.log` / `.json`, coverage summary, `frontend-lint.log`, and `frontend-build.log`. Generated coverage/build artifacts and credentials are excluded from the commit. Earlier report sections retain their original source/date and are superseded by this branch-integration result where applicable.
+
 ## 26 November 2026 — merged live-control verification and CI refresh
 
 ### Current source and dependency status
