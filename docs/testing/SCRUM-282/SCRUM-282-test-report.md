@@ -1,5 +1,48 @@
 # SCRUM-282 — Independent operations UI tests
 
+## 26 November 2026 — merged live-control verification and CI refresh
+
+### Current source and dependency status
+
+Verified latest `develop` **6d20edfa0ac82aad86a2eb2e43a26ef7d9c4a383**. Driver #144, roster/address #142 and live-control **#168 are merged**. Jira lists SCRUM-273/274/275 as Done; SCRUM-282 remains In Progress and was not changed. #168's merged head is `0e336a939bc663aaea9677c87d1c345f25848880`. This resolves the former unmerged live-control UI/client dependency, not every SCRUM-274 acceptance criterion.
+
+The existing SCRUM-282 worktree was clean at **0df221fe7d1cae87992af61987ea2b78e568ca90** before this work. All six independent suites and their test-only loader were preserved byte-for-byte, verified by SHA-256 before and after execution. Tests ran in an isolated archive of latest develop with only this branch's independent suites/loader added. The Git-source loader's three candidate selectors were explicitly pinned to the accepted develop SHA above; no draft implementation or moving feature branch was selected. The matching package lock was checked before dependency reuse. No teammate source, branch, Jira status or PR was modified or merged.
+
+### Executed checks
+
+| Check on latest develop | Actual result |
+| --- | --- |
+| All existing independent operations acceptance | **58 passed / 0 failed / 0 skipped**, 6 files, exit 0, 52.72 seconds |
+| Original Driver/GPS/queue, roster/address client and Admin slice | **39/39 passed** |
+| Live-control independent slice, now on merged source | **19/19 passed**; all 11 former missing-feature gates resolved on this source |
+| Existing live-control page/polling/reassignment/view/freshness regressions | **170 passed / 0 failed**, 8 files, exit 0, 57.14 seconds |
+| Existing waiting-tap and page queue regressions | **44 passed / 0 failed**, 2 files, exit 0, 29.85 seconds |
+| Focused ESLint: independent suites, helper and both operations E2E specs | Passed, exit 0 |
+| Playwright discovery/compilation of address and replay specs | **2 scenarios discovered**, exit 0; browser scenarios were **not executed** |
+| Workflow YAML / preservation checks | Passed; both CI jobs and all acceptance commands retained; obsolete draft selector removed |
+| `git diff --check` and static ignore-rule conflict comparison | Passed |
+
+Total executed unit/component cases: **272 passed / 0 failed**. Existing React `act(...)` warnings remain recorded in raw logs. Full frontend regression, coverage, production build, Maven and real database/browser execution were deliberately not rerun for this bounded recheck. Earlier PostgreSQL/Flyway/browser passes below remain historical; no fresh browser or CI success is inferred from unit tests or discovery.
+
+### Changes owned by this PR
+
+- `.github/workflows/operations-independent.yml`: removed the obsolete fetch and override for draft `ce147844`; the live-control job now tests the actual checkout (`HEAD`), like the normal frontend integration gate. Both existing jobs remain, with the same 39 + 19 cases and ordinary failure behavior. No checks were disabled and no missing integration was hidden with a candidate override.
+- `frontend/.gitignore`: preserved all accepted Inbox/GPS/dual-UI generated-launcher exclusions and this branch's address-launcher exclusion. The only previously observed branch content conflict was the competing end-of-file additions here; separating the own rule from those additions gives a clean read-only three-way file comparison. No branch merge or history rewrite was performed.
+- `frontend/e2e/operations-replay.e2e.ts`: corrected the obsolete offline presentation expectation to merged SCRUM-298 and `docs/contracts/driver-gps-offline.md`'s network-error status mapping: **Saved on phone**, with **no Couldn't send / Try again** for a tap that received no answer. Retained every durable-key, unchanged-server, reconnect/reload, confirmation timestamp, count, Inbox deduplication, authentication, cleanup and 360px assertion. The 44 supporting production regression cases pass; Playwright can collect both scenarios. A fresh real-stack replay run is still required before claiming this browser correction is runtime-verified.
+- This report: prepended current evidence without replacing any historical results or failed exploratory evidence.
+
+### CI and remaining completion blockers
+
+Before this update, head `0df221f`'s [latest shared CI run 43992375359](https://github.com/Wassel-CMPS271/Wassel/actions/runs/43992375359) had green backend, authentication, absences and routing success/failure/cleanup jobs, but **frontend-build failed on the 11 then-missing live-control gates**. The earlier accepted-source/candidate and address/replay jobs were green. These are dated November 17 results, not results for the new commit. New push/PR checks must be read separately and must not be represented as passed while queued or running.
+
+1. **Head late/not-started alerts remain missing.** SCRUM-274's Jira acceptance still requires real authorized active/late runs. Its merged PR explicitly says the late-run criterion is unmet, and accepted `liveRuns.ts` still reserves `serverLateFlag: null`. The contract forbids deriving lateness from GPS age or comparing planned and live times; parent LATE inbox events are not a Head API. SCRUM-274 has no Jira comments recording a scope deferral. The product/backend owners must supply an agreed Head lateness contract and implementation, followed by Majd's UI and independent tests, or formally approve and record a scope split. No field, passing assertion or product-owner approval was invented.
+2. **Latest integration/browser evidence is incomplete.** This branch's application snapshot is still based on the older accepted develop; this task did not merge develop into it. The latest-develop archive proves the 58 unit/component gates now pass with the dependencies present. The actual PR integration checkout and current-head CI, fresh real live-control/reassignment acceptance, and the corrected address/replay browser scenario still need verification. Push-only runs on the older feature snapshot can continue to expose the missing live-control integration; do not confuse them with latest-develop archive results.
+3. Physical phone GPS, a complete browser cross-tab/auth/conflict recovery matrix and deployed/real-school ownership evidence are not established by these unit checks. Offline cold app loading remains explicitly outside the accepted app-shell contract. Historical real address/replay evidence is retained with its original source and date.
+
+**Readiness: keep PR #151 Draft; not complete or merge-ready.** The former missing merged modules are resolved on develop and the available 58 independent cases pass unchanged. Remaining acceptance scope and current integration evidence must be completed before Ready status or approval. No Jira/Draft status was changed and nothing was merged.
+
+Ignored local evidence is preserved under the main repository's `tmp/SCRUM-282-20261126/`: pinned source archive, independent-suite hashes, JSON and raw logs for the 58/170/44 runs, lint and Playwright-discovery output, the original browser spec, and read-only conflict comparisons. No logs, browser artifacts, credentials, fixtures that affect production, or generated launchers are included in the commit.
+
 ## 17 November 2026 — merged Driver/roster, real address browser and live-control review
 
 Accepted develop **ed4736d64b402a02cb30a3f1253a97109b4f3b7e** is merged normally. **Driver #144 and roster #142 are now merged**, so their prior missing-client/default-HEAD blockers are resolved. All original 39 independent cases/assertions and historical failure evidence remain. No teammate branch or production source was modified.

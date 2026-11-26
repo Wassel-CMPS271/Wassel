@@ -40,14 +40,11 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Fetch immutable SCRUM-274 draft for independent review only
-        run: git fetch origin ce1478449db1e86f2d2730d293834e6a6350c67f
+      # SCRUM-274/#168 is merged; exercise this checkout, never an older draft.
       - run: npm ci
         working-directory: frontend
       - name: Independent active-run, freshness and reassignment acceptance
         run: npm test -- live-control.independent.test.tsx --maxWorkers=2
         working-directory: frontend
-        env:
-          WASSEL_CONTROL_CANDIDATE: ce1478449db1e86f2d2730d293834e6a6350c67f
-      # Normal frontend-build also runs this file against HEAD. It remains red
-      # until SCRUM-274 is accepted. Lateness requires its agreed server contract.
+      # Both this job and normal frontend-build exercise HEAD. Missing integrations
+      # still fail normally. Head lateness remains blocked on its agreed server contract.

@@ -1,3 +1,6 @@
+# Generated content-addressed local address review launcher
+/e2e/.operations-address-run-*.mjs
+
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
@@ -43,5 +46,14 @@ next-env.d.ts
 # landing page generated originals (large, kept local)
 /public/landing/originals/
 
-# Generated content-addressed local address review launcher
-/e2e/.operations-address-run-*.mjs
+# Generated isolated Inbox browser launcher
+/e2e/.parent-inbox-review-run.mjs
+
+/e2e/.parent-inbox-review-run-*.mjs
+
+# Tracking launchers retained alongside Inbox launchers
+/e2e/.parent-tracking-review-run.mjs
+/e2e/.parent-tracking-review-run-*.mjs
+
+# Isolated dual-UI review launchers
+/e2e/.parent-driver-review-run-*.mjs

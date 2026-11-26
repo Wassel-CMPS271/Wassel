@@ -26,9 +26,10 @@ test("real offline confirmations survive reconnect/reload and replay idempotentl
   const labels = ["Picked up", "Not present"];
   for (let i = 0; i < 2; i++) {
    const stop = run.stops[i]; const row = driver.getByRole("listitem").filter({ hasText: `${stop.firstName} ${stop.lastName}` });
-   await row.getByRole("button", { name: labels[i], exact: true }).click(); // Contract: network failure is retryable error, retaining the saved item/key.
-   await expect(row.getByText(/^Couldn.t send/)).toBeVisible();
-   await expect(row.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
+   await row.getByRole("button", { name: labels[i], exact: true }).click(); // SCRUM-298: a network-waiting tap stays saved with the same durable key.
+   await expect(row.getByText(/^Saved on phone/)).toBeVisible();
+   await expect(row.getByText(/^Couldn.t send/)).toHaveCount(0);
+   await expect(row.getByRole("button", { name: "Try again", exact: true })).toHaveCount(0);
   }
   // APIRequestContext is an independent real server oracle; only browser networking is offline.
   const before = (await json<DriverDay>(await driver.request.get("/api/driver/runs/today"))).runs.find(item => item.id === run.id)!;
