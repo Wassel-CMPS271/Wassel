@@ -1,0 +1,6 @@
+{
+  "students": [
+    { "row": 2, "firstName": "Zeina", "lastName": "Fakhoury", "grade": "Grade 3", "guardianName": "Nabil Fakhoury", "guardianPhone": "+961 3 222 111" },
+    { "row": 3, "firstName": "Hadi", "lastName": "Bou Saab", "grade": " Grade 5 ", "guardianName": "Lina Bou Saab", "guardianPhone": "+961 70 333 222" }
+  ]
+}

@@ -4,7 +4,7 @@
 //
 //   firstName,lastName,grade,guardianName,guardianPhone
 //   Zeina,Fakhoury,Grade 3,Nabil Fakhoury,+961 3 222 111
-//   Hadi,Bou Saab,Grade 5,Lina Bou Saab,+961 70 333 222
+//   Hadi,"Bou Saab, Jr.",Grade 5,Lina Bou Saab,+961 70 333 222
 //   ,Aziz,Grade 2,Samir Aziz,+961 71 444 333
 //   Zeina,Fakhoury,Grade 3,Nabil Fakhoury,+961 3 222 111
 //
@@ -12,99 +12,55 @@
 // firstName, lastName, grade, guardianName, guardianPhone (extra columns
 // are ignored). The row above with no firstName demonstrates a
 // missing-field row, and the repeated Zeina/Fakhoury row demonstrates an
-// in-batch duplicate.
+// in-file duplicate. Reading the file and its checks live in
+// lib/students/importFile.ts; every row is numbered by its line in the file.
 
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import type { ImportErrorReason, ImportRowResult, NewStudent } from "@/lib/api/students";
+import type { ImportRow, StudentImport } from "@/lib/api/students";
+import {
+  IMPORT_FIELDS,
+  MAX_IMPORT_ROWS,
+  checkRowLimit,
+  problemList,
+  readImportFile,
+  type ImportProblem,
+  type SkippedRow,
+} from "@/lib/students/importFile";
 import { colors, darkTheme, radius, spacing, typography } from "@/styles/tokens";
 
-const REQUIRED_COLUMNS = ["firstName", "lastName", "grade", "guardianName", "guardianPhone"] as const;
-type RequiredColumn = (typeof REQUIRED_COLUMNS)[number];
+type PreviewRow = ImportRow | SkippedRow;
 
-const COLUMN_LABELS: Record<RequiredColumn, string> = {
-  firstName: "First name",
-  lastName: "Last name",
-  grade: "Grade",
-  guardianName: "Guardian name",
-  guardianPhone: "Guardian phone",
-};
-
-interface ParsedRow {
-  rowNumber: number;
-  values: Record<RequiredColumn, string>;
-  isValid: boolean;
-  reason?: string;
+function isSkipped(row: PreviewRow): row is SkippedRow {
+  return "errors" in row;
 }
 
-function parseStudentsCsv(text: string): { rows: ParsedRow[]; headerError?: string } {
-  const lines = text
-    .split(/\r\n|\n|\r/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-  if (lines.length === 0) {
-    return { rows: [], headerError: "The file is empty." };
-  }
-
-  const header = lines[0].split(",").map((cell) => cell.trim().toLowerCase());
-  const columnIndex = {} as Record<RequiredColumn, number>;
-  for (const column of REQUIRED_COLUMNS) {
-    const idx = header.indexOf(column.toLowerCase());
-    if (idx === -1) {
-      return { rows: [], headerError: `Missing required column: ${COLUMN_LABELS[column]}.` };
-    }
-    columnIndex[column] = idx;
-  }
-
-  if (lines.length === 1) {
-    return { rows: [], headerError: "The file has a header row but no data rows." };
-  }
-
-  const rows: ParsedRow[] = lines.slice(1).map((line, i) => {
-    const cells = line.split(",").map((cell) => cell.trim());
-    const values = {} as Record<RequiredColumn, string>;
-    for (const column of REQUIRED_COLUMNS) {
-      values[column] = cells[columnIndex[column]] ?? "";
-    }
-    const missing = REQUIRED_COLUMNS.filter((column) => !values[column]);
-    return {
-      rowNumber: i + 1,
-      values,
-      isValid: missing.length === 0,
-      reason: missing.length > 0 ? `Missing ${missing.map((c) => COLUMN_LABELS[c]).join(", ")}` : undefined,
-    };
-  });
-
-  return { rows };
+// "Row 5 · Rami Aziz — Guardian phone: Use a format like …"
+function problemText(problem: ImportProblem): string {
+  const head = problem.name ? `Row ${problem.row} · ${problem.name}` : `Row ${problem.row}`;
+  const body = problem.messages.join("; ");
+  return `${head} — ${problem.kind === "notSent" ? `Not sent: ${body}` : body}`;
 }
-
-const REASON_LABELS: Record<ImportErrorReason, string> = {
-  missing_fields: "Missing required fields",
-  duplicate_in_batch: "Duplicate within this file",
-  duplicate_existing: "Already in the roster",
-  invalid_fields: "Rejected by validation",
-  request_failed: "API request failed",
-};
 
 type Step = "select" | "preview" | "results";
 
 interface ImportStudentsFormProps {
-  onImport: (rows: NewStudent[]) => Promise<ImportRowResult[]>;
+  onImport: (rows: ImportRow[]) => Promise<StudentImport>;
 }
 
 export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [step, setStep] = useState<Step>("select");
   const [fileName, setFileName] = useState<string | undefined>();
-  const [rows, setRows] = useState<ParsedRow[]>([]);
+  const [rows, setRows] = useState<ImportRow[]>([]);
+  const [skipped, setSkipped] = useState<SkippedRow[]>([]);
   const [selectError, setSelectError] = useState<string | undefined>();
   const [submitError, setSubmitError] = useState<string | undefined>();
   const [isImporting, setIsImporting] = useState(false);
-  const [results, setResults] = useState<ImportRowResult[]>([]);
+  const [outcome, setOutcome] = useState<StudentImport | undefined>();
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -131,10 +87,11 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
     setStep("select");
     setFileName(undefined);
     setRows([]);
+    setSkipped([]);
     setSelectError(undefined);
     setSubmitError(undefined);
     setIsImporting(false);
-    setResults([]);
+    setOutcome(undefined);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -152,21 +109,31 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Cleared on every path below, success included: without this, picking
+    // the same file again (e.g. after fixing it) fires no change event.
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
     if (!file.name.toLowerCase().endsWith(".csv")) {
       setSelectError("Please choose a .csv file.");
       return;
     }
 
     try {
-      const text = await file.text();
-      const { rows: parsedRows, headerError } = parseStudentsCsv(text);
-      if (headerError) {
-        setSelectError(headerError);
+      const read = readImportFile(await file.text());
+      if (!read.ok) {
+        setSelectError(read.error);
+        return;
+      }
+      // The limit counts the rows that would be sent, not the lines of the file.
+      const limitError = checkRowLimit(read.rows);
+      if (limitError) {
+        setSelectError(limitError);
         return;
       }
       setSelectError(undefined);
       setFileName(file.name);
-      setRows(parsedRows);
+      setRows(read.rows);
+      setSkipped(read.skipped);
       setStep("preview");
     } catch {
       setSelectError("Couldn't read that file. Please try again.");
@@ -176,35 +143,35 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
   function backToSelect() {
     setStep("select");
     setRows([]);
+    setSkipped([]);
     setSubmitError(undefined);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  const validRows = rows.filter((row) => row.isValid);
-  const invalidRows = rows.filter((row) => !row.isValid);
+  const previewRows: PreviewRow[] = [...rows, ...skipped].sort((a, b) => a.row - b.row);
 
   async function handleImport() {
-    if (validRows.length === 0) return;
+    if (rows.length === 0) return;
     setIsImporting(true);
     setSubmitError(undefined);
     try {
-      const newStudents: NewStudent[] = validRows.map((row) => ({ ...row.values }));
-      const importResults = await onImport(newStudents);
-      setResults(importResults);
+      // Only the rows that passed the preview's checks are sent.
+      setOutcome(await onImport(rows));
       setStep("results");
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Import failed. Please try again.");
+    } catch {
+      setSubmitError("Something went wrong. Please try again.");
     } finally {
       setIsImporting(false);
     }
   }
 
-  // Escape closes the dialog; Tab is trapped to the focusable elements
-  // inside the panel so focus can't leave it while it's open.
+  // Escape closes the dialog, except while importing (Cancel is disabled then
+  // too, so the results never land in a closed form); Tab is trapped to the
+  // focusable elements inside the panel so focus can't leave it while it's open.
   function handleOverlayKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
-      closeForm();
+      if (!isImporting) closeForm();
       return;
     }
     if (event.key !== "Tab") return;
@@ -227,18 +194,10 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
     }
   }
 
-  type ImportRowError = Extract<ImportRowResult, { status: "error" }>;
-  const successCount = results.filter((r) => r.status === "success").length;
-  const errorsByReason: Record<ImportErrorReason, ImportRowError[]> = {
-  missing_fields: [],
-  duplicate_in_batch: [],
-  duplicate_existing: [],
-  invalid_fields: [],
-  request_failed: [],
-};
-  for (const result of results) {
-    if (result.status === "error") errorsByReason[result.reason].push(result);
-  }
+  const problems = outcome ? problemList(rows, outcome.result.results, skipped, outcome.notSent) : [];
+  const createdCount = outcome?.result.created ?? 0;
+  const rejectedCount = outcome?.result.rejected ?? 0;
+  const notSentCount = outcome?.notSent.length ?? 0;
 
   return (
     <>
@@ -270,6 +229,14 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
               transition={{ duration: 0.2, ease: "easeOut" }}
             >
               <Card style={{ maxHeight: "85vh", overflowY: "auto" }}>
+                {/* Mounted for every step, so its text change is announced; a
+                    live region that appears together with its text often isn't. */}
+                <p role="status" className="sr-only">
+                  {outcome
+                    ? `${createdCount} student${createdCount === 1 ? "" : "s"} added. ${problems.length} row${problems.length === 1 ? "" : "s"} not imported.`
+                    : ""}
+                </p>
+
                 {step === "select" && (
                   <div>
                     <h2
@@ -281,9 +248,14 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
                     </h2>
                     <p className="text-sm" style={{ color: darkTheme.text.secondary, marginBottom: spacing.md }}>
                       The file needs a header row with these columns (any order, extra columns are
-                      ignored): <strong>firstName</strong>, <strong>lastName</strong>,{" "}
-                      <strong>grade</strong>, <strong>guardianName</strong>,{" "}
-                      <strong>guardianPhone</strong>.
+                      ignored):{" "}
+                      {IMPORT_FIELDS.map((field, i) => (
+                        <span key={field}>
+                          <strong>{field}</strong>
+                          {i < IMPORT_FIELDS.length - 1 ? ", " : "."}
+                        </span>
+                      ))}{" "}
+                      Up to {MAX_IMPORT_ROWS} students at a time.
                     </p>
 
                     <div className="flex flex-col" style={{ gap: spacing.xs }}>
@@ -339,8 +311,8 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
                       Preview: {fileName}
                     </h2>
                     <p className="text-sm" style={{ color: darkTheme.text.secondary, marginBottom: spacing.md }}>
-                      {rows.length} row{rows.length === 1 ? "" : "s"} found — {validRows.length} valid,{" "}
-                      {invalidRows.length} invalid (skipped).
+                      {previewRows.length} row{previewRows.length === 1 ? "" : "s"} found — {rows.length} valid,{" "}
+                      {skipped.length} invalid (skipped).
                     </p>
 
                     <div
@@ -355,7 +327,7 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
                         <caption className="sr-only">Parsed student rows from the CSV file</caption>
                         <thead>
                           <tr>
-                            {["Name", "Grade", "Guardian", "Status"].map((heading) => (
+                            {["Row", "Name", "Grade", "Guardian", "Status"].map((heading) => (
                               <th
                                 key={heading}
                                 scope="col"
@@ -375,35 +347,44 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((row) => {
-                            const textColor = row.isValid ? darkTheme.text.primary : darkTheme.text.muted;
-                            const secondaryColor = row.isValid ? darkTheme.text.secondary : darkTheme.text.muted;
+                          {previewRows.map((row) => {
+                            const invalid = isSkipped(row);
+                            const textColor = invalid ? darkTheme.text.muted : darkTheme.text.primary;
+                            const secondaryColor = invalid ? darkTheme.text.muted : darkTheme.text.secondary;
+                            // The parser keeps cells as written; trim them for display only.
+                            const firstName = row.firstName.trim();
+                            const grade = row.grade.trim();
+                            const guardianName = row.guardianName.trim();
+                            const guardianPhone = row.guardianPhone.trim();
                             return (
                               <tr
-                                key={row.rowNumber}
+                                key={row.row}
                                 style={{
-                                  backgroundColor: row.isValid ? "transparent" : "rgba(255, 255, 255, 0.03)",
+                                  backgroundColor: invalid ? "rgba(255, 255, 255, 0.03)" : "transparent",
                                 }}
                               >
+                                <td className="whitespace-nowrap" style={{ padding: spacing.sm, color: secondaryColor }}>
+                                  Row {row.row}
+                                </td>
                                 <td style={{ padding: spacing.sm, color: textColor }}>
-                                  {row.values.firstName || <span style={{ color: darkTheme.text.muted }}>—</span>}{" "}
-                                  {row.values.lastName}
+                                  {firstName || <span style={{ color: darkTheme.text.muted }}>—</span>}{" "}
+                                  {row.lastName.trim()}
                                 </td>
                                 <td style={{ padding: spacing.sm, color: secondaryColor }}>
-                                  {row.values.grade || <span style={{ color: darkTheme.text.muted }}>—</span>}
+                                  {grade || <span style={{ color: darkTheme.text.muted }}>—</span>}
                                 </td>
                                 <td style={{ padding: spacing.sm, color: secondaryColor }}>
-                                  {row.values.guardianName || <span style={{ color: darkTheme.text.muted }}>—</span>}
-                                  {row.values.guardianPhone ? ` · ${row.values.guardianPhone}` : ""}
+                                  {guardianName || <span style={{ color: darkTheme.text.muted }}>—</span>}
+                                  {guardianPhone ? ` · ${guardianPhone}` : ""}
                                 </td>
                                 <td style={{ padding: spacing.sm }}>
-                                  {row.isValid ? (
-                                    <span className="text-xs font-medium" style={{ color: colors.success[500] }}>
-                                      Valid
+                                  {invalid ? (
+                                    <span className="text-xs font-medium" style={{ color: colors.error[500] }}>
+                                      Invalid: {Object.values(row.errors).join("; ")}
                                     </span>
                                   ) : (
-                                    <span className="text-xs font-medium" style={{ color: colors.error[500] }}>
-                                      Invalid: {row.reason}
+                                    <span className="text-xs font-medium" style={{ color: colors.success[500] }}>
+                                      Valid
                                     </span>
                                   )}
                                 </td>
@@ -415,7 +396,7 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
                     </div>
 
                     {submitError && (
-                      <p role="alert" style={{ color: colors.error[500], marginTop: spacing.md }}>
+                      <p role="alert" className="text-sm" style={{ color: colors.error[500], marginTop: spacing.md }}>
                         {submitError}
                       </p>
                     )}
@@ -424,13 +405,13 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
                       <Button
                         type="button"
                         onClick={handleImport}
-                        disabled={isImporting || validRows.length === 0}
+                        disabled={isImporting || rows.length === 0}
                       >
                         {isImporting
                           ? "Importing..."
-                          : validRows.length === 0
+                          : rows.length === 0
                             ? "No valid rows to import"
-                            : `Import ${validRows.length} student${validRows.length === 1 ? "" : "s"}`}
+                            : `Import ${rows.length} student${rows.length === 1 ? "" : "s"}`}
                       </Button>
                       <Button variant="ghost" type="button" onClick={backToSelect} disabled={isImporting}>
                         Choose a different file
@@ -456,33 +437,37 @@ export function ImportStudentsForm({ onImport }: ImportStudentsFormProps) {
 
                     <div className="flex flex-col" style={{ gap: spacing.sm }}>
                       <p className="text-sm" style={{ color: colors.success[500] }}>
-                        {successCount} student{successCount === 1 ? "" : "s"} added.
+                        {createdCount} student{createdCount === 1 ? "" : "s"} added.
+                      </p>
+                      <p className="text-sm" style={{ color: darkTheme.text.secondary }}>
+                        Created: {createdCount} · Rejected: {rejectedCount} · Skipped: {skipped.length} · Not sent:{" "}
+                        {notSentCount}
                       </p>
 
-                      {(Object.keys(errorsByReason) as ImportErrorReason[]).map((reason) => {
-                        const group = errorsByReason[reason];
-                        if (group.length === 0) return null;
-                        return (
-                          <div key={reason}>
-                            <p className="text-sm font-medium" style={{ color: colors.error[500] }}>
-                              {group.length} {REASON_LABELS[reason].toLowerCase()}
-                            </p>
-                            <ul style={{ margin: 0, paddingLeft: spacing.lg }}>
-                              {group.map((result, i) => (
-                                <li key={i} className="text-sm" style={{ color: darkTheme.text.secondary }}>
-                                  {result.row.firstName} {result.row.lastName} — {result.message}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        );
-                      })}
-
-                      {invalidRows.length > 0 && (
-                        <p className="text-sm" style={{ color: darkTheme.text.muted }}>
-                          {invalidRows.length} additional row{invalidRows.length === 1 ? "" : "s"} skipped
-                          before import due to missing required columns.
+                      {notSentCount > 0 && (
+                        <p className="text-sm" style={{ color: colors.warning[500] }}>
+                          The import stopped before every row was sent. A row marked as possibly saved may
+                          already be in the roster, so check the roster before importing this file again.
                         </p>
+                      )}
+
+                      {problems.length > 0 && (
+                        <div>
+                          <h3
+                            id="import-problems-heading"
+                            className="text-sm font-medium"
+                            style={{ color: colors.error[500] }}
+                          >
+                            Rows not imported ({problems.length})
+                          </h3>
+                          <ul aria-labelledby="import-problems-heading" style={{ margin: 0, paddingLeft: spacing.lg }}>
+                            {problems.map((problem) => (
+                              <li key={problem.row} className="text-sm" style={{ color: darkTheme.text.secondary }}>
+                                {problemText(problem)}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
                     </div>
 

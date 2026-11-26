@@ -1,6 +1,7 @@
 package com.wassel.backend.auth.service;
 
 import com.wassel.backend.auth.config.LockoutProperties;
+import com.wassel.backend.monitoring.service.OperationalMetrics;
 import com.wassel.backend.auth.dto.AuthUserResponse;
 import com.wassel.backend.auth.dto.LoginRequest;
 import com.wassel.backend.auth.exception.InvalidCredentialsException;
@@ -34,17 +35,20 @@ public class AuthService {
 
 	private final Clock clock;
 
+	private final OperationalMetrics metrics;
+
 	// Checked when the email is unknown or the account locked, so response time doesn't reveal either.
 	private final String unknownUserHash;
 
 	public AuthService(UserService userService, PasswordEncoder passwordEncoder, JwtService jwtService,
-			TwoFactorService twoFactorService, LockoutProperties lockout, Clock clock) {
+			TwoFactorService twoFactorService, LockoutProperties lockout, Clock clock, OperationalMetrics metrics) {
 		this.userService = userService;
 		this.passwordEncoder = passwordEncoder;
 		this.jwtService = jwtService;
 		this.twoFactorService = twoFactorService;
 		this.lockout = lockout;
 		this.clock = clock;
+		this.metrics = metrics;
 		this.unknownUserHash = passwordEncoder.encode("not-a-real-password");
 	}
 
@@ -76,6 +80,7 @@ public class AuthService {
 			if (userService.lockIfTooManyFailures(user.getId(), lockout.maxFailures(), until)) {
 				log.warn("Account {} locked until {} after {} wrong passwords in a row", user.getId(), until,
 						lockout.maxFailures());
+				metrics.accountLocked();
 			}
 			throw new InvalidCredentialsException();
 		}

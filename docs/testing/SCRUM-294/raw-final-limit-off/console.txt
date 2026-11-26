@@ -1,0 +1,30 @@
+attack-test: results in docs/testing/SCRUM-294/raw-final-limit-off; rate limit on: false (login 30, forgot-password 10, verify 60, resend 20, logout 60, set-password 30 per 60s); reset share 30 a day
+  INFO health idle baseline: n=40 max=0.005 p95=0.005 notup=0; gate for each run: p95 under 0.250s (10 x idle p95, floor 0.25s)
+== run1-flood
+  summary: {"run":"flood","vus":20,"limited":false,"requests":20000,"seconds":648.2,"statuses":{"forgot_204":10000,"login_401":10000},"first429At":null,"latencyMs":{"avg":648,"p95":1704,"max":2905}}
+  before (users tokens codes locked failed_sign_ins auth_emails resets_today mail): 841 0 0 0 0 0 0 0
+  after  (users tokens codes locked failed_sign_ins auth_emails resets_today mail): 841 0 0 0 0 0 0 0
+  health during the attack: n=2126 max=0.243 p95=0.136 notup=0; backend ERROR lines: 0
+  PASS run1-flood: users unchanged (841 -> 841)
+  PASS run1-flood: password tokens +0 (0 -> 0)
+  PASS run1-flood: login codes +0 (0 -> 0)
+  PASS run1-flood: emails sent +0 (stand-in 0 -> 0)
+  PASS run1-flood: one auth_emails row per email sent (rows +0, mail +0)
+  PASS run1-flood: no 5xx, no unanswered (status 0), no unexpected status (0 such answers of 20000)
+  PASS run1-flood: health UP on all 2126 probes, p95 0.136s under 0.250s (slowest 0.243s)
+  PASS run1-flood: all 10000 forgot-password answers 204 (10000)
+  PASS run1-flood: all 10000 logins answer 401 (10000)
+  PASS run1-flood: no 429 with the limit off (0)
+
+Verdicts:
+  INFO health idle baseline: n=40 max=0.005 p95=0.005 notup=0; gate for each run: p95 under 0.250s (10 x idle p95, floor 0.25s)
+  PASS run1-flood: users unchanged (841 -> 841)
+  PASS run1-flood: password tokens +0 (0 -> 0)
+  PASS run1-flood: login codes +0 (0 -> 0)
+  PASS run1-flood: emails sent +0 (stand-in 0 -> 0)
+  PASS run1-flood: one auth_emails row per email sent (rows +0, mail +0)
+  PASS run1-flood: no 5xx, no unanswered (status 0), no unexpected status (0 such answers of 20000)
+  PASS run1-flood: health UP on all 2126 probes, p95 0.136s under 0.250s (slowest 0.243s)
+  PASS run1-flood: all 10000 forgot-password answers 204 (10000)
+  PASS run1-flood: all 10000 logins answer 401 (10000)
+  PASS run1-flood: no 429 with the limit off (0)

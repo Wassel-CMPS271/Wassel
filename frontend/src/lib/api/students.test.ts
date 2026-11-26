@@ -13,6 +13,7 @@ import {
   searchStudents,
   setStudentLocation,
   updateStudentAddress,
+  type ImportRow,
   type NewStudent,
   type Student,
 } from "./students";
@@ -283,114 +284,190 @@ describe("matchesFilters", () => {
   });
 });
 
+// Until the bulk endpoint exists (docs/contracts/students-import.md), each row
+// is still one POST to single create, through the real request().
 describe("importStudents", () => {
-  it("imports valid rows one by one in order and returns the created student for each", async () => {
-    const second: NewStudent = { ...NEW_STUDENT, firstName: "Hadi", guardianPhone: "+961 70 333 222" };
-    const secondStudent: Student = { ...STUDENT, id: "st-2", firstName: "Hadi" };
+  const MAYBE_SAVED = "The import stopped here. This row may or may not have been saved.";
+  const stoppedAt = (row: number) => `The import stopped at row ${row}.`;
+
+  function importRow(row: number, overrides: Partial<NewStudent> = {}): ImportRow {
+    return { row, ...NEW_STUDENT, ...overrides };
+  }
+
+  function postedBodies(fetchMock: ReturnType<typeof vi.fn>) {
+    return fetchMock.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string));
+  }
+
+  const hadi = importRow(5, { firstName: "Hadi", lastName: "Bou Saab", guardianPhone: "+961 70 333 222" });
+  const zeina = importRow(7, { firstName: "Zeina", lastName: "Fakhoury", guardianPhone: "+961 3 222 111" });
+  const hadiStudent: Student = { ...STUDENT, id: "st-2", firstName: "Hadi", lastName: "Bou Saab" };
+
+  it("creates each row with one POST, in order, and keeps each row's line number", async () => {
     const fetchMock = mockFetchSequence([
       { ok: true, status: 201, body: STUDENT },
-      { ok: true, status: 201, body: secondStudent },
+      { ok: true, status: 201, body: hadiStudent },
     ]);
 
-    const results = await importStudents([NEW_STUDENT, second]);
-    expect(results).toEqual([
-      { status: "success", row: NEW_STUDENT, student: STUDENT },
-      { status: "success", row: second, student: secondStudent },
+    await expect(importStudents([importRow(2), hadi])).resolves.toEqual({
+      result: {
+        created: 2,
+        rejected: 0,
+        results: [
+          { row: 2, status: "created", student: STUDENT },
+          { row: 5, status: "created", student: hadiStudent },
+        ],
+      },
+      notSent: [],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [url, init] of fetchMock.mock.calls) {
+      expect(url).toBe(STUDENTS_URL);
+      expect(init).toMatchObject({ method: "POST", credentials: "include" });
+    }
+  });
+
+  it("sends single create's body, trimmed, and never the row number", async () => {
+    const fetchMock = mockFetchSequence([{ ok: true, status: 201, body: STUDENT }]);
+
+    await importStudents([importRow(3, { grade: " Grade 4 " })]);
+    const [body] = postedBodies(fetchMock);
+    expect(body).toEqual({ ...NEW_STUDENT, grade: "Grade 4" });
+    expect(body).not.toHaveProperty("row");
+  });
+
+  it("rejects a row the server answers 409 with an errors map, keeping the server's errors as they are", async () => {
+    const errors = { guardianPhone: "A student named Lina Daher with guardian phone +961 3 123 456 already exists." };
+    mockFetchSequence([{ ok: false, status: 409, body: { detail: "Student already exists", errors } }]);
+
+    await expect(importStudents([importRow(4)])).resolves.toEqual({
+      result: { created: 0, rejected: 1, results: [{ row: 4, status: "rejected", errors }] },
+      notSent: [],
+    });
+  });
+
+  it("rejects a row the server answers 400 with an errors map, keeping every field name", async () => {
+    const errors = {
+      guardianPhone: 'Use a format like "+961 3 123 456" or "+961 70 234 567"',
+      firstName: "First name must be 100 characters or fewer",
+    };
+    const fetchMock = mockFetchSequence([
+      { ok: false, status: 400, body: { detail: "Validation failed", errors } },
+      { ok: true, status: 201, body: hadiStudent },
     ]);
+
+    const { result, notSent } = await importStudents([importRow(2), hadi]);
+    expect(result.results[0]).toEqual({ row: 2, status: "rejected", errors });
+    expect(Object.keys((result.results[0] as { errors: object }).errors)).toEqual(["guardianPhone", "firstName"]);
+    expect(result.results[1]).toEqual({ row: 5, status: "created", student: hadiStudent });
+    expect(result).toMatchObject({ created: 1, rejected: 1 });
+    expect(notSent).toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("reports a row with missing required fields without calling the API", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    const incomplete: NewStudent = { ...NEW_STUDENT, lastName: "" };
+  it("rejects a plain 409 with no errors map under guardianPhone, as single create reports a duplicate", async () => {
+    mockFetchSequence([{ ok: false, status: 409, body: { detail: "Student already exists" } }]);
 
-    const results = await importStudents([incomplete]);
-    expect(results).toEqual([
-      {
-        status: "error",
-        row: incomplete,
-        reason: "missing_fields",
-        message: "First name, last name, grade, guardian name and guardian phone are required.",
-      },
+    const { result } = await importStudents([importRow(2)]);
+    expect(result.results).toEqual([
+      { row: 2, status: "rejected", errors: { guardianPhone: "A student with this name and guardian phone already exists." } },
     ]);
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("reports a repeated student and guardian phone within the batch as a duplicate, without calling the API for it", async () => {
-    const fetchMock = mockFetchSequence([{ ok: true, status: 201, body: STUDENT }]);
+  it("stops at a plain 400 with no errors map, saying the row was not saved", async () => {
+    const fetchMock = mockFetchSequence([{ ok: false, status: 400, body: { detail: "Malformed request body" } }]);
 
-    const results = await importStudents([NEW_STUDENT, { ...NEW_STUDENT }]);
-    expect(results[0]).toEqual({ status: "success", row: NEW_STUDENT, student: STUDENT });
-    expect(results[1]).toEqual({
-      status: "error",
-      row: NEW_STUDENT,
-      reason: "duplicate_in_batch",
-      message: "This student and guardian phone appear more than once in the CSV file.",
+    await expect(importStudents([importRow(2), hadi])).resolves.toEqual({
+      result: { created: 0, rejected: 0, results: [] },
+      notSent: [
+        { row: 2, message: "The server refused this row without saying why. It was not saved." },
+        { row: 5, message: stoppedAt(2) },
+      ],
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("reports a 409 duplicate from the backend as duplicate_existing, using the backend's message", async () => {
-    mockFetchSequence([
-      {
-        ok: false,
-        status: 409,
-        body: { errors: { guardianPhone: "A student named Lina Daher with guardian phone +961 3 123 456 already exists." } },
-      },
+  it("rejects a repeat of an earlier row without sending it, naming the first row's line", async () => {
+    const fetchMock = mockFetchSequence([
+      { ok: true, status: 201, body: STUDENT },
+      { ok: true, status: 201, body: hadiStudent },
     ]);
+    // Same names in another letter case and the same phone; the grade and guardian name don't count.
+    const repeat = importRow(9, { firstName: "LINA", lastName: " daher ", grade: "Grade 9", guardianName: "Someone Else" });
 
-    const results = await importStudents([NEW_STUDENT]);
-    expect(results).toEqual([
-      {
-        status: "error",
-        row: NEW_STUDENT,
-        reason: "duplicate_existing",
-        message: "A student named Lina Daher with guardian phone +961 3 123 456 already exists.",
-      },
-    ]);
+    const { result } = await importStudents([importRow(2), hadi, repeat]);
+    expect(result.results[2]).toEqual({
+      row: 9,
+      status: "rejected",
+      errors: { guardianPhone: "Same student and guardian phone as row 2." },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(postedBodies(fetchMock).map((body) => body.firstName)).toEqual(["Lina", "Hadi"]);
   });
 
-  it("reports a plain ApiError 409 (no errors map) as duplicate_existing too", async () => {
-    mockFetchSequence([{ ok: false, status: 409, body: { detail: "Conflict" } }]);
+  it("names the first row even when the server rejected it", async () => {
+    const errors = { guardianPhone: "A student named Lina Daher with guardian phone +961 3 123 456 already exists." };
+    const fetchMock = mockFetchSequence([{ ok: false, status: 409, body: { errors } }]);
 
-    const results = await importStudents([NEW_STUDENT]);
-    expect(results).toEqual([
-      { status: "error", row: NEW_STUDENT, reason: "duplicate_existing", message: "Conflict" },
+    const { result } = await importStudents([importRow(3), importRow(6)]);
+    expect(result.results).toEqual([
+      { row: 3, status: "rejected", errors },
+      { row: 6, status: "rejected", errors: { guardianPhone: "Same student and guardian phone as row 3." } },
     ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("reports a 400 validation failure that isn't a duplicate as invalid_fields", async () => {
-    mockFetchSequence([{ ok: false, status: 400, body: { errors: { grade: "Grade is required." } } }]);
-
-    const results = await importStudents([NEW_STUDENT]);
-    expect(results).toEqual([
-      { status: "error", row: NEW_STUDENT, reason: "invalid_fields", message: "Grade is required." },
+  it("does not treat the same names with another phone as a repeat", async () => {
+    const fetchMock = mockFetchSequence([
+      { ok: true, status: 201, body: STUDENT },
+      { ok: true, status: 201, body: STUDENT },
     ]);
+
+    const { result } = await importStudents([importRow(2), importRow(3, { guardianPhone: "+961 3 999 999" })]);
+    expect(result.created).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("marks a row as request_failed on a network failure, then skips the API for every row after it", async () => {
-    const third: NewStudent = { ...NEW_STUDENT, firstName: "Zeina", guardianPhone: "+961 3 222 111" };
+  it("stops at a network failure: earlier results stay, the failed row and every later row are not sent", async () => {
     const fetchMock = mockFetchSequence([
       { ok: true, status: 201, body: STUDENT },
       new TypeError("Failed to fetch"),
     ]);
-    const second: NewStudent = { ...NEW_STUDENT, firstName: "Hadi", guardianPhone: "+961 70 333 222" };
 
-    const results = await importStudents([NEW_STUDENT, second, third]);
-    expect(results[0]).toEqual({ status: "success", row: NEW_STUDENT, student: STUDENT });
-    expect(results[1]).toEqual({
-      status: "error",
-      row: second,
-      reason: "request_failed",
-      message: "The request could not be completed. Verify the backend connection and retry this row.",
-    });
-    expect(results[2]).toEqual({
-      status: "error",
-      row: third,
-      reason: "request_failed",
-      message: "Not attempted because the API became unavailable. Retry this row later.",
+    await expect(importStudents([importRow(2), hadi, zeina, importRow(8)])).resolves.toEqual({
+      result: { created: 1, rejected: 0, results: [{ row: 2, status: "created", student: STUDENT }] },
+      notSent: [
+        { row: 5, message: MAYBE_SAVED },
+        { row: 7, message: stoppedAt(5) },
+        { row: 8, message: stoppedAt(5) },
+      ],
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([500, 503, 401, 403])("stops the same way at a %i", async (status) => {
+    const errors = { guardianPhone: "A student named Lina Daher with guardian phone +961 3 123 456 already exists." };
+    const fetchMock = mockFetchSequence([
+      { ok: false, status: 409, body: { errors } },
+      { ok: false, status, body: status >= 500 ? { detail: "An unexpected error occurred" } : undefined },
+    ]);
+
+    await expect(importStudents([importRow(2), hadi, zeina])).resolves.toEqual({
+      result: { created: 0, rejected: 1, results: [{ row: 2, status: "rejected", errors }] },
+      notSent: [
+        { row: 5, message: MAYBE_SAVED },
+        { row: 7, message: stoppedAt(5) },
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns an empty result for no rows, without calling the server", async () => {
+    const fetchMock = mockFetchSequence([]);
+
+    await expect(importStudents([])).resolves.toEqual({
+      result: { created: 0, rejected: 0, results: [] },
+      notSent: [],
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.util.List;
@@ -32,7 +33,8 @@ public class SecurityConfig {
 
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http,
-			@Qualifier("jwtAuthenticationFilter") OncePerRequestFilter jwtAuthenticationFilter) throws Exception {
+			@Qualifier("jwtAuthenticationFilter") OncePerRequestFilter jwtAuthenticationFilter,
+			@Qualifier("rateLimitFilter") OncePerRequestFilter rateLimitFilter) throws Exception {
 		http
 				// No CSRF token: the auth cookie is SameSite=Strict (see AuthCookie). Re-enable if that is relaxed.
 				.csrf(AbstractHttpConfigurer::disable)
@@ -50,6 +52,8 @@ public class SecurityConfig {
 								"/api/auth/password").permitAll()
 						.anyRequest().authenticated())
 				.exceptionHandling(ex -> ex.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+				// After CORS, so a 429 still carries the CORS headers the browser needs to read it.
+				.addFilterAfter(rateLimitFilter, CorsFilter.class)
 				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
 		return http.build();
@@ -62,6 +66,8 @@ public class SecurityConfig {
 		config.setAllowedOrigins(allowedOrigins);
 		config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 		config.setAllowedHeaders(List.of("Content-Type"));
+		// Without this a browser calling the backend directly (local development) cannot read how long to wait.
+		config.setExposedHeaders(List.of("Retry-After"));
 		config.setAllowCredentials(true);
 
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

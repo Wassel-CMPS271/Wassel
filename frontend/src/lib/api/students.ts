@@ -31,18 +31,31 @@ export type NewStudent = Pick<
 // CSV imports still use NewStudent because the existing CSV format has no address.
 export type NewStudentWithAddress = NewStudent & { address: string };
 
-// Preserve the Sprint 1 CSV UI using the backend student-creation endpoint.
-// Per-row failures are reported without producing mock records.
-export type ImportErrorReason =
-  | "missing_fields"
-  | "duplicate_in_batch"
-  | "duplicate_existing"
-  | "invalid_fields"
-  | "request_failed";
+// The students import's shapes (SCRUM-59, docs/contracts/students-import.md).
+// `row` is the line of the file the record starts on.
+export type ImportRow = NewStudent & { row: number };
 
-export type ImportRowResult =
-  | { status: "success"; row: NewStudent; student: Student }
-  | { status: "error"; row: NewStudent; reason: ImportErrorReason; message: string };
+// `errors` is keyed by field, as single create's 400/409 body is.
+export type RowResult =
+  | { row: number; status: "created"; student: Student }
+  | { row: number; status: "rejected"; errors: Record<string, string> };
+
+export interface ImportResult {
+  created: number;
+  rejected: number;
+  results: RowResult[];
+}
+
+// A row with no answer, because the import stopped before or at it.
+export interface NotSentRow {
+  row: number;
+  message: string;
+}
+
+export interface StudentImport {
+  result: ImportResult;
+  notSent: NotSentRow[];
+}
 
 export interface StudentFilters {
   query?: string;
@@ -143,66 +156,56 @@ export async function addStudentWithAddress(
   }
 }
 
-// The backend has no bulk endpoint yet. Import each row with the existing
-// POST endpoint, recording per-row successes and failures. Never create
-// synthetic Student IDs or claim a failed row was saved.
-export async function importStudents(rows: NewStudent[]): Promise<ImportRowResult[]> {
-  const results: ImportRowResult[] = [];
-  const seen = new Set<string>();
-  let unavailable = false;
+// The bulk endpoint of docs/contracts/students-import.md does not exist yet
+// (SCRUM-300), so each row is still one POST to single create, one after
+// another; `row` is never sent. The answer is shaped like the contract's
+// ImportResult, so switching to the bulk call changes this function only.
+//
+// A repeat of an earlier row (same names in any letter case, same phone) is
+// rejected without being sent, naming the first row's line, as the contract's
+// in-request duplicate rule does. A failure with no answer for the row (no
+// connection, 401, 403, 5xx) stops the import: that row and every later one go
+// into `notSent`, and the rows already answered stay in `result`.
+export async function importStudents(rows: ImportRow[]): Promise<StudentImport> {
+  const results: RowResult[] = [];
+  const notSent: NotSentRow[] = [];
+  const firstRowOf = new Map<string, number>();
+  let stoppedAt: number | undefined;
 
-  for (const row of rows) {
-    const fields = [row.firstName, row.lastName, row.grade, row.guardianName, row.guardianPhone];
-    if (fields.some((value) => !value?.trim())) {
-      results.push({
-        status: "error", row, reason: "missing_fields",
-        message: "First name, last name, grade, guardian name and guardian phone are required.",
-      });
+  for (const importRow of rows) {
+    const { row } = importRow;
+    if (stoppedAt !== undefined) {
+      notSent.push({ row, message: `The import stopped at row ${stoppedAt}.` });
       continue;
     }
 
-    const key = `${row.firstName.trim().toLowerCase()}\u0000${row.lastName.trim().toLowerCase()}\u0000${row.guardianPhone.trim()}`;
-    if (seen.has(key)) {
-      results.push({
-        status: "error", row, reason: "duplicate_in_batch",
-        message: "This student and guardian phone appear more than once in the CSV file.",
-      });
+    const key = `${importRow.firstName.trim().toLowerCase()}\u0000${importRow.lastName.trim().toLowerCase()}\u0000${importRow.guardianPhone.trim()}`;
+    const firstRow = firstRowOf.get(key);
+    if (firstRow !== undefined) {
+      results.push({ row, status: "rejected", errors: { guardianPhone: `Same student and guardian phone as row ${firstRow}.` } });
       continue;
     }
-    seen.add(key);
-
-    if (unavailable) {
-      results.push({
-        status: "error", row, reason: "request_failed",
-        message: "Not attempted because the API became unavailable. Retry this row later.",
-      });
-      continue;
-    }
+    firstRowOf.set(key, row);
 
     try {
-      const student = await addStudent(row);
-      results.push({ status: "success", row, student });
+      results.push({ row, status: "created", student: await addStudent(importRow) });
     } catch (error) {
       if (error instanceof ApiValidationError) {
-        const details = Object.values(error.errors).join(" ") || "The server rejected this student.";
-        const duplicate = /already exists|duplicate/i.test(details);
-        results.push({
-          status: "error", row,
-          reason: duplicate ? "duplicate_existing" : "invalid_fields",
-          message: details,
-        });
+        results.push({ row, status: "rejected", errors: { ...error.errors } });
       } else if (error instanceof ApiError && error.status === 409) {
-        results.push({ status: "error", row, reason: "duplicate_existing", message: error.message });
+        // Single create's only 409 is a duplicate, which it reports under guardianPhone.
+        results.push({ row, status: "rejected", errors: { guardianPhone: "A student with this name and guardian phone already exists." } });
       } else if (error instanceof ApiError && error.status === 400) {
-        results.push({ status: "error", row, reason: "invalid_fields", message: error.message });
+        // No field to put it under, and every later row would get the same answer.
+        stoppedAt = row;
+        notSent.push({ row, message: "The server refused this row without saying why. It was not saved." });
       } else {
-        unavailable = true;
-        results.push({
-          status: "error", row, reason: "request_failed",
-          message: "The request could not be completed. Verify the backend connection and retry this row.",
-        });
+        stoppedAt = row;
+        notSent.push({ row, message: "The import stopped here. This row may or may not have been saved." });
       }
     }
   }
-  return results;
+
+  const created = results.filter((result) => result.status === "created").length;
+  return { result: { created, rejected: results.length - created, results }, notSent };
 }

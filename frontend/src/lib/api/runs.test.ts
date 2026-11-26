@@ -2,7 +2,7 @@
 // are checked against the paths in docs/contracts/runs.md with fetch mocked.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getAbsentStudents, getRunReassignments, getRunsDay, reassignRun } from "./runs";
+import { getAbsentStudents, getRunLocations, getRunReassignments, getRunsDay, reassignRun } from "./runs";
 import { ApiError, ApiValidationError } from "./errors";
 import { getAbsentStudents as sampleAbsent, getRunsDay as sampleRuns } from "./runsSample";
 import runsFixture from "./__fixtures__/runs/hot-runs.json";
@@ -10,6 +10,7 @@ import absencesFixture from "./__fixtures__/runs/hot-absences.json";
 import reassignRequest from "../../../../docs/contracts/samples/runs/hot-reassign-request.json";
 import reassignedRun from "../../../../docs/contracts/samples/runs/hot-reassign-run.json";
 import reassignments from "../../../../docs/contracts/samples/runs/hot-reassignments.json";
+import runLocationsFixture from "../../../../docs/contracts/samples/runs/run-locations.json";
 
 const BASE = "http://localhost:8080/api/head-of-transport";
 
@@ -51,6 +52,18 @@ describe("runs reads", () => {
     mockFetchOnce(false, 403, { detail: "Access denied" });
 
     await expect(getRunsDay()).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it("rejects getRunsDay with a 401 when signed out", async () => {
+    mockFetchOnce(false, 401, undefined);
+
+    await expect(getRunsDay()).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("rejects getRunsDay with a 403 for another role", async () => {
+    mockFetchOnce(false, 403, { detail: "Access denied" });
+
+    await expect(getRunsDay()).rejects.toMatchObject({ status: 403, message: "Access denied" });
   });
 });
 
@@ -129,6 +142,82 @@ describe("run reassignment (SCRUM-264)", () => {
     mockFetchOnce(true, 200, []);
 
     await expect(getRunReassignments(RUN)).resolves.toEqual([]);
+  });
+
+  it("rejects reassignRun with a 401 when signed out", async () => {
+    mockFetchOnce(false, 401, undefined);
+
+    await expect(reassignRun(RUN, reassignRequest)).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("rejects reassignRun with a 403 for another role", async () => {
+    mockFetchOnce(false, 403, { detail: "Access denied" });
+
+    await expect(reassignRun(RUN, reassignRequest)).rejects.toMatchObject({
+      status: 403,
+      message: "Access denied",
+    });
+  });
+
+  it("rejects getRunReassignments with a 401 when signed out", async () => {
+    mockFetchOnce(false, 401, undefined);
+
+    await expect(getRunReassignments(RUN)).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("rejects getRunReassignments with a 403 for another role", async () => {
+    mockFetchOnce(false, 403, { detail: "Access denied" });
+
+    await expect(getRunReassignments(RUN)).rejects.toMatchObject({ status: 403, message: "Access denied" });
+  });
+});
+
+describe("run locations (head of transportation, SCRUM-261/262)", () => {
+  it("GETs /runs/locations and parses LIVE and UNAVAILABLE runs", async () => {
+    const fetchMock = mockFetchOnce(true, 200, runLocationsFixture);
+
+    await expect(getRunLocations()).resolves.toEqual(runLocationsFixture);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE}/runs/locations`,
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("parses a STALE run with its last known position and no estimate", async () => {
+    const stale = {
+      runId: "50000000-0000-4000-8000-000000000099",
+      status: "STALE",
+      position: {
+        latitude: 33.8961,
+        longitude: 35.4823,
+        accuracyMeters: 15,
+        receivedAt: "2026-10-21T04:13:40Z",
+        ageSeconds: 140,
+      },
+      remainingStops: 2,
+      nextStop: null,
+    };
+    mockFetchOnce(true, 200, [stale]);
+
+    await expect(getRunLocations()).resolves.toEqual([stale]);
+  });
+
+  it("reads [] on a holiday", async () => {
+    mockFetchOnce(true, 200, []);
+
+    await expect(getRunLocations()).resolves.toEqual([]);
+  });
+
+  it("rejects with a 401 when signed out", async () => {
+    mockFetchOnce(false, 401, undefined);
+
+    await expect(getRunLocations()).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("rejects with a 403 for another role", async () => {
+    mockFetchOnce(false, 403, { detail: "Access denied" });
+
+    await expect(getRunLocations()).rejects.toMatchObject({ status: 403, message: "Access denied" });
   });
 });
 

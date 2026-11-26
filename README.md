@@ -129,13 +129,32 @@ response are in `docs/contracts/notification-delivery.md`.
 | `NOTIFICATION_EMAIL_DAILY_CAP` | the most emails a day, default `150` |
 
 - **It shares the provider's daily limit with sign-in codes.** When the limit runs out every sign-in fails, so read the real
-  daily limit off the Brevo account (the free plan is thought to be 300 a day, not checked) and set the cap to about half of it.
+  daily limit off the Brevo account (the free plan is thought to be 300 a day, not checked) and keep
+  `NOTIFICATION_EMAIL_DAILY_CAP + AUTH_EMAIL_DAILY_CAP` under it with a margin (see the next section; the defaults are 150 + 120).
 - **Turn it on only where every parent address is real.** Fake addresses bounce, and a high bounce rate can get the
   provider account suspended. The demo accounts use `DEMO_EMAIL_BASE`, so point that at a real mailbox first.
 - **Rollback** is `NOTIFICATION_EMAIL_ENABLED=false` and a restart. The `notification_deliveries` table (migration V16)
   stays and is harmless.
 - **Check how it is going** (administrator session, counts only, no addresses or names):
   `curl -b cookies.txt "$BACKEND/api/admin/notification-deliveries/summary?date=2026-11-16"`
+
+### Authentication email (sign-in codes, resets, invites)
+
+Sign-in codes, resends, password-reset links and invites have their own daily cap, counted in the `auth_emails` table
+(migration V18), so a flood of them cannot use up the provider's quota. Rules, answers and what a refused request sees are
+in `docs/contracts/auth-email.md`.
+
+| Variable | Value |
+| -------- | ----- |
+| `AUTH_EMAIL_DAILY_CAP` | the most authentication emails a day, default `120` |
+| `AUTH_EMAIL_RESET_DAILY_CAP` | of those, the most reset links, default `30` (at most the daily cap) |
+| `AUTH_EMAIL_PER_ACCOUNT_DAILY_CAP` | the most sign-in codes and resends, or the most reset links, for one account a day, default `10` |
+
+- **The sum rule:** `NOTIFICATION_EMAIL_DAILY_CAP + AUTH_EMAIL_DAILY_CAP` must stay under the provider's daily limit, with a
+  margin for invites, which are never refused. The defaults add up to 270 against a limit assumed, not confirmed, to be 300.
+  Raise the caps only together with the provider's plan.
+- Over the cap a sign-in or resend answers `503` with `Retry-After` (seconds to midnight in Beirut), and forgot-password
+  still answers `204` and sends nothing. A value of 0 or a reset cap above the daily cap stops the backend at startup.
 
 ### Email on staging
 
@@ -244,6 +263,8 @@ The backend and its PostgreSQL database run on [Railway](https://railway.com), i
 | `JWT_COOKIE_SECURE` | `true` (the default, shown for clarity) |
 | `JWT_EXPIRATION` | `1h` |
 | `LOCKOUT_MAX_FAILURES`, `LOCKOUT_DURATION` (optional) | account lockout: this many wrong passwords in a row lock the account for this long (defaults `5` and `15m`) |
+| `RATE_LIMIT_TRUSTED_PROXY_HOPS` | how many proxies in front of the backend each append to `X-Forwarded-For`; **leave at `0` until you have confirmed the number** with [Rate limit](#rate-limit-on-the-sign-in-endpoints). With `0`, everyone behind Railway shares one address and one bucket |
+| `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW`, `RATE_LIMIT_LOGIN`, `RATE_LIMIT_2FA_VERIFY`, `RATE_LIMIT_2FA_RESEND`, `RATE_LIMIT_LOGOUT`, `RATE_LIMIT_FORGOT_PASSWORD`, `RATE_LIMIT_SET_PASSWORD` (optional) | the per-address limit on the six public sign-in endpoints: requests per window per address per endpoint (defaults `false`, `1m`, `30`, `60`, `20`, `60`, `10`, `30`; **the limit is off until `RATE_LIMIT_ENABLED=true`**, set it only after confirming `RATE_LIMIT_TRUSTED_PROXY_HOPS`) |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | the first admin, created on the first start; the email must be an inbox you can open because the sign-in code is emailed there (the password is secret, 10+ characters) |
 | `MAIL_USERNAME`, `MAIL_PASSWORD` | the Gmail address that sends the codes and its app password (secret); see [Email on staging](#email-on-staging) |
 | `SCHOOL_LATITUDE`, `SCHOOL_LONGITUDE` | where every route ends (`33.896`, `35.484`) |
@@ -252,6 +273,17 @@ The backend and its PostgreSQL database run on [Railway](https://railway.com), i
 | `DEMO_DATA_ENABLED`, `DEMO_PASSWORD`, `DEMO_EMAIL_BASE` (optional) | the demo school, see [Demo data](#demo-data) |
 
 Changing a variable redeploys the service. Changing `ADMIN_EMAIL` or `ADMIN_PASSWORD` later does not change an admin that already exists.
+
+### Rate limit on the sign-in endpoints
+
+The six public endpoints (`login`, `2fa/verify`, `2fa/resend`, `logout`, `forgot-password`, `password`) answer `429` with a `Retry-After` header once one address has sent more than its limit in a window (SCRUM-288); the screens say "Too many attempts. Try again in N seconds." This is per **address**; the lockout of one account after wrong passwords is a separate rule.
+
+- **It is off by default.** Set `RATE_LIMIT_ENABLED=true` on a host only once its `RATE_LIMIT_TRUSTED_PROXY_HOPS` is confirmed (next two points). With the hop count at `0` behind Railway, one script sending 31 sign-ins a minute would block every sign-in for the school.
+- **It is in memory.** The counters reset on every redeploy or restart, and they are not shared, so it assumes **one** backend instance. A second Railway replica would double every limit.
+- **Which address is it?** Behind Railway (and Vercel's proxy in front of it) the connection the backend sees is a proxy, not the visitor. With `RATE_LIMIT_TRUSTED_PROXY_HOPS=0` the header `X-Forwarded-For` is ignored, so **everyone shares one bucket**: safe against forged headers, but one noisy visitor could use up the whole school's allowance. With `N`, the visitor is the Nth entry **from the right** of `X-Forwarded-For` (each trusted proxy appends the address it was called from; anything to the left is written by the visitor and ignored). A header with fewer entries than `N` falls back to the connection's own address. IPv6 visitors count by their /64.
+- **Confirm the number before setting it (do this once per host).** Set `RATE_LIMIT_LOGIN=1` temporarily on a staging copy (or on Railway for a minute), send two sign-ins from your phone on mobile data and from your laptop, then read the Railway logs: the second request logs `Rate limit reached on /api/auth/login by <address> (connection <proxy>, X-Forwarded-For [<entries>])`. If `X-Forwarded-For` lists your real address as the **last** entry, use `1`; if the last entry is a proxy's address and yours is second to last, use `2`; and so on. Then send a request that includes a forged `X-Forwarded-For: 1.2.3.4` header directly to the Railway address and confirm the logged address is still yours, not `1.2.3.4`. Put the limits back to their defaults afterwards. This has **not** been done against the live Railway and Vercel hosts yet.
+- **Known limit:** the backend's public Railway address can be called without going through Vercel. Whoever does that writes the start of `X-Forwarded-For` themselves, so with `N` larger than the proxies on that path they can pick their own bucket. The per-account lockout and the 2FA attempt limit still apply to them.
+- The tests, the browser tests and the load test (`loadtest/docker-compose.yml`, `RATE_LIMIT_ENABLED`) run with the limit **off**, because every virtual user signs in from one address. Size the limits with the load test before a real morning (SCRUM-S5-G).
 
 ## Hosted frontend (Vercel)
 
@@ -320,7 +352,8 @@ or `main`:
 | `frontend-build` | `npm ci`, `npm audit --audit-level=high`, `npm run lint`, `npm run test:coverage`, `npm run build` in `/frontend`, uploads `frontend-coverage` |
 
 Both jobs upload a coverage report as a build artifact (open the run on GitHub, **Artifacts** at the bottom, download
-and open `index.html`). It is a report only: no minimum is enforced.
+and open `index.html`), and print their line-coverage number in the run's Summary page. Each job fails below a floor
+(backend 94.7%, front end 86.6%) that is never lowered; see `docs/quality/`.
 
 **Dependency scanning (SCRUM-253).** `frontend-build` fails on a high or critical known vulnerability in any npm
 package (`npm audit --audit-level=high`, dev packages included), so a newly published advisory can turn an

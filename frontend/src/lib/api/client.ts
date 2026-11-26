@@ -61,10 +61,17 @@ export async function request<T = void>(
     if (problem?.errors && typeof problem.errors === "object") {
       throw new ApiValidationError(problem.errors);
     }
-    throw new ApiError(response.status, problem?.detail, studentIdsOf(problem));
+    throw new ApiError(response.status, problem?.detail, studentIdsOf(problem), retryAfterOf(response));
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Retry-After in whole seconds. A date, a negative or a non-number is dropped,
+// and so is an answer without headers.
+function retryAfterOf(response: Response): number | undefined {
+  const value = response.headers?.get?.("Retry-After");
+  return value && /^\d+$/.test(value.trim()) ? Number(value) : undefined;
 }
 
 // Only a list of strings counts; anything else is dropped.

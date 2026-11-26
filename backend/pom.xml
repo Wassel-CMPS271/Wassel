@@ -118,7 +118,7 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
-			<!-- Coverage report (SCRUM-151): measures the tests, never fails the build. HTML lands in target/site/jacoco. -->
+			<!-- Coverage (SCRUM-151, SCRUM-292): the report lands in target/site/jacoco; the check below fails verify under the floor. -->
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
@@ -136,6 +136,30 @@
 						<goals>
 							<goal>report</goal>
 						</goals>
+					</execution>
+					<!-- The floor (SCRUM-292): verify fails when line coverage of the whole backend drops below this.
+					     Today's value was 96.72% on 2026-11-22; the floor is two points below it and is never lowered.
+					     Raise it only by a deliberate change here, together with the reading in docs/quality/. -->
+					<execution>
+						<id>check</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<rule>
+									<element>BUNDLE</element>
+									<limits>
+										<limit>
+											<counter>LINE</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>0.947</minimum>
+										</limit>
+									</limits>
+								</rule>
+							</rules>
+						</configuration>
 					</execution>
 				</executions>
 			</plugin>
