@@ -355,11 +355,7 @@ describe("SCRUM-249 parent absences (independent, SCRUM-246)", () => {
       expect(server.requests(absencePath(TAREK_ID), "GET")).toHaveLength(1);
     });
 
-    // BUG: refused cancel (409) hides the server's reason and says "try again" - to be raised on PR #147 (Jira bug key SCRUM-297)
-    // Expected (A5, runs.md Errors "Cancel an absence that ended before today | 409 | detail"): the server's
-    // detail is shown. Actual: only "Couldn't complete the request. Please try again." The row is kept, as it
-    // should be, but the parent is told to retry an action that can never succeed.
-    it.fails("A5: a cancel the server refuses (409, already ended) shows its reason in plain words and keeps the row", async () => {
+    it("A5: a cancel the server refuses (409, already ended) shows its reason in plain words and keeps the row", async () => {
       serve(NOON_20_OCT);
       await openAbsences(TAREK);
       await listLoaded(TAREK_ID);

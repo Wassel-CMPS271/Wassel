@@ -46,11 +46,11 @@ Every test renders the real page inside the real layout (`RoleGuard`, `UserBlock
 | A2 — past dates cannot be picked | absences.independent.test.tsx | Pass (4 tests: single day, range, Asia/Beirut boundary, inverted range) |
 | A3 — upcoming list, Cancel button, confirmation step | absences.independent.test.tsx | Pass (6 tests: list + empty state, confirmation appears, Keep/Escape back out, confirmed delete) |
 | A4 — list updates after report/cancel, no page reload | absences.independent.test.tsx | Pass (checked inside the A1 and A3 tests above) |
-| A5 — server errors shown in plain words | absences.independent.test.tsx | **1 test fails (`it.fails`) — see Defect below.** The other 4 (overlap, report 500, load 500, cancel 404) pass. |
+| A5 — server errors shown in plain words | absences.independent.test.tsx | Pass (5 tests: overlap, report 500, load 500, cancel 409 already-ended, cancel 404). The 409 case was fixed by PR #173 (SCRUM-297) — see Defect below. |
 | A6 — works on a phone screen | absences.independent.test.tsx | Pass, but only partly testable — see Limits |
 | A7 — uses the real endpoints | absences.independent.test.tsx | Pass (checked inside the A1, A3 and A5 tests above: correct paths, cookies, no cross-child requests) |
 
-**20 of 21 tests pass; 1 is `it.fails` and marked as a defect**, so `npm test` still exits 0.
+**21 of 21 tests pass.**
 
 ## How to run
 
@@ -67,7 +67,7 @@ To run just these two files:
 npx vitest run "src/app/(parent)/parent/home.independent.test.tsx" "src/app/(parent)/parent/absences.independent.test.tsx"
 ```
 
-Each was run twice back to back with no flakes (31 passed, 1 expected fail, both times). `npx eslint` on the three new files passes. `npx tsc --noEmit` reports nothing new in the three new files — the 13 errors it reports elsewhere already exist on unmodified develop (same count the SCRUM-249 report records). `npm run build` passes.
+Each was run twice back to back with no flakes (32 passed, both times). `npx eslint` on the three new files passes. `npx tsc --noEmit` reports nothing new in the three new files — the 13 errors it reports elsewhere already exist on unmodified develop (same count the SCRUM-249 report records). `npm run build` passes.
 
 ## Proof the tests can fail
 
@@ -102,20 +102,19 @@ No test needed strengthening here; each breakage was caught on the first try.
 - **H5 and A6 (360 px / phone screen) are only partly testable here.** Vitest runs in jsdom, which has no layout engine, so it cannot measure real overflow or confirm 44 px tap targets. The independent tests at 360 px only check that the controls stay real, labelled, interactive elements (an `<a>`, a `<button>`, an `<input>`) and that no content silently disappears. **The real check is Wassim's own Playwright browser test**, which measures actual geometry at 360 px.
 - **The 13 `tsc --noEmit` errors are pre-existing.** They are in files this work did not touch and already exist on unmodified develop; they are not introduced by these tests.
 
-## Defect
+## Defect — fixed
 
-**File:** `frontend/src/app/(parent)/parent/absences.independent.test.tsx:359`
-**Marked:** `it.fails`, with a `BUG:` comment at line 348 — to be raised on PR #147 (Jira bug key: SCRUM-297)
+**File:** `frontend/src/app/(parent)/parent/absences.independent.test.tsx:358` (Jira bug key: SCRUM-297)
 
-**Cause:** `frontend/src/app/(parent)/parent/AbsencesPanel.tsx:33-37` (`friendly()`) turns any `ApiError` that isn't 401/403/404 into one fixed sentence, "Couldn't complete the request. Please try again.", instead of showing the server's own `detail`. The cancel error path at `:84-85` uses this same `friendly()` for every cancel failure, including a 409.
+**Fixed by:** PR #173 (SCRUM-297), merged into develop. `friendly()` in `frontend/src/app/(parent)/parent/AbsencesPanel.tsx:33-38` now has a dedicated 409 branch (`cause.status === 409 ? cause.message`) that passes the server's own `detail` through instead of falling into the generic "Couldn't complete the request" sentence. The cancel error path at `:84-87` uses this same `friendly()`, so the fix covers cancel failures too. The test above is now a normal `it(...)` and passes.
 
-**Expected** (A5, and `runs.md` "Errors": *"Cancel an absence that ended before today | 409 | `detail`"*): cancelling an absence that has already ended should show the server's own reason in plain words.
+**Original cause:** `friendly()` turned any `ApiError` that wasn't 401/403/404 into one fixed sentence, "Couldn't complete the request. Please try again.", instead of showing the server's own `detail`.
 
-**Actual:** the screen shows only "Couldn't complete the request. Please try again." The specific reason from the server is discarded. The absence row is correctly kept (no data loss), but the parent is told to retry an action that can never succeed, since the absence has already ended.
+**Original expected** (A5, and `runs.md` "Errors": *"Cancel an absence that ended before today | 409 | `detail`"*): cancelling an absence that has already ended should show the server's own reason in plain words.
 
-**Severity: low-to-medium.** This is a usability/wording issue, not a correctness or data-safety bug — nothing is lost, nothing is double-cancelled, and the UI's own fallback message is still "plain words", just not the server's words.
+**Original actual:** the screen showed only "Couldn't complete the request. Please try again." The specific reason from the server was discarded. The absence row was correctly kept (no data loss), but the parent was told to retry an action that could never succeed, since the absence had already ended.
 
-**Honest note — this is a judgement call.** A5 says "server errors … are shown in plain words". The screen does show *a* plain-words message; it just isn't the server's specific reason. Whether that counts as failing A5 depends on how literally "shown" is read. I read it as the server's own reason should reach the screen (the contract bothers to define a specific 409 `detail` for exactly this case, which implies it's meant to be shown), so I'm flagging it — but a reviewer could reasonably decide the generic fallback already satisfies the letter of A5 and downgrade this to a suggestion rather than a defect.
+**Severity: low-to-medium.** This was a usability/wording issue, not a correctness or data-safety bug — nothing was lost, nothing was double-cancelled, and the UI's own fallback message was still "plain words", just not the server's words.
 
 ## Accessibility observation (not a defect)
 
