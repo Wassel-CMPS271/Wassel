@@ -1,0 +1,6 @@
+control-reset mail=1 n=1 204=1
+reset-cooldown mail=0 n=9 204=9
+control-login mail=1 n=1 204=1
+login-cooldown mail=0 n=20 429=20
+resend-cooldown mail=0 n=15 429=15
+reset-share mail=29 n=40 204=40

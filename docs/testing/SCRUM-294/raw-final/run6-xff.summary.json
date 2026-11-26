@@ -1,0 +1,1 @@
+{"run":"xff","vus":1,"limited":true,"requests":60,"seconds":1.7,"statuses":{"login_401":30,"login_429":30},"first429At":31,"latencyMs":{"avg":29,"p95":60,"max":81}}
