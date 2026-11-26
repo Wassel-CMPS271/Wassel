@@ -37,6 +37,7 @@ import com.wassel.backend.schools.exception.HolidayAlreadyExistsException;
 import com.wassel.backend.schools.exception.HolidayNotFoundException;
 import com.wassel.backend.schools.exception.InvalidSchoolTimesException;
 import com.wassel.backend.students.exception.InvalidStopOrderException;
+import com.wassel.backend.students.exception.InvalidImportException;
 import com.wassel.backend.students.exception.StudentAlreadyExistsException;
 import com.wassel.backend.students.exception.StudentNotActiveException;
 import com.wassel.backend.students.exception.StudentNotFoundException;
@@ -195,6 +196,14 @@ public class GlobalExceptionHandler {
 
 	// Same shape again, keyed by "guardianPhone", for a student that looks like a duplicate of
 	// an existing one (same name and guardian phone) within a school.
+	// A whole import that cannot be read as a list of numbered rows (SCRUM-300): the same "Validation failed" body as a
+	// field error, keyed "students".
+	@ExceptionHandler(InvalidImportException.class)
+	public ProblemDetail handleInvalidImport(InvalidImportException ex) {
+		logRejected(ex);
+		return validationProblem("students", ex.getMessage());
+	}
+
 	@ExceptionHandler(StudentAlreadyExistsException.class)
 	public ProblemDetail handleStudentAlreadyExists(StudentAlreadyExistsException ex) {
 		logRejected(ex);

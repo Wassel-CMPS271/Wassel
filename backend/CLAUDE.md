@@ -262,6 +262,17 @@ that's the structure this codebase moved away from.
   lookup clears any previous (non-manual) pin rather than leaving it pointing at the old address.
   `updateLocation` (the hand-correction endpoint) sets `manualPin = true`. A brand-new student
   never has a manual pin yet, so `addStudent` geocodes unconditionally when given an address.
+  Bulk import (SCRUM-300, `docs/contracts/students-import.md`): `POST /api/head-of-transport/students/import` answers one result per row
+  (200 even when every row is rejected). `StudentService.importStudents` checks the request as a whole first (1 to 500 rows, a row number
+  of 1 or more on each, no repeated row number: `InvalidImportException`, a 400 keyed `students`), then each row on its own: the same
+  `CreateStudentRequest` constraints as single create through an injected `Validator` (one message per field, "is required" wins), then a repeat
+  of an earlier row of the request (named by its row number; letter case compared by the database through `StudentRepository.sameName`, so
+  it agrees with single create's `...IgnoreCase` query), then the roster. The created rows are saved together in the one transaction, in
+  request order, with no address, route or parent and no geocoding. `dto/CleanText` is the one trim (non-breaking spaces and a leading byte-order
+  mark too) for single create and import. Length limits on `CreateStudentRequest` (names 100, grade 50) make a too-long value a field error
+  instead of a 500 (SCRUM-299), and an empty phone passes the format pattern so a blank one only ever gets "is required". Known limits: the duplicate
+  check is read-then-write with no unique index (two imports at once can create the same student), and wrong-typed values (`"row": "5"`)
+  follow Jackson's defaults, unverified.
 - `routes` — a school's routes (SCRUM-208), which students ride each one (SCRUM-209), their
   hand-set order (SCRUM-210), and each stop's arrival time (SCRUM-212), under
   `/api/head-of-transport/routes`. A vehicle or driver can be on at most one route (checked in

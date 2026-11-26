@@ -13,32 +13,39 @@ import jakarta.validation.constraints.Size;
  */
 public record CreateStudentRequest(
 		@NotBlank(message = "First name is required")
+		@Size(max = 100, message = "First name must be 100 characters or fewer")
 		String firstName,
 
 		@NotBlank(message = "Last name is required")
+		@Size(max = 100, message = "Last name must be 100 characters or fewer")
 		String lastName,
 
 		@NotBlank(message = "Grade is required")
+		@Size(max = 50, message = "Grade must be 50 characters or fewer")
 		String grade,
 
 		@NotBlank(message = "Guardian name is required")
+		@Size(max = 100, message = "Guardian name must be 100 characters or fewer")
 		String guardianName,
 
 		@NotBlank(message = "Guardian phone is required")
-		@Pattern(regexp = "^\\+961 \\d{1,2} \\d{3} \\d{3}$",
+		// An empty value passes the pattern, so "is required" is the only message a blank phone gets, whatever order
+		// Bean Validation checks in. The pattern allows at most 15 characters, which is also the length limit.
+		@Pattern(regexp = "^$|^\\+961 \\d{1,2} \\d{3} \\d{3}$",
 				message = "Use a format like \"+961 3 123 456\" or \"+961 70 234 567\"")
 		String guardianPhone,
 
 		@Size(max = 255, message = "Address must be 255 characters or fewer")
 		String address) {
 
-	// Trims before the @Pattern check runs, so surrounding whitespace doesn't fail validation.
+	// Trims before the @Pattern check runs, so surrounding whitespace doesn't fail validation. The trim is CleanText's
+	// (also non-breaking spaces and a leading byte-order mark), the same one an import row gets.
 	public CreateStudentRequest {
-		firstName = firstName == null ? null : firstName.trim();
-		lastName = lastName == null ? null : lastName.trim();
-		grade = grade == null ? null : grade.trim();
-		guardianName = guardianName == null ? null : guardianName.trim();
-		guardianPhone = guardianPhone == null ? null : guardianPhone.trim();
+		firstName = CleanText.of(firstName);
+		lastName = CleanText.of(lastName);
+		grade = CleanText.of(grade);
+		guardianName = CleanText.of(guardianName);
+		guardianPhone = CleanText.of(guardianPhone);
 		address = normalizeAddress(address);
 	}
 
@@ -47,7 +54,7 @@ public record CreateStudentRequest(
 		if (address == null) {
 			return null;
 		}
-		String trimmed = address.trim();
+		String trimmed = CleanText.of(address);
 		return trimmed.isEmpty() ? null : trimmed;
 	}
 }

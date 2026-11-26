@@ -1,6 +1,6 @@
 # Students import contract (SCRUM-59)
 
-**Status: PROPOSED, not implemented.** Nothing on this page exists in the backend yet: today the CSV import screen calls the single create (`POST /api/head-of-transport/students`) once per row. This page is the shape both sides agree on before the endpoint is built.
+**Status: implemented by SCRUM-300** (see [Decisions](#decisions-backend-owner-scrum-300)). Until the frontend switches to it, the CSV import screen still calls the single create (`POST /api/head-of-transport/students`) once per row.
 
 The head of transportation imports many students from a file in one request and gets a result for every row. Build against this page, not against each other's code. One school.
 
@@ -192,6 +192,24 @@ The request succeeds (200) and only that row is `rejected`, with these `errors`:
 10. **The proposed message texts** (length limits, the three `errors.students` messages, the in-file duplicate) are suggestions; change them here before building if you prefer others.
 11. **The 500-row cap.** Chosen so a request stays quick without addresses; raise or lower it if the insert and duplicate query say otherwise.
 12. **Trim and non-breaking spaces.** Use `strip()` plus removal of U+FEFF in `CreateStudentRequest` (and the import row), so a phone cell ending in U+00A0 is accepted and a name made only of U+00A0 is "required"? It changes single create, so it lands in the same backend PR as the length limits (question 5).
+
+## Decisions (backend owner, SCRUM-300)
+
+The endpoint is built. These are the answers to the open questions above, so the frontend can rely on them. Everything not listed here is as written above.
+
+1. **Validator per row.** `StudentService.importStudents` runs an injected `jakarta.validation.Validator` on a `CreateStudentRequest` built from each row, so the constraints and messages are single create's. Checks 2 to 4 of "Well-formed request" are made by the service and thrown as `InvalidImportException`, answered with the `"Validation failed"` body and `errors.students`.
+2. **"Is required" wins.** The phone pattern accepts the empty string (`^$|^\+961 ...$`), so a blank phone fails only `@NotBlank`; the length checks never fail on an empty value. The import also keeps one message per field and prefers a "... is required" one, as a second guard. Single create gets the same rule from the same annotations.
+3. **One transaction.** The created rows are saved together (`saveAllAndFlush`) in the request's transaction, in request order. An unexpected failure is a 500 that saves nobody. No unique index, so there is no insert conflict to handle; the race in Known limits stays.
+4. **Duplicates.** The roster is asked with single create's own derived query, once per valid row (at most 500 short queries). A repeat inside the request is a repeat when the guardian phone is equal and the names are equal in the database's own comparison (`upper(...)`, `StudentRepository.sameName`), asked only when the names are not already identical. **An earlier row of the request is checked before the roster**, so a later copy always names row N, as the contract says, even when the first copy was already in the roster. No unique index (it needs a data check and a migration; left for a follow-up).
+5. **Length limits** are on `CreateStudentRequest` (single create) and so on import, with the proposed texts. The add-student form already shows server field errors next to their fields.
+6. **No address.** The row type has no `address`; an `address` in a row is ignored (Jackson ignores unknown fields) and nothing is geocoded.
+7. **Wrong types and unknown fields** are not changed from Boot's defaults. Verified by the tests: not JSON, `"students": {}` and `"students": "x"` are 400 `"Malformed request body"`. Not verified (so not promised): whether `"row": "5"` or `"firstName": 123` are converted rather than refused.
+8. **Role-access test row** added (`HEAD_OF_TRANSPORT_ONLY`, with a valid body).
+9. **Order.** Students are saved in request order; their creation times may be equal, so their order among themselves in the roster is not promised.
+10. **Texts** are the proposed ones. 11. **500 rows** stays.
+12. **Trim.** `CleanText.of` (`strip()` plus the non-breaking space and a leading U+FEFF) is used by `CreateStudentRequest` and so by single create and import.
+
+Tests: `StudentImportServiceTests` and `CreateStudentRequestTests` (no database), `StudentImportTests` (the samples of this page through the real endpoint) and the row in `RoleAccessMatrixTests`.
 
 ## Changing this contract
 

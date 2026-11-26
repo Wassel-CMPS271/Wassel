@@ -1,6 +1,8 @@
 package com.wassel.backend.students.controller;
 
 import com.wassel.backend.students.dto.CreateStudentRequest;
+import com.wassel.backend.students.dto.ImportStudentsRequest;
+import com.wassel.backend.students.dto.ImportStudentsResponse;
 import com.wassel.backend.students.dto.LinkParentRequest;
 import com.wassel.backend.students.dto.StudentResponse;
 import com.wassel.backend.students.dto.UpdateStudentAddressRequest;
@@ -51,6 +53,13 @@ public class StudentController {
 	public StudentResponse addStudent(@AuthenticationPrincipal User headOfTransport,
 			@Valid @RequestBody CreateStudentRequest request) {
 		return studentService.addStudent(schoolIdOf(headOfTransport), request);
+	}
+
+	/** 200 and not 201: a well-formed request may create nobody. One result per row, in request order. */
+	@PostMapping("/import")
+	public ImportStudentsResponse importStudents(@AuthenticationPrincipal User headOfTransport,
+			@RequestBody ImportStudentsRequest request) {
+		return studentService.importStudents(schoolIdOf(headOfTransport), request);
 	}
 
 	@PatchMapping("/{id}/address")
