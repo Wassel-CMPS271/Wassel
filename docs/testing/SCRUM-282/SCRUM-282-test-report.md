@@ -1,5 +1,45 @@
 # SCRUM-282 — Independent operations UI tests
 
+## 28 November 2026 — review fixes: normal imports and real clients
+
+Addressed Majd's 26 November **CHANGES_REQUESTED** review on existing PR #151. Driver #144, roster/address #142 and live-control #168 are already merged. Latest inspected `origin/develop` is **f29b72ec69b4c22389c7a3b9b2d77d06a426f757**; its operations production modules match this branch. The branch started clean at **a8488b752d80e2526488efeb52fb05d0c5bb4d21**. No develop/feature PR was merged during this work, and no teammate production code, branch, Jira status or review decision was changed.
+
+### Corrected independent tests
+
+- Deleted `operationsCandidate.ts` and all candidate selectors, Git subprocesses, dynamic compilation and copied API interfaces. All six suites use ordinary imports of current working-tree modules and public DTO types. `operationsContract.ts` supplies typed test fixtures/HTTP helpers only; it supplies no business API implementation.
+- Roster decisions, GPS permission/sharing/position submission and Admin authentication/logout now exercise the real authenticated clients and `request()` through stubbed **fetch**, rather than replacing client methods. Exact methods, paths, cookie credentials, payloads and no supplied ownership are asserted.
+- Kept durable keys, cross-tab interleaving, account isolation, deadline-through-response-body, delayed-conflict draft and navigation/privacy assertions. Added specific UI/client recovery checks for 400, 401, 403, 404, 409 and 422, explicit retry versus no blind resubmission, and no false success. Network/5xx decisions retain the row; transient replay retries retain the same key. Added actual GPS position-wire coverage.
+- Fixed the reassignment tautology: assertions inspect the **returned server receipt**, its driver/counts and the unchanged source driver. API-only error cases are named as propagation checks, not UI recovery coverage. History uses the full public DTO.
+- Removed the incorrect oracle that treated exclusion of every `NOT_STARTED` run as an accepted requirement. The test still checks active location joins and exclusion of finished runs; missing not-started/late behavior is explicitly recorded as incomplete in [the feature-owner blocker report](SCRUM-274-feature-blockers.md), not counted as passing acceptance.
+
+The former 58-case available slice now has **71 independent cases** (13 added): queue/state 16, GPS permission/transport 5, roster 13, address client 10, live control/client 20, Admin 7. No failure was skipped, deleted, marked expected-failure or weakened to manufacture a pass. The invalid fixture-to-fixture and missing-feature oracles above were corrected explicitly.
+
+### Executed bounded verification
+
+| Check | Actual result |
+| --- | --- |
+| Rewritten independent suites + safe-reporter regression | **72 passed / 0 failed / 0 skipped**, 7 files, exit 0, 25.33 seconds (71 acceptance + 1 evidence/privacy test) |
+| Final current files in a separate directory with **no `.git` or Git ancestor** | **72 passed / 0 failed / 0 skipped**, 7 files, exit 0, 19.99 seconds; `git rev-parse` fails there as expected |
+| Focused ESLint on all changed tests, fixture and test runner/reporter | Passed after fixing the introduced const/unused-import findings |
+| TypeScript `--noEmit --incremental false` | **Fails on 13 existing diagnostics** in unrelated Admin invitation/routing/Parent test fixtures; baseline HEAD archive and changed branch output are byte-identical (SHA-256 `F79F114CA0A883EE654B80CD15AA8D1025F15E42AE7447CDA583B4AEAB372F26`), **0 introduced diagnostics**. The new GPS DOM fixture typing was corrected. |
+| Playwright compilation/discovery | **2 scenarios collected**, exit 0: address decisions and offline replay. Discovery is not browser execution. |
+
+The 422 rejection diagnostic in the unit log is an expected exercised error path, not a failing test. Full frontend coverage/build, Maven and real database/browser execution are left to the normal current-head CI runs rather than repeating the approximately ten-minute local regression for a test-only review fix. Their new results are **pending at this report commit** and must be read on the actual pushed SHA; the PR description will link those results after execution. Historical passes below are not new verification claims.
+
+### CI review corrections
+
+- Deleted duplicate `operations-independent.yml`. The unchanged required **frontend-build** gate still runs the **entire** frontend suite with the existing **86.6%** coverage floor and ordinary failure behavior; JSON results are now uploaded with this acceptance-scope report as `frontend-test-results` alongside the existing coverage artifact. No check ID, coverage floor or test selection was weakened.
+- `operations-address-e2e.yml` now has explicit relevant path filters, no special test-branch push trigger, and retains PR-to-develop/develop-push/manual execution. Its real PostgreSQL job uses the new native `--suite=operations` in `e2e/run.mjs`; the source-patching `review-operations-address.mjs` wrapper is deleted. Other suites and existing wrapper markers are preserved.
+- The operations browser artifact `operations-acceptance-evidence` contains only a whitelisted status/timing/test-name summary and this report. A regression checks that errors, stdout/stderr, attachments and credential sentinels cannot be serialized. Credentials, auth/mail/backend logs, raw traces, screenshots and video are not uploaded by this workflow. Prior safe summaries are archived before a new local run to prevent stale-success evidence.
+
+### Completion blockers — keep Draft
+
+The available tests are now reproducible against current source without Git. This does **not** complete missing SCRUM-274 behavior. Majd must expose supported `NOT_STARTED` reassignment and, with the backend/product owners, resolve the absent Head lateness contract/UI or obtain a formal scope split. Head live-control phone-width and real-backend reassignment acceptance also remain unverified. See the [precise owner actions](SCRUM-274-feature-blockers.md).
+
+Keep PR #151 **Draft**, request re-review of these test fixes when appropriate, and do not mark the overall ticket complete based only on green available cases. Generated evidence remains ignored in main-repository `tmp/SCRUM-282-review-fixes-20261128/`; the initial archive and all earlier report sections are preserved. No PR was merged and no Jira/Draft status changed.
+
+
+
 ## 26 November 2026 — develop synchronization and push-CI fix
 
 The earlier green PR workflow used GitHub's test merge with current develop, while push CI tested the older feature branch and failed 11 live-control delivery gates. At Wassim's explicit request, merged accepted develop **6d20edfa0ac82aad86a2eb2e43a26ef7d9c4a383** into the existing `test/SCRUM-282-operations-ui-tests` branch. Merge commit **794fedaa7738bd7e8ab97585ce318560233d0496** preserves both parents (`5cd9e83` and `6d20edf`); the merge completed without unresolved conflicts or a history rewrite. `liveRuns.ts` and the real `getRunLocations` export are now in the branch itself.

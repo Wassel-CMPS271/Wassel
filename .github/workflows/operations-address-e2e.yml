@@ -1,10 +1,32 @@
 name: Independent address decisions and offline replay E2E
 on:
   push:
-    branches: [test/SCRUM-282-operations-ui-tests, develop]
+    branches: [develop]
+    paths:
+      - 'backend/**'
+      - 'frontend/src/**'
+      - 'frontend/e2e/operations-*.e2e.ts'
+      - 'frontend/e2e/run.mjs'
+      - 'frontend/e2e/safe-summary-reporter*'
+      - 'frontend/e2e/auth-helpers.ts'
+      - 'frontend/playwright.config.ts'
+      - 'frontend/package*.json'
+      - 'docs/contracts/**'
+      - '.github/workflows/operations-address-e2e.yml'
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [develop]
+    paths:
+      - 'backend/**'
+      - 'frontend/src/**'
+      - 'frontend/e2e/operations-*.e2e.ts'
+      - 'frontend/e2e/run.mjs'
+      - 'frontend/e2e/safe-summary-reporter*'
+      - 'frontend/e2e/auth-helpers.ts'
+      - 'frontend/playwright.config.ts'
+      - 'frontend/package*.json'
+      - 'docs/contracts/**'
+      - '.github/workflows/operations-address-e2e.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,7 +50,6 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@v4
-      # Roster/address UI is now merged into develop; test this exact checkout.
       - uses: actions/setup-java@v4
         with:
           java-version: '21'
@@ -44,11 +65,21 @@ jobs:
       - run: npm run test:e2e:install -- --with-deps
         working-directory: frontend
       - name: Real address decisions and offline confirmation replay
-        run: node e2e/review-operations-address.mjs
+        run: npm run test:e2e -- --suite=operations
         working-directory: frontend
         env:
           E2E_MAVEN_CMD: mvn
           E2E_DB_URL: jdbc:postgresql://127.0.0.1:5432/wassel_e2e
           E2E_DB_USERNAME: postgres
           E2E_DB_PASSWORD: disposable-ci-only
-      # No upload of authentication/mail logs, database files, traces or video.
+      - name: Upload safe operations result and acceptance scope
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operations-acceptance-evidence
+          retention-days: 7
+          path: |
+            frontend/e2e-artifacts/operations-summary.json
+            docs/testing/SCRUM-282/
+          if-no-files-found: warn
+      # Never upload credentials, auth/mail/backend logs, traces, screenshots or video.

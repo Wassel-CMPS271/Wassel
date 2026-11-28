@@ -57,3 +57,6 @@ next-env.d.ts
 
 # Isolated dual-UI review launchers
 /e2e/.parent-driver-review-run-*.mjs
+
+# Generated frontend test evidence (uploaded by CI, not source)
+/test-results/

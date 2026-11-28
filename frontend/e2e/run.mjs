@@ -9,7 +9,7 @@ import { createServer } from "node:net";
 const args = process.argv.slice(2);
 const suiteIndex = args.findIndex(arg => arg.startsWith("--suite="));
 const suite = suiteIndex < 0 ? "routing" : args.splice(suiteIndex, 1)[0].slice("--suite=".length);
-if (!["routing", "auth", "absences"].includes(suite)) throw new Error("Unknown E2E suite");
+if (!["routing", "auth", "absences", "operations"].includes(suite)) throw new Error("Unknown E2E suite");
 const authentication = suite !== "routing"; // Absences reuse the isolated production demo/auth seed.
 const webPort = authentication ? 4180 : 4173;
 const apiPort = authentication ? 18177 : 18080;
@@ -20,7 +20,7 @@ const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const backend = resolve(frontend, "../backend");
 const artifacts = resolve(frontend, "e2e-artifacts");
 mkdirSync(artifacts, { recursive: true });
-const previous = readdirSync(artifacts).filter(name => name.endsWith(".log") || ["report", "results"].includes(name));
+const previous = readdirSync(artifacts).filter(name => name.endsWith(".log") || ["report", "results", "operations-summary.json"].includes(name));
 if (previous.length) {
   const archive = resolve(artifacts, "history", new Date().toISOString().replaceAll(":", "-"));
   mkdirSync(archive, { recursive: true });
@@ -134,7 +134,7 @@ try {
   await run(maven, mavenArgs, backend, "prepare.log");
   const classpath = [resolve(backend, "target/test-classes"), resolve(backend, "target/classes"), readFileSync(resolve(backend, "target/e2e-classpath.txt"), "utf8").trim()].join(delimiter);
   const java = process.env.JAVA_HOME ? resolve(process.env.JAVA_HOME, "bin", windows ? "java.exe" : "java") : "java";
-  const api = launch(java, ["-cp", classpath, authentication ? "com.wassel.backend.e2e.AuthE2eApplication" : "com.wassel.backend.e2e.RoutingE2eApplication", "--spring.profiles.active=local,e2e", "--server.address=127.0.0.1", `--server.port=${apiPort}`], backend, "backend.log");
+  const api = launch(java, ["-cp", classpath, authentication ? "com.wassel.backend.e2e.AuthE2eApplication" : "com.wassel.backend.e2e.RoutingE2eApplication", "--spring.profiles.active=local,e2e", ...(suite === "operations" ? ["--spring.main.sources=com.wassel.backend.e2e.WeekdayE2eClock"] : []), "--server.address=127.0.0.1", `--server.port=${apiPort}`], backend, "backend.log");
   await ready("backend seed", async () => existsSync(resolve(artifacts, "backend.log")) && readFileSync(resolve(artifacts, "backend.log"), "utf8").includes("E2E_SEED_READY"), api);
   console.log("E2E backend seeded (PostgreSQL + Flyway)");
   const stamp = resolve(frontend, ".next/e2e-build.json");
@@ -154,7 +154,7 @@ try {
   // delete-on-run artifacts are ignored by git and never uploaded by CI.
   const credentials = resolve(artifacts, "credentials.json");
   writeFileSync(credentials, JSON.stringify(authentication ? { password: env.WASSEL_E2E_PASSWORD, accounts: { ADMIN: "admin@auth-e2e.invalid", HEAD_OF_TRANSPORT: "auth+head@auth-e2e.invalid", DRIVER: "auth+driver-karim@auth-e2e.invalid", PARENT: "auth+parent@auth-e2e.invalid" } } : { email: "routing-head@e2e.invalid", password: env.WASSEL_E2E_PASSWORD }), { mode: 0o600 });
-  await run(process.execPath, ["node_modules/@playwright/test/cli.js", "test", ...(suite === "absences" ? ["absences.e2e.ts"] : authentication ? ["auth.e2e.ts", "auth-revocation.e2e.ts"] : ["routing.e2e.ts"]), ...args], frontend);
+  await run(process.execPath, ["node_modules/@playwright/test/cli.js", "test", ...(suite === "operations" ? ["operations-address.e2e.ts", "operations-replay.e2e.ts"] : suite === "absences" ? ["absences.e2e.ts"] : authentication ? ["auth.e2e.ts", "auth-revocation.e2e.ts"] : ["routing.e2e.ts"]), ...(suite === "operations" ? ["--reporter=list,./e2e/safe-summary-reporter.ts"] : []), ...args], frontend);
 } catch (error) {
   console.error(`E2E FAILED: ${error.message}`); process.exitCode = 1;
 } finally {

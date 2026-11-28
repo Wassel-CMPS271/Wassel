@@ -178,9 +178,21 @@ jobs:
       # Same run as `npm test` (a failing test still fails the job), plus a coverage report (SCRUM-151). It also
       # fails below the line-coverage floor in vitest.config.mts (SCRUM-292).
       - name: Test
-        run: npm run test:coverage
+        run: |
+          mkdir -p test-results
+          npm run test:coverage -- --reporter=default --reporter=json --outputFile=test-results/frontend.json
         working-directory: frontend
       # The number goes in the job summary (SCRUM-292), from vitest's json-summary report.
+      - name: Upload frontend test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-test-results
+          retention-days: 7
+          path: |
+            frontend/test-results/frontend.json
+            docs/testing/SCRUM-282/
+          if-no-files-found: warn
       - name: Coverage summary
         if: always()
         working-directory: frontend

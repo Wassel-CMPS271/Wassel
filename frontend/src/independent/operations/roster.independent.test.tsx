@@ -1,25 +1,108 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
-import type { ComponentType } from "react";
-import { candidate } from "@/test-support/operationsCandidate";
-const ref = process.env.WASSEL_ROSTER_CANDIDATE || "HEAD";
-interface Row { id: string; studentId: string; studentName: string; currentAddress: string | null; requestedAddress: string; requestedLat: number | null; requestedLng: number | null; requestedBy: { parentUserId: string; email: string }; status: string; createdAt: string; decidedAt: string | null; rejectionReason: string | null; }
-interface Api { list(): Promise<Row[]>; approve(id: string): Promise<Row>; reject(id: string, reason?: string): Promise<Row>; }
-function component() { return candidate<{ AddressRequestsSection: ComponentType<{ api: Api | null; onApproved(id: string): void }> }>("app/(head-of-transport)/head-of-transport/students/AddressRequestsSection.tsx", ref).AddressRequestsSection; }
-const first: Row = { id: "a", studentId: "s", studentName: "Lina", currentAddress: "Saved street", requestedAddress: "Requested street", requestedLat: null, requestedLng: null, requestedBy: { parentUserId: "p", email: "p@example.invalid" }, status: "pending", createdAt: "2026-11-09T07:00:00Z", decidedAt: null, rejectionReason: null };
-const second: Row = { ...first, id: "b", studentId: "t", studentName: "Omar" };
-function api(rows = [first]) { return { list: vi.fn().mockResolvedValue(rows), approve: vi.fn().mockResolvedValue({ ...first, status: "approved" }), reject: vi.fn().mockResolvedValue({ ...first, status: "rejected" }) } satisfies Api; }
-function show(source: Api) { const Section = component(); const approved = vi.fn(); render(<Section api={source} onApproved={approved} />); return approved; }
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { AddressRequestsSection } from "@/app/(head-of-transport)/head-of-transport/students/AddressRequestsSection";
+import { addressRequestsApi, type AddressRequest } from "@/lib/api/addressRequests";
+import { address, deferred, pathOf, response } from "@/test-support/operationsContract";
+
+const first: AddressRequest = { ...address, id: "a", studentId: "s" };
+const second: AddressRequest = { ...first, id: "b", studentId: "t", studentName: "Omar" };
+const endpoint = "/api/head-of-transport/address-requests";
+let rows: AddressRequest[]; let fetcher: ReturnType<typeof vi.fn>;
+let decisionFailure: number | "network" | undefined;
+let nextList: Promise<Response> | undefined;
+const calls = (method: string) => fetcher.mock.calls.filter(([, init]) => (init?.method ?? "GET") === method);
 const row = (name: string) => screen.getByText(name).closest("li")!;
-it("has a real authenticated address API before acceptance completion", () => { expect(candidate<{ addressRequestsApi: unknown }>("lib/api/addressRequests.ts", ref).addressRequestsApi).not.toBeNull(); });
-it("does not label a proposed address as saved", async () => { show(api()); await screen.findByText("Lina"); expect(within(row("Lina")).getByText("Current saved address: Saved street")).toBeVisible(); expect(within(row("Lina")).getByText("Requested (not yet saved): Requested street")).toBeVisible(); expect(screen.queryByText("Current saved address: Requested street")).not.toBeInTheDocument(); });
-it("shows loading and an explicit empty state", async () => { show(api([])); expect(screen.getByText(/^Loading address requests/)).toHaveAttribute("role", "status"); await screen.findByText("No pending address requests."); });
-it("approves one request without altering another row", async () => { const source = api([first, second]); const approved = show(source); await screen.findByText("Lina"); fireEvent.click(within(row("Lina")).getByRole("button", { name: "Approve address change for Lina" })); await screen.findByText("Address approved for Lina."); expect(source.approve).toHaveBeenCalledWith("a"); expect(screen.getByText("Omar")).toBeVisible(); expect(approved).toHaveBeenCalledWith("s"); });
-it("requires reject confirmation and sends the optional reason", async () => { const source = api(); show(source); await screen.findByText("Lina"); fireEvent.click(screen.getByRole("button", { name: "Reject address change for Lina" })); expect(source.reject).not.toHaveBeenCalled(); fireEvent.change(screen.getByLabelText("Reason (optional)"), { target: { value: "Outside area" } }); fireEvent.click(screen.getByRole("button", { name: "Confirm reject address change for Lina" })); await screen.findByText("Address request rejected for Lina."); expect(source.reject).toHaveBeenCalledWith("a", "Outside area"); });
-it("keeps a failed decision visible and retryable", async () => { const source = api(); source.approve.mockRejectedValueOnce(new Error("offline")); show(source); await screen.findByText("Lina"); fireEvent.click(screen.getByRole("button", { name: "Approve address change for Lina" })); await screen.findByRole("alert"); expect(screen.getByText("Lina")).toBeVisible(); fireEvent.click(screen.getByRole("button", { name: "Approve address change for Lina" })); await screen.findByText("Address approved for Lina."); expect(source.approve).toHaveBeenCalledTimes(2); });
+const approve = (name = "Lina") => fireEvent.click(within(row(name)).getByRole("button", { name: `Approve address change for ${name}` }));
+function show() { const approved = vi.fn(); render(<AddressRequestsSection api={addressRequestsApi} onApproved={approved} />); return approved; }
+
+beforeEach(() => {
+  rows = [first]; decisionFailure = undefined; nextList = undefined;
+  fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.credentials).toBe("include");
+    const path = pathOf(input);
+    if ((init?.method ?? "GET") === "GET" && path === endpoint) {
+      if (nextList) { const pending = nextList; nextList = undefined; return pending; }
+      return response(rows);
+    }
+    const match = /^\/api\/head-of-transport\/address-requests\/([^/]+)\/(approve|reject)$/.exec(path);
+    if (!match || init?.method !== "POST") throw new Error(`Unexpected address request: ${input}`);
+    if (decisionFailure === "network") { decisionFailure = undefined; throw new TypeError("offline"); }
+    if (decisionFailure) { const status = decisionFailure; decisionFailure = undefined; return response(status === 400 ? { errors: { reason: "Reason was refused" } } : { detail: "Private server decision detail" }, status); }
+    const found = rows.find(item => item.id === decodeURIComponent(match[1]));
+    if (!found) return response({ detail: "Request not found" }, 404);
+    rows = rows.filter(item => item.id !== found.id);
+    return response({ ...found, status: match[2] === "approve" ? "approved" : "rejected", decidedAt: "2026-11-09T07:01:00Z", rejectionReason: init.body ? JSON.parse(String(init.body)).reason : null });
+  });
+  vi.stubGlobal("fetch", fetcher);
+});
+afterEach(() => vi.unstubAllGlobals());
+
+it("loads the actual authenticated address endpoint before acceptance completion", async () => {
+  show(); await screen.findByText("Lina");
+  expect(calls("GET")).toHaveLength(1);
+  expect(pathOf(calls("GET")[0][0])).toBe(endpoint);
+  expect(calls("GET")[0][1].body).toBeUndefined();
+});
+it("does not label a proposed address as saved", async () => {
+  show(); await screen.findByText("Lina");
+  expect(within(row("Lina")).getByText("Current saved address: Saved street")).toBeVisible();
+  expect(within(row("Lina")).getByText("Requested (not yet saved): Requested street")).toBeVisible();
+  expect(screen.queryByText("Current saved address: Requested street")).not.toBeInTheDocument();
+});
+it("shows loading and an explicit empty state", async () => {
+  rows = []; show(); expect(screen.getByText(/^Loading address requests/)).toHaveAttribute("role", "status");
+  await screen.findByText("No pending address requests.");
+});
+it("approves one request without altering another row", async () => {
+  rows = [first, second]; const approved = show(); await screen.findByText("Lina"); approve();
+  await screen.findByText("Address approved for Lina.");
+  expect(calls("POST")).toHaveLength(1); expect(pathOf(calls("POST")[0][0])).toBe(`${endpoint}/a/approve`);
+  expect(screen.getByText("Omar")).toBeVisible(); expect(approved).toHaveBeenCalledWith("s");
+});
+it("requires reject confirmation and sends the optional reason", async () => {
+  show(); await screen.findByText("Lina"); fireEvent.click(screen.getByRole("button", { name: "Reject address change for Lina" }));
+  expect(calls("POST")).toHaveLength(0);
+  fireEvent.change(screen.getByLabelText("Reason (optional)"), { target: { value: " Outside area " } });
+  fireEvent.click(screen.getByRole("button", { name: "Confirm reject address change for Lina" }));
+  await screen.findByText("Address request rejected for Lina.");
+  expect(pathOf(calls("POST")[0][0])).toBe(`${endpoint}/a/reject`);
+  expect(JSON.parse(calls("POST")[0][1].body)).toEqual({ reason: "Outside area" });
+});
+it.each(["network", 500] as const)("keeps a %s decision failure visible and explicitly retryable", async failure => {
+  decisionFailure = failure; const approved = show(); await screen.findByText("Lina"); approve();
+  expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong. Please try again.");
+  expect(screen.queryByText("Private server decision detail")).not.toBeInTheDocument();
+  expect(screen.getByText("Lina")).toBeVisible(); expect(approved).not.toHaveBeenCalled();
+  expect(calls("POST")).toHaveLength(1); approve(); await screen.findByText("Address approved for Lina.");
+  expect(calls("POST")).toHaveLength(2); expect(approved).toHaveBeenCalledTimes(1);
+});
 it("preserves another row's typed rejection reason while resolving a stale decision", async () => {
-  const source = api([first, second]); let finish!: (rows: Row[]) => void; source.list.mockResolvedValueOnce([first, second]).mockReturnValueOnce(new Promise(resolve => { finish = resolve; })); const { ApiError } = candidate<{ ApiError: new (status: number) => Error }>("lib/api/errors.ts", ref); source.approve.mockRejectedValue(new ApiError(409)); show(source); await screen.findByText("Lina");
-  fireEvent.click(within(row("Omar")).getByRole("button", { name: "Reject address change for Omar" })); fireEvent.change(screen.getByLabelText("Reason (optional)"), { target: { value: "Keep this draft" } });
-  fireEvent.click(within(row("Lina")).getByRole("button", { name: "Approve address change for Lina" })); await waitFor(() => expect(source.list).toHaveBeenCalledTimes(2)); expect(screen.getByLabelText("Reason (optional)")).toHaveValue("Keep this draft"); await act(async () => finish([second]));
+  rows = [first, second]; show(); await screen.findByText("Lina");
+  const gate = deferred<Response>(); nextList = gate.promise; decisionFailure = 409;
+  fireEvent.click(within(row("Omar")).getByRole("button", { name: "Reject address change for Omar" }));
+  fireEvent.change(screen.getByLabelText("Reason (optional)"), { target: { value: "Keep this draft" } });
+  approve(); await waitFor(() => expect(calls("GET")).toHaveLength(2));
   expect(screen.getByLabelText("Reason (optional)")).toHaveValue("Keep this draft");
+  await act(async () => gate.resolve(response([second])));
+  expect(screen.getByLabelText("Reason (optional)")).toHaveValue("Keep this draft");
+});
+it.each([[401, "Your session has expired. Please sign in again."], [403, "You do not have permission to decide this request."]] as const)("explains HTTP %s without refetching or reporting success", async (status, message) => {
+  decisionFailure = status; const approved = show(); await screen.findByText("Lina"); approve();
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
+  expect(screen.queryByText("Private server decision detail")).not.toBeInTheDocument();
+  expect(screen.getByText("Lina")).toBeVisible(); expect(approved).not.toHaveBeenCalled();
+  expect(calls("GET")).toHaveLength(1); expect(calls("POST")).toHaveLength(1);
+});
+it.each([[404, "This request is no longer available. Refreshed the list."], [409, "This request was already decided by someone else. Refreshed the list."]] as const)("refetches HTTP %s decisions instead of silently resubmitting", async (status, message) => {
+  decisionFailure = status; const approved = show(); await screen.findByText("Lina"); rows = []; approve();
+  await screen.findByText(message); await screen.findByText("No pending address requests.");
+  expect(calls("GET")).toHaveLength(2); expect(calls("POST")).toHaveLength(1); expect(approved).not.toHaveBeenCalled();
+});
+it("renders the server's 400 reason error next to the entered rejection reason and preserves it", async () => {
+  decisionFailure = 400; const approved = show(); await screen.findByText("Lina");
+  fireEvent.click(screen.getByRole("button", { name: "Reject address change for Lina" }));
+  fireEvent.change(screen.getByLabelText("Reason (optional)"), { target: { value: "Keep this text" } });
+  fireEvent.click(screen.getByRole("button", { name: "Confirm reject address change for Lina" }));
+  await screen.findByText("Reason was refused"); expect(screen.getByLabelText("Reason (optional)")).toHaveValue("Keep this text");
+  expect(approved).not.toHaveBeenCalled(); expect(calls("GET")).toHaveLength(1); expect(calls("POST")).toHaveLength(1);
 });
