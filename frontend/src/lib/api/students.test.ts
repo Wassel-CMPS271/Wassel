@@ -91,6 +91,16 @@ describe("httpStudents", () => {
     );
   });
 
+  it("sends the paused status filter as it is", async () => {
+    const fetchMock = mockFetchOnce(true, 200, [STUDENT]);
+
+    await getStudents({ status: "paused" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${STUDENTS_URL}?status=paused`,
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it('omits status, grade and route from the query string when they are "all", and trims the query', async () => {
     const fetchMock = mockFetchOnce(true, 200, [STUDENT]);
 
@@ -256,7 +266,16 @@ describe("matchesFilters", () => {
   it("filters by exact status, and ignores status when it is \"all\"", () => {
     expect(matchesFilters(STUDENT, { status: "active" })).toBe(true);
     expect(matchesFilters(STUDENT, { status: "inactive" })).toBe(false);
+    expect(matchesFilters(STUDENT, { status: "paused" })).toBe(false);
     expect(matchesFilters(STUDENT, { status: "all" })).toBe(true);
+  });
+
+  it("tells a paused student apart from an active and an archived one", () => {
+    const paused: Student = { ...STUDENT, status: "paused" };
+    expect(matchesFilters(paused, { status: "paused" })).toBe(true);
+    expect(matchesFilters(paused, { status: "active" })).toBe(false);
+    expect(matchesFilters(paused, { status: "inactive" })).toBe(false);
+    expect(matchesFilters(paused, { status: "all" })).toBe(true);
   });
 
   it("filters by exact grade, and ignores grade when it is \"all\"", () => {

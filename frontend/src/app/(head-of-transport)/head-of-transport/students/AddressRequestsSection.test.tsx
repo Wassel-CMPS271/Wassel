@@ -324,7 +324,7 @@ it("keeps the request pending and shows a clear row message when approving an in
   fireEvent.click(within(row("Lina Daher")).getByRole("button", { name: "Approve address change for Lina Daher" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "This student is inactive, so the new address can't be saved. Reject the request instead.",
+    "This student is paused or archived, so the new address can't be saved. Reject the request instead.",
   );
   expect(screen.getByText("Lina Daher")).toBeInTheDocument();
   expect(api.list).toHaveBeenCalledTimes(1);
