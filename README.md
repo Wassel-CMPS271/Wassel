@@ -243,11 +243,11 @@ children), and school times of 08:00 arrival and 14:30 dismissal.
 
 The backend and its PostgreSQL database run on [Railway](https://railway.com), in one project with two services.
 
-- **URL:** https://wassel-production.up.railway.app (for example `GET /api/auth/me` answers `401` when signed out).
+- **URL:** https://wassel-production-a0724bec.up.railway.app (for example `GET /api/auth/me` answers `401` when signed out).
 - **How it deploys:** the Railway service builds `backend/Dockerfile` (root directory `/backend`) from the connected branch on every push to it. It follows `develop` while Sprint 2 is in progress and switches to `main` at the release, because `main` is still the Sprint 1 code. Change the branch under the service's Settings, "Branch connected to production".
 - **Never edit a migration that has reached `develop`.** Every migration merged to `develop` is applied to the hosted database for good, and Flyway checks each one's checksum at startup. Editing or renumbering one that already ran there (say, amending `V12__x.sql`) makes the service crash-loop on every deploy; add a new `V<n>` file instead. Before switching the branch to `main` at the release, decide what happens to the database: either reset it, or switch only once `main` has caught up with `develop`, because older code must not run against a newer schema.
 - **Profile:** the hosted backend deliberately runs the default Spring profile (`SPRING_PROFILES_ACTIVE` is not set), while the local staging stack runs `staging`. `application-staging.yml` is empty today, so nothing differs. If staging-only settings are ever added there, copy any the hosted backend also needs into Railway variables.
-- **Health check:** the backend answers `GET /actuator/health` without a sign-in: `{"status":"UP"}`, or 503 `DOWN` if the database is lost. Set it as the service's healthcheck under Settings, "Healthcheck Path" (`/actuator/health`), so Railway only switches to a new deployment once it is healthy and restarts one that is not. Point an uptime monitor at `https://wassel-production.up.railway.app/actuator/health` too. It says nothing else (no versions, no database name).
+- **Health check:** the backend answers `GET /actuator/health` without a sign-in: `{"status":"UP"}`, or 503 `DOWN` if the database is lost. Set it as the service's healthcheck under Settings, "Healthcheck Path" (`/actuator/health`), so Railway only switches to a new deployment once it is healthy and restarts one that is not. An external monitor checks it every 5 minutes, see [Uptime monitoring](#uptime-monitoring). It says nothing else (no versions, no database name).
 - **Logs:** open the service in Railway, then Deployments, then "View logs". The Grafana setup under [Logs](#logs) only covers the local staging stack, so look here first when something fails on the hosted backend.
 - **Outbound email needs Railway's Pro plan.** Every sign-in emails a code through Gmail SMTP, and Railway only allows outbound SMTP on the Pro plan and above (see [Railway's networking docs](https://docs.railway.com/networking/outbound-networking)). On the Free, Trial or Hobby plans the connection times out after 5 seconds and sign-in, including the admin's, answers 500 and stays unusable. The `401` from `/api/auth/me` does not send email, so it can't show this problem; only a real sign-in does. After upgrading, redeploy the service so SMTP opens.
 - **Database:** a Railway PostgreSQL service in the same project. The backend reads it through variable references, so no database password is stored in git or typed anywhere. Flyway builds the schema on the first start.
@@ -296,7 +296,7 @@ The frontend runs on [Vercel](https://vercel.com).
 | Variable | Value |
 | -------- | ----- |
 | `NEXT_PUBLIC_API_BASE_URL` | empty (set, not missing), so the browser calls the app's own origin. If it were stored as unset, the app would fall back to `http://localhost:8080` and every API call from the browser would fail while `/` and `/login` still answer 200 |
-| `BACKEND_URL` | the hosted backend, https://wassel-production.up.railway.app (see [Hosted backend (Railway)](#hosted-backend-railway)) |
+| `BACKEND_URL` | the hosted backend, https://wassel-production-a0724bec.up.railway.app (see [Hosted backend (Railway)](#hosted-backend-railway)) |
 
 - **Both halves must know each other's address.** On Railway, `CORS_ALLOWED_ORIGINS=https://wassel-sooty.vercel.app` and `FRONTEND_BASE_URL=https://wassel-sooty.vercel.app` (`https`, no trailing slash). The backend compares origins exactly, so a trailing `/` or `http://` makes every POST, sign-in included, fail with a 403. If the Vercel address ever changes (a custom domain, say), update both there; see [One site for the app and its API](#one-site-for-the-app-and-its-api).
 - **Check a new build reaches the backend through the proxy.** Open https://wassel-sooty.vercel.app/login with the browser's DevTools, Network tab, try a sign-in, and confirm the request goes to `wassel-sooty.vercel.app/api/auth/login` and not to `localhost:8080`.
@@ -326,6 +326,21 @@ What it checks:
 Exit code `0` means every check passed for all four roles, `1` that a check failed, `2` that nothing failed but a role was skipped (its email was not set), which is not a pass.
 
 The redirect from `/login` to each role's own area happens in the browser, so check it by hand once per deploy: sign in as each role at <https://wassel-sooty.vercel.app/login> and confirm you land on `/admin`, `/head-of-transport`, `/driver` or `/parent`, that another role's area sends you back to your own, and that "Sign out" returns you to `/login`.
+
+## Uptime monitoring
+
+An external monitor (SCRUM-291) checks the live site from outside, so we hear about an outage before a school does.
+
+- **Tool:** [UptimeRobot](https://uptimerobot.com), free plan, at its finest interval (every 5 minutes). Two HTTP(s) checks:
+
+| Check | URL | Down when |
+| ----- | --- | --------- |
+| Backend | https://wassel-production-a0724bec.up.railway.app/actuator/health | no answer within 30 seconds, or an error status (the health check answers 503 if the database is lost) |
+| Frontend | https://wassel-sooty.vercel.app | no answer within 30 seconds, or an error status |
+
+- **Alerts:** the free plan cannot email the whole team, so each alert goes to two places: an email to the UptimeRobot account owner (Mohamad), and a team Discord channel through a webhook, which every teammate can see. Both get the up, down, SSL and domain-expiry alerts. The webhook URL is a secret and is not stored in git.
+- **A planned deploy counts as downtime.** We do not pause the monitors for a deploy, so any minutes the site is unreachable while it deploys show on the record like any other outage.
+- **Status page:** [stats.uptimerobot.com/0oDCmNKnPa](https://stats.uptimerobot.com/0oDCmNKnPa) (public, shows both checks and their uptime).
 
 ## Logs
 
