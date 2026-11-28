@@ -272,7 +272,11 @@ public class RouteService {
 
 	@Transactional
 	public void deleteRoute(UUID schoolId, UUID routeId) {
-		Route route = findOwned(schoolId, routeId);
+		Route route = findLockedOwned(schoolId, routeId);
+		// A run in progress would be left with no driver able to end it, and its children on a bus until tomorrow.
+		activeRunGuard.blockReasonForRouteDelete(schoolId, routeId, route.getName()).ifPresent(reason -> {
+			throw new ActiveRunConflictException(reason);
+		});
 		studentService.clearRoute(schoolId, routeId);
 		proposalRepository.deleteForRoute(schoolId, routeId);
 		versionRepository.deleteForRoute(schoolId, routeId);

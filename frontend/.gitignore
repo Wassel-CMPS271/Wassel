@@ -54,3 +54,6 @@ next-env.d.ts
 
 # Isolated dual-UI review launchers
 /e2e/.parent-driver-review-run-*.mjs
+
+# Generated isolated transport E2E launcher
+/e2e/.transport-review-run-*.mjs

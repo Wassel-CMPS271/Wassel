@@ -111,7 +111,7 @@ All of Moustafa's rows are confirmed: the request bodies below are what's actual
 | POST | `/api/head-of-transport/routes` | `{ name, vehicleId, driverId }` | 201 `Route` | Moustafa, SCRUM-208 |
 | GET | `/api/head-of-transport/routes/{routeId}` | | 200 `Route` | Moustafa, SCRUM-208 |
 | PUT | `/api/head-of-transport/routes/{routeId}` | `{ name, vehicleId, driverId }` | 200 `Route` | Moustafa, SCRUM-208 |
-| DELETE | `/api/head-of-transport/routes/{routeId}` | | 204 | Moustafa, SCRUM-208 |
+| DELETE | `/api/head-of-transport/routes/{routeId}` | | 204; 409 while one of its runs is in progress today (see [`runs.md`](runs.md)) | Moustafa, SCRUM-208 |
 | POST | `/api/head-of-transport/routes/{routeId}/students` | `{ studentId }` | 200 `Route` | Moustafa, SCRUM-209 |
 | DELETE | `/api/head-of-transport/routes/{routeId}/students/{studentId}` | | 200 `Route` | Moustafa, SCRUM-209 |
 | PUT | `/api/head-of-transport/routes/{routeId}/stops` | `{ studentIds }`, the full new order | 200 `Route` | Moustafa, SCRUM-210 |

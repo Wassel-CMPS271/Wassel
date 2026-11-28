@@ -363,7 +363,9 @@ class DriverReassignmentCriteriaTests extends LiveRunCriteriaSupport {
 	@Test
 	void aRunWhoseRouteWasDeletedIs404() throws Exception {
 		Trip t = aStartedTrip("Hamra morning run");
-		assertEquals(204, send(delete(ROUTES + "/" + t.bus().routeId()).with(head())).getStatus());
+		// The API now answers 409 while the run is in progress (SCRUM-284), so the route row is removed behind it: readers
+		// must still cope with a run whose route is gone (a run is never listed or reassigned without its route).
+		routeRepository.deleteById(java.util.UUID.fromString(t.bus().routeId()));
 
 		assertEquals(404, reassign(t.run(), aSpare().driver(), t.bus().driverId()).getStatus());
 	}

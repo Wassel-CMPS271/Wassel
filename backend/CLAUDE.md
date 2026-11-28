@@ -428,12 +428,12 @@ that's the structure this codebase moved away from.
   read of the runs. `routes/config/TravelTimeWarmer` (not in the `test` profile) calls `RouteService.warmTravelTimes` on its
   own thread at startup so the road-time cache is not empty for the first requests after a restart. The afternoon is that
   list reversed with no times; each run shows its own confirmations. `routes` declares `service/ActiveRunGuard` and
-  `RouteService` calls it before changing a route's driver or vehicle (`editRoute`) and before a student leaves their route
+  `RouteService` calls it before changing a route's driver or vehicle (`editRoute`), before deleting a route (`deleteRoute`, SCRUM-284: `blockReasonForRouteDelete`, because a route deleted mid-run left the run in progress with nobody able to end it) and before a student leaves their route
   (`addStudent` onto another route, `removeStudent`); a block is `ActiveRunConflictException`, a 409 with the guard's text.
   `runs/service/RunActiveRunGuard` implements it (its own class, so `RunService` and `RouteService` do not need each other's
   beans); only today's `IN_PROGRESS` runs block a route change, and a student with any confirmation on one blocks a move
   (`studentOnBus` returns data, `RouteService.requireNotOnABus` writes the 409 text with the name, the route name and the
-  time in the `Clock` zone). Deleting a route and applying generated routes (`placeOnRoutes`) are not guarded. `RunService.driverRun` builds one whole run
+  time in the `Clock` zone). Applying generated routes (`placeOnRoutes`) is not guarded. `RunService.driverRun` builds one whole run
   with stops, which start, end and confirm answer with. `runs` reads other modules through
   `RouteService.findRouteOfDriver` and `listRoutes`, `AbsenceService.absentStudentIds`, `DriverService.findDriverIdForUser`,
   `HolidayService.isHoliday`, `HalfDayService.isHalfDay` and `SchoolSettingsService.getTimes`. A half-day afternoon run has `schoolTime: null` (no half-day dismissal time

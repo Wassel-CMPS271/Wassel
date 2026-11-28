@@ -192,6 +192,22 @@ describe("httpRoutes", () => {
     );
   });
 
+  it("rejects deleting a route with a run in progress as an ApiError 409 carrying the backend's detail", async () => {
+    const { httpRoutes } = await loadRoutes();
+    const { ApiError } = await loadErrors();
+    const detail = 'Route "Hamra morning run" has its morning run in progress. Delete it after it ends.';
+    mockFetchError(409, detail);
+
+    try {
+      await httpRoutes.remove(HAMRA_ID);
+      expect.unreachable("expected remove to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(409);
+      expect((error as InstanceType<typeof ApiError>).message).toBe(detail);
+    }
+  });
+
   it("adds a student with a POST of { studentId } to the route's students", async () => {
     const { httpRoutes } = await loadRoutes();
     mockFetchOnce(200, ROUTE);

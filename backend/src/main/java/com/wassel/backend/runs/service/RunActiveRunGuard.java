@@ -54,9 +54,18 @@ class RunActiveRunGuard implements ActiveRunGuard {
 
 	@Override
 	public Optional<String> blockReasonForRouteChange(UUID schoolId, UUID routeId, String routeName) {
+		return blockReason(schoolId, routeId, routeName, "Change the driver or vehicle");
+	}
+
+	@Override
+	public Optional<String> blockReasonForRouteDelete(UUID schoolId, UUID routeId, String routeName) {
+		return blockReason(schoolId, routeId, routeName, "Delete it");
+	}
+
+	private Optional<String> blockReason(UUID schoolId, UUID routeId, String routeName, String afterwards) {
 		return runRepository.findBySchoolIdAndRunDateAndRouteIdIn(schoolId, LocalDate.now(clock), List.of(routeId))
 				.stream().filter(run -> run.getState() == RunState.IN_PROGRESS).findFirst()
-				.map(run -> "Route \"%s\" has its %s run in progress. Change the driver or vehicle after it ends."
-						.formatted(routeName, run.getDirection() == RunDirection.MORNING ? "morning" : "afternoon"));
+				.map(run -> "Route \"%s\" has its %s run in progress. %s after it ends.".formatted(routeName,
+						run.getDirection() == RunDirection.MORNING ? "morning" : "afternoon", afterwards));
 	}
 }

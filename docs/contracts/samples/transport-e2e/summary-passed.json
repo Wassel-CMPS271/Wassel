@@ -1,0 +1,11 @@
+{
+  "suite": "transport",
+  "status": "passed",
+  "durationSeconds": 70,
+  "tests": [
+    { "title": "notification email: only the documented words reach the parent, a muted type sends nothing, the admin sees counts only", "file": "transport-notification-email.e2e.ts", "status": "passed", "durationSeconds": 52 },
+    { "title": "reassignment journey: Head UI, old driver 404 on every write, new driver continues", "file": "transport-reassignment.e2e.ts", "status": "passed", "durationSeconds": 8 }
+  ],
+  "serverErrors": [],
+  "leakCheck": "passed"
+}

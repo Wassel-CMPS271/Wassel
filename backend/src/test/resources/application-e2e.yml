@@ -9,6 +9,13 @@ spring:
     baseline-on-migrate: false
 wassel:
   auth:
+    # Sign-in codes are emailed. The transport E2E (SCRUM-284) signs in about 16 times a run, from 6 accounts, which is under
+    # the defaults (10 per account, 120 in all), but re-runs against one database and longer suites would reach them, so the
+    # caps are out of reach here, as in application-test.yml. Test classpath only; the cap itself is covered by SCRUM-289's tests.
+    email:
+      daily-cap: 100000
+      reset-daily-cap: 100000
+      per-account-daily-cap: 100000
     # The browser tests sign in many times from one address; the limit is covered by the backend's own tests.
     rate-limit:
       enabled: false
