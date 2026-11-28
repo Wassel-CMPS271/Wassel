@@ -1,5 +1,43 @@
 # SCRUM-250 — Independent driver frontend tests
 
+## 26 November 2026 — latest-develop driver acceptance recheck
+
+### Scope and source preservation
+
+Fetched and independently rechecked accepted `develop` **6d20edfa0ac82aad86a2eb2e43a26ef7d9c4a383**, including SCRUM-298's network-waiting display and immediate resend fixes (`f07ff35`, regression tests `a6148ad`). PR #148 remains **open and Draft**, targeting `develop`, at **5533c0d992bc4cbb068f21566c75423449bd7624**. No feature branch was switched, merged, rebased or rewritten. No teammate code, tests, branch or Jira status was changed.
+
+Tests ran against an isolated archive of that exact develop commit, overlaid only with this branch's five independent suites and `src/test-support/driverContract.ts`. SHA-256 checks before and after execution confirm all six files are unchanged. The matching package lock was verified before reusing existing dependencies. This verifies latest develop with the preserved acceptance suites; it is not a claim that PR #148 has been updated with develop.
+
+### Executed checks
+
+| Check | Actual result |
+| --- | --- |
+| All original 65 independent acceptance cases | **63 passed / 2 failed / 0 skipped**, 5 files, exit 1, 54.86 seconds |
+| `driver.independent.test.tsx` | **33 passed / 2 failed** |
+| Maps/call, authorization, API-client and real-endpoint independent suites | **9 + 7 + 13 + 1 passed** |
+| Existing `StopCard.test.tsx` | **19 passed** |
+| Existing `page.queue.test.tsx` | **25 passed** |
+| Existing `useOfflineQueue.test.ts` | **14 passed** |
+| Existing `src/lib/offline/queue.test.ts` | **104 passed** |
+| Focused production regression total | **162 passed / 0 failed / 0 skipped**, 4 files, exit 0, 27.04 seconds |
+
+These are Vitest component/client/queue checks, not a new real-backend browser run. The real-endpoint acceptance gate passes and checks the authenticated `/api/driver/runs/today` wiring with a test transport. Real PostgreSQL/browser evidence below remains dated to its original November 17 source. Full frontend regression, build, lint, Maven and browser CI were not rerun for this bounded investigation; no fresh success is claimed for them. Existing React `act(...)` warnings remain in the saved logs. An initial sandbox startup attempt executed no tests because Vitest could not create its runtime token; the successful runs redirected runtime-only `LOCALAPPDATA` into the isolated evidence folder without changing test or application configuration.
+
+### The two remaining failures
+
+1. **`prevents duplicate confirmations while leaving other students actionable`**, `frontend/src/app/(driver)/driver/driver.independent.test.tsx`: the one-request assertion passes, then the test cannot find **Not present** to assert that it is disabled. `Today` projects the queued pickup through `projectRun` in `today.ts`; `nextConfirmations` then offers **Dropped off**, rather than retaining the previous **Not present** control. The existing StopCard regression confirms the offered Dropped off button is disabled while sending. This is still an unresolved pending-control acceptance/UX difference; it does **not** demonstrate duplicate submission. The feature owner and acceptance owner must resolve whether the original controls must remain disabled until acknowledgement or the optimistic-action contract should be explicitly clarified. The original test is preserved and still fails normally.
+2. **`keeps a failed confirmation scoped to its student and retries the same status`**, same file: the backend detail and student-scoped error assertions pass, then the test cannot find **Try again** after its mocked HTTP 409. `docs/contracts/runs.md`, under offline replay, explicitly requires **drop, refetch the day, show detail** for 409; `docs/contracts/driver-gps-offline.md` specifies the same policy. The existing page/queue regressions pass for dropping the refused tap, reloading, showing its detail, keeping later taps subject to current run state, and retrying genuinely retryable errors with the same key. This test's 409 retry expectation conflicts with the newer contract. Resolve the SCRUM-244 general retry requirement against SCRUM-263/273 with the acceptance owner before changing the oracle; do not add an unsafe blind replay just to satisfy this test. No expectation was altered, skipped or marked as an expected failure.
+
+Recent SCRUM-298 changes improve offline network recovery and their relevant tests pass, but they do **not** resolve either preserved acceptance failure. No new failure was found in these 227 executed cases (225 passed, the same 2 failed).
+
+### CI, mergeability and remaining actions
+
+- GitHub currently reports PR #148 **Draft** and **not mergeable** (`dirty`). A read-only three-tree comparison identifies a content conflict in **`frontend/.gitignore`**: this branch's generated Driver launcher ignore rule overlaps develop's added generated Inbox launcher rules. Both sets must be preserved when a future authorized branch synchronization is performed. No merge/conflict resolution was attempted in this investigation.
+- Existing head CI at [run 43992338969](https://github.com/Wassel-CMPS271/Wassel/actions/runs/43992338969) has a failed frontend job; the previously recorded backend and routing/auth/absence browser jobs passed. The previously recorded direct Driver PostgreSQL/browser job passed. Those are historical head results, not new checks against the November 26 archive. No CI run was triggered and no commit was pushed during this recheck.
+- Keep #148 Draft and **not merge-ready**. Remaining work is to resolve the two acceptance/contract decisions with the Driver feature and independent acceptance owners, safely reconcile the ignore-rule conflict, rerun the unchanged acceptance suite after an agreed fix, and obtain independent review with green current-head required CI. Do not change teammate implementations or weaken assertions in this testing ticket.
+
+Local evidence is preserved, ignored by Git, under the main repository's `tmp/SCRUM-250-20261126/`: pinned source archive, original-suite SHA-256 manifest, `independent-65.log` / `.json`, `replay-regression.log` / `.json`, the initial startup log and the read-only merge comparison. Historical report sections and existing evidence below remain intact.
+
 ## 17 November 2026 — accepted Driver integration and direct real-browser CI
 
 Normally merged accepted develop **ed4736d64b402a02cb30a3f1253a97109b4f3b7e**, including merged Driver #144 (reviewed source 2cb70da) and roster #142. The previous sample-client integration blocker is resolved: Driver Today calls the real authenticated **/api/driver/runs/today** endpoint, and its independent delivery gate passes. All **65** independent acceptance cases and their original assertions are preserved; no teammate feature source or branch was edited.
