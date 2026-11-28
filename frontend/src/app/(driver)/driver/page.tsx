@@ -118,6 +118,8 @@ export default function DriverTodayPage() {
         if (!fromQueue || strayResumeUsed.current) return;
         strayResumeUsed.current = true;
         void queueRef.current?.resume();
+        // Taps that got no answer before the 401 go now, not after their backoff.
+        void queueRef.current?.sendWaitingNow();
       },
       (error) => {
         if (isUnauthorized(error)) {
@@ -543,7 +545,10 @@ function Today({
         sessionExpired={sessionExpired}
         savedCount={savedCount}
         canSave={queueSaving}
-        onSendNow={() => void (queuePaused ? queue.resume() : queue.drain())}
+        onSendNow={() => {
+          if (queuePaused) void queue.resume();
+          void queue.sendWaitingNow();
+        }}
       />
 
       <header className="flex flex-col" style={{ gap: spacing.sm }}>

@@ -1,0 +1,1 @@
+{"run":"mailcap","vus":1,"limited":true,"requests":98,"seconds":275.8,"statuses":{"forgot_204":50,"resend_429noretry":15,"login_204":1,"login_429":20,"login_429noretry":20,"resend_429":15},"first429At":null,"latencyMs":{"avg":284,"p95":822,"max":960}}

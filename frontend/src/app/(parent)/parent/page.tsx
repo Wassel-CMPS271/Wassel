@@ -1,5 +1,7 @@
 "use client";
+import { parentInboxApi } from "@/lib/api/parentInbox";
+import { notificationPreferencesApi } from "@/lib/api/notificationPreferences";
 import { getBusLocation } from "@/lib/api/parentTracking";
-import { ParentTrackingHome } from "./ParentTrackingHome";
-// GPS and ETA use the accepted SCRUM-261/262 child bus-location endpoint.
-export default function ParentPage() { return <ParentTrackingHome api={getBusLocation} etaEnabled />; }
+import { ParentInboxHome } from "./ParentInboxHome";
+// Accepted GPS/ETA and Inbox, including SCRUM-268 preferences and LATE events.
+export default function ParentPage() { return <ParentInboxHome api={parentInboxApi} preferencesApi={notificationPreferencesApi} trackingApi={getBusLocation} etaEnabled />; }

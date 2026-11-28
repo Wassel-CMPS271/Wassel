@@ -1,0 +1,15 @@
+400 login: email 256 chars
+400 login: email 64 KB
+400 login: email 1 MB
+400 login: password 73 bytes, real account
+400 login: password 73 bytes, unknown email
+400 login: password 64 KB, real account
+400 login: password 1 MB, unknown email
+400 forgot: email 256 chars
+400 forgot: email 64 KB
+400 forgot: email 1 MB
+400 password: token 64 KB
+400 password: token 1 MB
+400 password: password 73 bytes
+400 password: password 1 MB
+400 verify: code 1 MB

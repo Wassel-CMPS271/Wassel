@@ -354,12 +354,15 @@ export const sizing = {
   emptyStateBadge: "48px", // icon circle in an empty state
   emptyStateText: "320px", // max line length of the empty-state helper text
   stopBadge: "32px", // position circle on a driver's stop card
+  liveScreenMaxWidth: "1024px", // content column of the head's live runs screen (wider than a list page: each row has two columns)
+  runStatColumn: "120px", // fixed-width remaining-stops column in a live run row, so the next-stop column lines up across rows
 } as const;
 
 /** Icon pixel sizes, so call sites don't pass bare numbers. */
 export const iconSize = {
   sm: 16, // inline glyph inside a button (the CTA arrow, "Back to home")
   md: 20, // feature icons inside a tile
+  status: 12, // dot/ring/dash beside a status label (the live run freshness)
 } as const;
 
 /**

@@ -1,0 +1,1 @@
+{"run":"flood","vus":20,"limited":false,"requests":20000,"seconds":648.2,"statuses":{"forgot_204":10000,"login_401":10000},"first429At":null,"latencyMs":{"avg":648,"p95":1704,"max":2905}}

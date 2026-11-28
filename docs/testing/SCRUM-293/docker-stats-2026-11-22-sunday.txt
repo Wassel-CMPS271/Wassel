@@ -1,0 +1,88 @@
+14:01:36
+wassel-loadtest-backend-1 cpu=60.55% mem=497.4MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=7.17% mem=70.14MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=20.97MiB / 128MiB
+14:02:08
+wassel-loadtest-backend-1 cpu=28.05% mem=497.6MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=1.19% mem=70.25MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.36% mem=22.46MiB / 128MiB
+14:02:41
+wassel-loadtest-backend-1 cpu=28.86% mem=497.8MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=1.49% mem=69.84MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.30% mem=22.81MiB / 128MiB
+14:03:13
+wassel-loadtest-backend-1 cpu=45.96% mem=498.9MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=22.25% mem=70.88MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.75MiB / 128MiB
+14:03:46
+wassel-loadtest-backend-1 cpu=24.66% mem=499.1MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=1.86% mem=70.09MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.75MiB / 128MiB
+14:04:18
+wassel-loadtest-backend-1 cpu=2.05% mem=498.9MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=3.23% mem=71.39MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.75MiB / 128MiB
+14:04:51
+wassel-loadtest-backend-1 cpu=14.31% mem=499.6MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=5.03% mem=70.54MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.75MiB / 128MiB
+14:05:23
+wassel-loadtest-backend-1 cpu=3.89% mem=499.6MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=5.73% mem=71.27MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.75MiB / 128MiB
+14:05:56
+wassel-loadtest-backend-1 cpu=13.38% mem=500MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=9.44% mem=70.84MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.75MiB / 128MiB
+14:06:28
+wassel-loadtest-backend-1 cpu=6.83% mem=500.1MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=3.87% mem=70.61MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.75MiB / 128MiB
+14:07:01
+wassel-loadtest-backend-1 cpu=7.04% mem=499.6MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=6.87% mem=70.64MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.01% mem=22.75MiB / 128MiB
+14:07:33
+wassel-loadtest-backend-1 cpu=8.29% mem=499.8MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=2.76% mem=71.05MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.75MiB / 128MiB
+14:08:06
+wassel-loadtest-backend-1 cpu=19.89% mem=500.6MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=3.40% mem=70.8MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.37% mem=22.96MiB / 128MiB
+14:08:38
+wassel-loadtest-backend-1 cpu=24.52% mem=500.7MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=9.01% mem=70.84MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.17% mem=22.4MiB / 128MiB
+14:09:11
+wassel-loadtest-backend-1 cpu=13.64% mem=501.7MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=4.83% mem=70.51MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.4MiB / 128MiB
+14:09:43
+wassel-loadtest-backend-1 cpu=11.19% mem=501.6MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=6.12% mem=70.46MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.4MiB / 128MiB
+14:10:16
+wassel-loadtest-backend-1 cpu=9.95% mem=501.1MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=3.97% mem=70.96MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.4MiB / 128MiB
+14:10:48
+wassel-loadtest-backend-1 cpu=14.52% mem=505.1MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=5.25% mem=70.81MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.4MiB / 128MiB
+14:11:21
+wassel-loadtest-backend-1 cpu=12.22% mem=505.4MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=3.40% mem=69.56MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.4MiB / 128MiB
+14:11:53
+wassel-loadtest-backend-1 cpu=7.77% mem=505.6MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=7.79% mem=69.16MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.4MiB / 128MiB
+14:12:26
+wassel-loadtest-backend-1 cpu=9.18% mem=505.6MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=3.16% mem=69MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=22.4MiB / 128MiB
+14:12:58
+wassel-loadtest-backend-1 cpu=0.16% mem=503MiB / 1GiB
+wassel-loadtest-postgres-1 cpu=7.01% mem=67.78MiB / 1GiB
+wassel-loadtest-mail-stub-1 cpu=0.00% mem=21.05MiB / 128MiB

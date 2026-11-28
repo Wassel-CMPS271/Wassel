@@ -1,0 +1,58 @@
+// Accepted SCRUM-267/268 contract: docs/contracts/inbox.md (#146 and #158).
+import { request } from "./client";
+export interface InboxEvent {
+  id: string;
+  type: "PICKED_UP" | "DROPPED_OFF" | "NOT_PRESENT" | "LATE";
+  studentId: string;
+  studentName: string;
+  runId: string;
+  direction: "MORNING" | "AFTERNOON";
+  createdAt: string;
+  readAt: string | null;
+}
+function event(value: unknown, allowLate: boolean): InboxEvent {
+  if (!value || typeof value !== "object") throw new Error("Invalid inbox entry");
+  const r = value as Record<string, unknown>;
+  if (!["id", "studentId", "studentName", "runId"].every(k => typeof r[k] === "string" && r[k] !== "")
+    || !["PICKED_UP", "DROPPED_OFF", "NOT_PRESENT", ...(allowLate ? ["LATE"] : [])].includes(String(r.type))
+    || !["MORNING", "AFTERNOON"].includes(String(r.direction))
+    || typeof r.createdAt !== "string" || !Number.isFinite(Date.parse(r.createdAt))
+    || (r.readAt !== null && (typeof r.readAt !== "string" || !Number.isFinite(Date.parse(r.readAt))))) throw new Error("Invalid inbox entry");
+  return r as unknown as InboxEvent;
+}
+export function createParentInboxApi({ allowLate = false }: { allowLate?: boolean } = {}) { return {
+  async list(unread = false): Promise<InboxEvent[]> {
+    const result = await request<unknown>(`/api/parent/inbox${unread ? "?unread=true" : ""}`);
+    if (!Array.isArray(result)) throw new Error("Invalid inbox list");
+    const knownTypes = ["PICKED_UP", "DROPPED_OFF", "NOT_PRESENT", "LATE"];
+    let omitted = false;
+    const rows: InboxEvent[] = [];
+    for (const value of result) {
+      // An additive future type must not hide supported events. Known types
+      // still undergo full validation, including the explicit LATE opt-in.
+      if (value && typeof value === "object" && typeof value.type === "string" && value.type !== "" && !knownTypes.includes(value.type)) {
+        omitted = true;
+        continue;
+      }
+      rows.push(event(value, allowLate));
+    }
+    // No payload, type, id, child or parent data is written to the console.
+    if (omitted) console.warn("Unsupported transport update types were omitted from the list.");
+    if (new Set(rows.map(r => r.id)).size !== rows.length) throw new Error("Duplicate inbox entry");
+    return rows;
+  },
+  async unreadCount(): Promise<number> {
+    const r = await request<{ count?: unknown }>("/api/parent/inbox/unread-count");
+    if (!r || !Number.isSafeInteger(r.count) || Number(r.count) < 0) throw new Error("Invalid unread count");
+    return Number(r.count);
+  },
+  async markRead(id: string): Promise<InboxEvent> {
+    const saved = event(await request<unknown>(`/api/parent/inbox/${encodeURIComponent(id)}/read`, { method: "POST" }), allowLate);
+    if (saved.id !== id || saved.readAt === null) throw new Error("Invalid read receipt");
+    return saved;
+  },
+  async markAllRead(): Promise<void> { await request("/api/parent/inbox/read-all", { method: "POST" }); },
+}; }
+// SCRUM-268 is accepted: the production composition deliberately enables LATE.
+export const parentInboxApi = createParentInboxApi({ allowLate: true });
+export type ParentInboxApi = typeof parentInboxApi;

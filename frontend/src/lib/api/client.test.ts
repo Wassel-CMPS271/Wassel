@@ -393,3 +393,44 @@ describe("request timeoutMs", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe("request Retry-After (SCRUM-288)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function failWith(retryAfter?: string) {
+    const headers = new Headers();
+    if (retryAfter !== undefined) headers.set("Retry-After", retryAfter);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "Slow down" }), { status: 429, headers })),
+    );
+    return request<void>("/api/auth/login", { method: "POST", body: {} }).then(
+      () => undefined as never,
+      (error: unknown) => error as ApiError,
+    );
+  }
+
+  it("keeps a whole number of seconds on the ApiError", async () => {
+    const error = await failWith("42");
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.status).toBe(429);
+    expect(error.retryAfterSeconds).toBe(42);
+  });
+
+  it.each([undefined, "", "soon", "-5", "1.5", "Wed, 21 Oct 2026 07:28:00 GMT"])(
+    "drops a Retry-After of %j",
+    async (value) => {
+      expect((await failWith(value)).retryAfterSeconds).toBeUndefined();
+    },
+  );
+
+  it("copes with an answer that has no headers at all", async () => {
+    mockFetchOnce({ ok: false, status: 429, json: () => Promise.resolve({ detail: "Slow down" }) });
+    const error = await request<void>("/x").then(
+      () => undefined as never,
+      (e: unknown) => e as ApiError,
+    );
+    expect(error.status).toBe(429);
+    expect(error.retryAfterSeconds).toBeUndefined();
+  });
+});

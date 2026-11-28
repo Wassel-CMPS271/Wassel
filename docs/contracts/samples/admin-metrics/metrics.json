@@ -1,0 +1,21 @@
+{
+  "since": "2026-11-23T06:00:00Z",
+  "resetsOnRestart": true,
+  "requests": {
+    "total": 1250,
+    "serverErrors": 5,
+    "errorRate": 0.004,
+    "tooManyRequests": 3,
+    "p95Millis": 180,
+    "latencySample": 1250
+  },
+  "signIns": {
+    "failed": 14,
+    "lockouts": 1
+  },
+  "notifications": {
+    "sent": 96,
+    "failed": 4,
+    "successRate": 0.96
+  }
+}
