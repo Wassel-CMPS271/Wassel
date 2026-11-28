@@ -3,20 +3,24 @@
 // stdout, attachments, request headers and traces.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import type { FullResult, Reporter, TestCase, TestResult } from "@playwright/test/reporter";
+import type { FullConfig, FullResult, Reporter, TestCase, TestResult } from "@playwright/test/reporter";
 
 export default class SafeSummaryReporter implements Reporter {
+  private frontend = process.cwd();
+  onBegin(config: FullConfig) {
+    // Playwright loads this TS reporter as CommonJS; configFile works in both
+    // module formats, and also when the CLI starts outside the frontend folder.
+    this.frontend = config.configFile ? dirname(config.configFile) : process.cwd();
+  }
   private tests: { title: string; file: string; expected: string; status: string; durationMs: number; retry: number }[] = [];
   onTestEnd(test: TestCase, result: TestResult) {
-    const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
     this.tests.push({
-      title: test.titlePath().join(" > "), file: relative(frontend, test.location.file).replaceAll("\\", "/"),
+      title: test.titlePath().join(" > "), file: relative(this.frontend, test.location.file).replaceAll("\\", "/"),
       expected: test.expectedStatus, status: result.status, durationMs: result.duration, retry: result.retry,
     });
   }
   onEnd(result: FullResult) {
-    const output = resolve(dirname(fileURLToPath(import.meta.url)), "../e2e-artifacts/operations-summary.json");
+    const output = resolve(this.frontend, "e2e-artifacts/operations-summary.json");
     mkdirSync(dirname(output), { recursive: true });
     writeFileSync(output, JSON.stringify({ status: result.status, durationMs: result.duration, tests: this.tests }, null, 2), { mode: 0o600 });
   }

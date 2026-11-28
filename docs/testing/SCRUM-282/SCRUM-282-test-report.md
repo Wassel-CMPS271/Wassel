@@ -19,12 +19,14 @@ The former 58-case available slice now has **71 independent cases** (13 added): 
 | Check | Actual result |
 | --- | --- |
 | Rewritten independent suites + safe-reporter regression | **72 passed / 0 failed / 0 skipped**, 7 files, exit 0, 25.33 seconds (71 acceptance + 1 evidence/privacy test) |
-| Final current files in a separate directory with **no `.git` or Git ancestor** | **72 passed / 0 failed / 0 skipped**, 7 files, exit 0, 19.99 seconds; `git rev-parse` fails there as expected |
+| Current-source snapshot before the reporter-only compatibility fix, in a separate directory with **no `.git` or Git ancestor** | **72 passed / 0 failed / 0 skipped**, 7 files, exit 0, 19.99 seconds; `git rev-parse` fails there as expected |
 | Focused ESLint on all changed tests, fixture and test runner/reporter | Passed after fixing the introduced const/unused-import findings |
 | TypeScript `--noEmit --incremental false` | **Fails on 13 existing diagnostics** in unrelated Admin invitation/routing/Parent test fixtures; baseline HEAD archive and changed branch output are byte-identical (SHA-256 `F79F114CA0A883EE654B80CD15AA8D1025F15E42AE7447CDA583B4AEAB372F26`), **0 introduced diagnostics**. The new GPS DOM fixture typing was corrected. |
 | Playwright compilation/discovery | **2 scenarios collected**, exit 0: address decisions and offline replay. Discovery is not browser execution. |
 
 The 422 rejection diagnostic in the unit log is an expected exercised error path, not a failing test. Full frontend coverage/build, Maven and real database/browser execution are left to the normal current-head CI runs rather than repeating the approximately ten-minute local regression for a test-only review fix. Their new results are **pending at this report commit** and must be read on the actual pushed SHA; the PR description will link those results after execution. Historical passes below are not new verification claims.
+
+An additional check of the exact native Playwright reporter command caught a CommonJS/import.meta loading error in the newly added reporter. The reporter now obtains its root from Playwright's config file instead. The exact CLI now loads that reporter and collects **both scenarios**, exit 0; the final reporter privacy/path regression **1/1** and reporter/runner ESLint pass. The 71 independent acceptance files are unchanged by this compatibility fix. This was an own test-infrastructure defect, not a product or teammate test failure.
 
 ### CI review corrections
 
