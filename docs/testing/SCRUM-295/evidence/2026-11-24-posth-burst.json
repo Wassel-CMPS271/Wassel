@@ -1,0 +1,274 @@
+{
+  "scope": "Fresh candidate subcriterion; no full 300-user or integrated-develop acceptance claim",
+  "attempts": [
+    {
+      "artifactId": 14894688777,
+      "testCommit": "01955af7519060d121114a3e51688c059ab2aaa6",
+      "jobId": 138258375756,
+      "zipSha256": "def45c83f0e21e0a229d759d2cd168ef7c706a59e6f82c8963dbac97d04078b1",
+      "scope": "Arrival executor scheduled 101; all successful; exact-count guard failed; superseded by deterministic 100-arrival runner",
+      "environment": {
+        "mode": "burst",
+        "candidateSource": "cab56d67dabe1acf69884607c87bf936c92309e4",
+        "loadSource": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b",
+        "flywayVersion": "18",
+        "host": {
+          "platform": "linux",
+          "release": "7.0.0-1016-aws",
+          "cpus": 4,
+          "memoryBytes": 16463400960
+        },
+        "services": {
+          "backend": {
+            "nanoCpus": 1000000000,
+            "memoryBytes": 1073741824
+          },
+          "postgres": {
+            "nanoCpus": 1000000000,
+            "memoryBytes": 1073741824
+          },
+          "mail-stub": {
+            "nanoCpus": 250000000,
+            "memoryBytes": 134217728
+          }
+        },
+        "internalOnlyNetwork": true,
+        "mailDelayMillis": 800,
+        "noExternalMailOrRoadTraffic": true,
+        "emailCapOverrides": false,
+        "authDailyCap": 120,
+        "dataset": {
+          "students": 1000,
+          "buses": 40,
+          "parents": 800,
+          "drivers": 40,
+          "routes": 40
+        },
+        "extraAdminFixture": false,
+        "loadScriptSha256": "79dd5d4667f2499f287906fe6cf4fc8a88c9f3e94c8f9e52711d3d608e8a709f",
+        "seedSha256": "5a5c4d9b18d2f9d139b1207cb598af772d2441d5c6907a79f67dd09957f57214"
+      },
+      "result": {
+        "mode": "burst",
+        "candidateSource": "cab56d67dabe1acf69884607c87bf936c92309e4",
+        "nativeExit": 99,
+        "scope": "Additional 100/minute subcriterion on a fresh default-quota stack; not full 300-user acceptance",
+        "authEmailRows": 101,
+        "checks": [
+          {
+            "name": "login answered 204",
+            "passes": 101,
+            "fails": 0
+          },
+          {
+            "name": "verify answered 200",
+            "passes": 101,
+            "fails": 0
+          }
+        ],
+        "nativeThresholds": {
+          "scrum295_burst_iterations": {
+            "count==100": {
+              "ok": false
+            }
+          },
+          "sign_in_failures": {
+            "count==0": {
+              "ok": true
+            }
+          },
+          "server_errors": {
+            "count==0": {
+              "ok": true
+            }
+          },
+          "http_req_duration{phase:steady}": {
+            "p(95)<1000": {
+              "ok": true
+            }
+          },
+          "sign_in_duration": {
+            "p(95)<3000": {
+              "ok": true
+            },
+            "p(95)<1000": {
+              "ok": true
+            }
+          },
+          "http_req_failed": {
+            "rate<0.001": {
+              "ok": true
+            }
+          },
+          "checks": {
+            "rate==1": {
+              "ok": true
+            }
+          },
+          "http_req_duration{phase:signin-code}": {
+            "p(95)<1000": {
+              "ok": true
+            }
+          },
+          "http_req_duration{phase:signin-password}": {
+            "p(95)<3000": {
+              "ok": true
+            },
+            "p(95)<1000": {
+              "ok": true
+            }
+          }
+        },
+        "observed": {
+          "completedIterations": 101,
+          "elapsedMs": 60892
+        },
+        "signInP95Millis": 896.50991,
+        "passwordP95Millis": 885.932236,
+        "codeP95Millis": 10.577674,
+        "serverErrors": 0,
+        "failedSignIns": 0,
+        "subcriterionPassed": false
+      }
+    },
+    {
+      "artifactId": 14896130233,
+      "testCommit": "b22080b11e979ae1e1cf535af65cc123e2f95a37",
+      "jobId": 138260850168,
+      "zipSha256": "b92dcb38971ed89f4e9f3bd3c46a3b9ffe81d6785f60764f5f6f29bc67d72b60",
+      "scope": "Exactly 100 successful arrivals; strict one-second p95 failed; original three-second guards passed",
+      "environment": {
+        "mode": "burst",
+        "candidateSource": "cab56d67dabe1acf69884607c87bf936c92309e4",
+        "loadSource": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b",
+        "flywayVersion": "18",
+        "host": {
+          "platform": "linux",
+          "release": "7.0.0-1020-azure",
+          "cpus": 4,
+          "memoryBytes": 16759431168
+        },
+        "services": {
+          "backend": {
+            "nanoCpus": 1000000000,
+            "memoryBytes": 1073741824
+          },
+          "postgres": {
+            "nanoCpus": 1000000000,
+            "memoryBytes": 1073741824
+          },
+          "mail-stub": {
+            "nanoCpus": 250000000,
+            "memoryBytes": 134217728
+          }
+        },
+        "internalOnlyNetwork": true,
+        "mailDelayMillis": 800,
+        "noExternalMailOrRoadTraffic": true,
+        "emailCapOverrides": false,
+        "authDailyCap": 120,
+        "dataset": {
+          "students": 1000,
+          "buses": 40,
+          "parents": 800,
+          "drivers": 40,
+          "routes": 40
+        },
+        "extraAdminFixture": false,
+        "loadScriptSha256": "79dd5d4667f2499f287906fe6cf4fc8a88c9f3e94c8f9e52711d3d608e8a709f",
+        "seedSha256": "5a5c4d9b18d2f9d139b1207cb598af772d2441d5c6907a79f67dd09957f57214"
+      },
+      "result": {
+        "mode": "burst",
+        "candidateSource": "cab56d67dabe1acf69884607c87bf936c92309e4",
+        "nativeExit": 99,
+        "scope": "Additional 100/minute subcriterion on a fresh default-quota stack; not full 300-user acceptance",
+        "authEmailRows": 100,
+        "checks": [
+          {
+            "name": "login answered 204",
+            "passes": 100,
+            "fails": 0
+          },
+          {
+            "name": "verify answered 200",
+            "passes": 100,
+            "fails": 0
+          }
+        ],
+        "nativeThresholds": {
+          "http_req_failed": {
+            "rate<0.001": {
+              "ok": true
+            }
+          },
+          "http_req_duration{phase:steady}": {
+            "p(95)<1000": {
+              "ok": true
+            }
+          },
+          "sign_in_failures": {
+            "count==0": {
+              "ok": true
+            }
+          },
+          "scrum295_burst_start_elapsed_ms": {
+            "min>=0": {
+              "ok": true
+            },
+            "max<60000": {
+              "ok": true
+            }
+          },
+          "scrum295_burst_iterations": {
+            "count==100": {
+              "ok": true
+            }
+          },
+          "sign_in_duration": {
+            "p(95)<3000": {
+              "ok": true
+            },
+            "p(95)<1000": {
+              "ok": false
+            }
+          },
+          "checks": {
+            "rate==1": {
+              "ok": true
+            }
+          },
+          "http_req_duration{phase:signin-code}": {
+            "p(95)<1000": {
+              "ok": true
+            }
+          },
+          "http_req_duration{phase:signin-password}": {
+            "p(95)<3000": {
+              "ok": true
+            },
+            "p(95)<1000": {
+              "ok": false
+            }
+          },
+          "server_errors": {
+            "count==0": {
+              "ok": true
+            }
+          }
+        },
+        "observed": {
+          "completedIterations": 100,
+          "elapsedMs": 60324,
+          "lastArrivalMs": 59401
+        },
+        "signInP95Millis": 1217.2910960000002,
+        "passwordP95Millis": 1198.26231885,
+        "codeP95Millis": 18.93117415,
+        "serverErrors": 0,
+        "failedSignIns": 0,
+        "subcriterionPassed": false
+      }
+    }
+  ]
+}

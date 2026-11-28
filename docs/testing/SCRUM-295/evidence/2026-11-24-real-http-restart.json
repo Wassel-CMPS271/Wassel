@@ -1,0 +1,336 @@
+{
+  "runId": 45339167598,
+  "jobId": 138258375927,
+  "testCommit": "01955af7519060d121114a3e51688c059ab2aaa6",
+  "artifactId": 14895062216,
+  "zipSha256": "38a6f0e93041f21bc92d11687e37adada9f8994abe3ee1764512717a4288a9ee",
+  "environment": {
+    "mode": "metrics-http",
+    "candidateSource": "e8bca50722324279df6be686843949b06a212500",
+    "loadSource": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b",
+    "flywayVersion": "17",
+    "host": {
+      "platform": "linux",
+      "release": "7.0.0-1016-aws",
+      "cpus": 4,
+      "memoryBytes": 16463405056
+    },
+    "services": {
+      "backend": {
+        "nanoCpus": 1000000000,
+        "memoryBytes": 1073741824
+      },
+      "postgres": {
+        "nanoCpus": 1000000000,
+        "memoryBytes": 1073741824
+      },
+      "mail-stub": {
+        "nanoCpus": 250000000,
+        "memoryBytes": 134217728
+      }
+    },
+    "internalOnlyNetwork": true,
+    "mailDelayMillis": 800,
+    "noExternalMailOrRoadTraffic": true,
+    "emailCapOverrides": false,
+    "authDailyCap": null,
+    "dataset": {
+      "students": 1000,
+      "buses": 40,
+      "parents": 800,
+      "drivers": 40,
+      "routes": 40
+    },
+    "extraAdminFixture": true,
+    "loadScriptSha256": "79dd5d4667f2499f287906fe6cf4fc8a88c9f3e94c8f9e52711d3d608e8a709f",
+    "seedSha256": "5a5c4d9b18d2f9d139b1207cb598af772d2441d5c6907a79f67dd09957f57214"
+  },
+  "result": {
+    "candidateSource": "e8bca50722324279df6be686843949b06a212500",
+    "sourceWasNotPatched": true,
+    "externalMonitorVerified": false,
+    "events": [
+      {
+        "action": "stop own backend",
+        "at": "2026-11-24T06:17:34.149Z"
+      },
+      {
+        "action": "restart own backend",
+        "at": "2026-11-24T06:17:37.712Z"
+      }
+    ],
+    "clientExit": 1,
+    "result": {
+      "candidateSource": "e8bca50722324279df6be686843949b06a212500",
+      "scope": "Real HTTP with password and fake-provider-delivered 2FA, private backend outage/recovery and metrics restart; no external monitor or frontend alert claim.",
+      "checks": [
+        {
+          "name": "Public health is minimal",
+          "pass": false,
+          "reason": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n+   'groups',\n    'status'\n  ]\n"
+        },
+        {
+          "name": "No session is refused without metric fields",
+          "pass": true,
+          "status": 401
+        },
+        {
+          "name": "Real admin session receives canonical aggregate metrics",
+          "pass": true,
+          "status": 200,
+          "resetsOnRestart": true
+        },
+        {
+          "name": "Real head session is refused without metric fields",
+          "pass": true,
+          "status": 403
+        },
+        {
+          "name": "Real driver session is refused without metric fields",
+          "pass": true,
+          "status": 403
+        },
+        {
+          "name": "Real parent session is refused without metric fields",
+          "pass": true,
+          "status": 403
+        },
+        {
+          "name": "Actuator prefix lookalike 404 increments request count",
+          "pass": false,
+          "reason": "Ordinary 404 must be counted\n\n0 !== 1\n"
+        },
+        {
+          "name": "Two real invalid-password answers increment exact counters",
+          "pass": true,
+          "requestDelta": 2,
+          "failedSignInDelta": 2
+        },
+        {
+          "name": "Private backend outage and recovery are actually observed",
+          "pass": true,
+          "down": {
+            "at": "2026-11-24T06:17:34.384Z",
+            "networkFailure": true
+          },
+          "up": {
+            "at": "2026-11-24T06:17:56.103Z",
+            "httpStatus": 200,
+            "status": "UP",
+            "keys": [
+              "groups",
+              "status"
+            ]
+          },
+          "observedDownToUpMillis": 21719,
+          "externalAlertObserved": false
+        },
+        {
+          "name": "Actual backend restart resets counters and preserves valid session",
+          "pass": true,
+          "newSince": "2026-11-24T06:17:50.791808309Z",
+          "zeroCounters": true,
+          "sameAuthenticatedCookieAccepted": true
+        }
+      ],
+      "externalMonitorVerified": false,
+      "frontendMonitorVerified": false,
+      "prefixObservation": {
+        "responseStatus": 404,
+        "expectedDelta": 1,
+        "actualDelta": 0
+      },
+      "beforeRestart": {
+        "since": "2026-11-24T06:17:23.071875987Z",
+        "resetsOnRestart": true,
+        "requests": {
+          "total": 10,
+          "serverErrors": 0,
+          "errorRate": 0,
+          "tooManyRequests": 0,
+          "p95Millis": 1180,
+          "latencySample": 10
+        },
+        "signIns": {
+          "failed": 2,
+          "lockouts": 0
+        },
+        "notifications": {
+          "sent": 0,
+          "failed": 0,
+          "successRate": null
+        }
+      },
+      "afterRestart": {
+        "since": "2026-11-24T06:17:50.791808309Z",
+        "resetsOnRestart": true,
+        "requests": {
+          "total": 0,
+          "serverErrors": 0,
+          "errorRate": null,
+          "tooManyRequests": 0,
+          "p95Millis": null,
+          "latencySample": 0
+        },
+        "signIns": {
+          "failed": 0,
+          "lockouts": 0
+        },
+        "notifications": {
+          "sent": 0,
+          "failed": 0,
+          "successRate": null
+        }
+      },
+      "passed": false
+    }
+  },
+  "verdict": "Eight real HTTP checks passed; prefix defect and strict documented status-only health-shape check failed. Extra groups field needs contract clarification; no sensitive component details were observed. External monitor/frontend alerts remain unverified.",
+  "repeatedRun": {
+    "runId": 45339924397,
+    "jobId": 138260850428,
+    "testCommit": "b22080b11e979ae1e1cf535af65cc123e2f95a37",
+    "artifactId": 14896025708,
+    "zipSha256": "3feeddf7afd7d861511aa10ef7d1dcf0a5970970b58e216f728558d5c77904a3",
+    "result": {
+      "candidateSource": "e8bca50722324279df6be686843949b06a212500",
+      "sourceWasNotPatched": true,
+      "externalMonitorVerified": false,
+      "events": [
+        {
+          "action": "stop own backend",
+          "at": "2026-11-24T06:26:30.793Z"
+        },
+        {
+          "action": "restart own backend",
+          "at": "2026-11-24T06:26:34.330Z"
+        }
+      ],
+      "clientExit": 1,
+      "result": {
+        "candidateSource": "e8bca50722324279df6be686843949b06a212500",
+        "scope": "Real HTTP with password and fake-provider-delivered 2FA, private backend outage/recovery and metrics restart; no external monitor or frontend alert claim.",
+        "checks": [
+          {
+            "name": "Public health is minimal",
+            "pass": false,
+            "reason": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n+   'groups',\n    'status'\n  ]\n"
+          },
+          {
+            "name": "No session is refused without metric fields",
+            "pass": true,
+            "status": 401
+          },
+          {
+            "name": "Real admin session receives canonical aggregate metrics",
+            "pass": true,
+            "status": 200,
+            "resetsOnRestart": true
+          },
+          {
+            "name": "Real head session is refused without metric fields",
+            "pass": true,
+            "status": 403
+          },
+          {
+            "name": "Real driver session is refused without metric fields",
+            "pass": true,
+            "status": 403
+          },
+          {
+            "name": "Real parent session is refused without metric fields",
+            "pass": true,
+            "status": 403
+          },
+          {
+            "name": "Actuator prefix lookalike 404 increments request count",
+            "pass": false,
+            "reason": "Ordinary 404 must be counted\n\n0 !== 1\n"
+          },
+          {
+            "name": "Two real invalid-password answers increment exact counters",
+            "pass": true,
+            "requestDelta": 2,
+            "failedSignInDelta": 2
+          },
+          {
+            "name": "Private backend outage and recovery are actually observed",
+            "pass": true,
+            "down": {
+              "at": "2026-11-24T06:26:30.871Z",
+              "networkFailure": true
+            },
+            "up": {
+              "at": "2026-11-24T06:26:50.798Z",
+              "httpStatus": 200,
+              "status": "UP",
+              "keys": [
+                "groups",
+                "status"
+              ]
+            },
+            "observedDownToUpMillis": 19927,
+            "externalAlertObserved": false
+          },
+          {
+            "name": "Actual backend restart resets counters and preserves valid session",
+            "pass": true,
+            "newSince": "2026-11-24T06:26:45.914742724Z",
+            "zeroCounters": true,
+            "sameAuthenticatedCookieAccepted": true
+          }
+        ],
+        "externalMonitorVerified": false,
+        "frontendMonitorVerified": false,
+        "prefixObservation": {
+          "responseStatus": 404,
+          "expectedDelta": 1,
+          "actualDelta": 0
+        },
+        "beforeRestart": {
+          "since": "2026-11-24T06:26:20.028927800Z",
+          "resetsOnRestart": true,
+          "requests": {
+            "total": 10,
+            "serverErrors": 0,
+            "errorRate": 0,
+            "tooManyRequests": 0,
+            "p95Millis": 1200,
+            "latencySample": 10
+          },
+          "signIns": {
+            "failed": 2,
+            "lockouts": 0
+          },
+          "notifications": {
+            "sent": 0,
+            "failed": 0,
+            "successRate": null
+          }
+        },
+        "afterRestart": {
+          "since": "2026-11-24T06:26:45.914742724Z",
+          "resetsOnRestart": true,
+          "requests": {
+            "total": 0,
+            "serverErrors": 0,
+            "errorRate": null,
+            "tooManyRequests": 0,
+            "p95Millis": null,
+            "latencySample": 0
+          },
+          "signIns": {
+            "failed": 0,
+            "lockouts": 0
+          },
+          "notifications": {
+            "sent": 0,
+            "failed": 0,
+            "successRate": null
+          }
+        },
+        "passed": false
+      }
+    }
+  }
+}

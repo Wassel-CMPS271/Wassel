@@ -1,0 +1,200 @@
+{
+  "checkedOn": "2026-11-24",
+  "timezone": "Asia/Beirut",
+  "scope": "Read-only audit of author reports and actual CI artifacts; not an independent load execution.",
+  "sources": {
+    "develop": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b",
+    "loadPR": 185,
+    "loadHead": "cbaf70e1a574d1a0998a0d4019a7c401e26c7432",
+    "metricsPR": 187,
+    "metricsHead": "e8bca50722324279df6be686843949b06a212500",
+    "ciRun": 45238110173,
+    "backendArtifact": 14850599424,
+    "backendZipSha256": "bf783dbc57c09a4af99ce4f3b76f1bbf3de713d8f72563e4432412e43e1e08a4",
+    "frontendArtifact": 14850548551,
+    "frontendZipSha256": "4cc22ba0785614e2f01ba7df092065b41b950eb63d130100e026453b8945bab4"
+  },
+  "coverage": {
+    "publishedContract": {
+      "backend": {
+        "metric": "LINE",
+        "baseline": 96.72,
+        "floor": 94.7
+      },
+      "frontend": {
+        "metric": "lines",
+        "baseline": 88.58,
+        "floor": 86.6
+      }
+    },
+    "backendPercent": 96.79068446464073,
+    "backendCovered": 3408,
+    "backendTotal": 3521,
+    "frontendPercent": 89.82048574445618,
+    "frontendCovered": 4253,
+    "frontendTotal": 4735,
+    "reportedFrontendPercent": 89.82,
+    "floorPolicy": {
+      "pass": false,
+      "error": "backend floor must not be below Day 1 baseline minus 2 percentage points"
+    }
+  },
+  "loads": [
+    {
+      "run": "2026-11-22-sunday",
+      "requests": 37766,
+      "checks": [
+        {
+          "name": "p95 under 1000 ms",
+          "actual": 5.61617375,
+          "pass": true
+        },
+        {
+          "name": "zero HTTP 5xx",
+          "actual": 0,
+          "pass": true
+        },
+        {
+          "name": "40-50 requests/sec achieved",
+          "actual": 55.539703082444,
+          "pass": false
+        },
+        {
+          "name": "300 peak active VUs",
+          "actual": 302,
+          "pass": true
+        },
+        {
+          "name": "10 minutes measured",
+          "actual": null,
+          "pass": false
+        }
+      ],
+      "complete": false,
+      "missing": [
+        "actual duration",
+        "backend-only steady request rate"
+      ],
+      "pass": false,
+      "observations": {
+        "aggregateRequestsPerSecond": 55.539703082444,
+        "backendSteadyRequestsPerSecond": null,
+        "parentActors": null,
+        "driverActors": null,
+        "completedBurst": null,
+        "steadyP95Millis": 5.02672475,
+        "passwordP95Millis": null,
+        "codeP95Millis": null,
+        "signInP95Millis": null,
+        "failedSignIns": 0,
+        "failedRequestRate": 0,
+        "failedChecks": 0
+      },
+      "scope": "Aggregate HTTP metrics may include setup and mail-stub calls. Peak VUs do not alone prove 300 sustained users. Duration is never inferred from count/rate or intended configuration."
+    },
+    {
+      "run": "2026-11-23-monday",
+      "requests": 37189,
+      "checks": [
+        {
+          "name": "p95 under 1000 ms",
+          "actual": 11.024420599999978,
+          "pass": true
+        },
+        {
+          "name": "zero HTTP 5xx",
+          "actual": 0,
+          "pass": true
+        },
+        {
+          "name": "40-50 requests/sec achieved",
+          "actual": 54.816043867147,
+          "pass": false
+        },
+        {
+          "name": "300 peak active VUs",
+          "actual": 302,
+          "pass": true
+        },
+        {
+          "name": "10 minutes measured",
+          "actual": null,
+          "pass": false
+        }
+      ],
+      "complete": false,
+      "missing": [
+        "actual duration",
+        "backend-only steady request rate"
+      ],
+      "pass": false,
+      "observations": {
+        "aggregateRequestsPerSecond": 54.816043867147,
+        "backendSteadyRequestsPerSecond": null,
+        "parentActors": null,
+        "driverActors": null,
+        "completedBurst": null,
+        "steadyP95Millis": 9.2225296,
+        "passwordP95Millis": null,
+        "codeP95Millis": null,
+        "signInP95Millis": null,
+        "failedSignIns": 0,
+        "failedRequestRate": 0,
+        "failedChecks": 0
+      },
+      "scope": "Aggregate HTTP metrics may include setup and mail-stub calls. Peak VUs do not alone prove 300 sustained users. Duration is never inferred from count/rate or intended configuration."
+    },
+    {
+      "run": "2026-11-23-monday-run3",
+      "requests": 37240,
+      "checks": [
+        {
+          "name": "p95 under 1000 ms",
+          "actual": 9.895603799999998,
+          "pass": true
+        },
+        {
+          "name": "zero HTTP 5xx",
+          "actual": 0,
+          "pass": true
+        },
+        {
+          "name": "40-50 requests/sec achieved",
+          "actual": 54.85227258632939,
+          "pass": false
+        },
+        {
+          "name": "300 peak active VUs",
+          "actual": 302,
+          "pass": true
+        },
+        {
+          "name": "10 minutes measured",
+          "actual": null,
+          "pass": false
+        }
+      ],
+      "complete": false,
+      "missing": [
+        "actual duration",
+        "backend-only steady request rate"
+      ],
+      "pass": false,
+      "observations": {
+        "aggregateRequestsPerSecond": 54.85227258632939,
+        "backendSteadyRequestsPerSecond": null,
+        "parentActors": null,
+        "driverActors": null,
+        "completedBurst": null,
+        "steadyP95Millis": 8.813280999999996,
+        "passwordP95Millis": 875.738314,
+        "codeP95Millis": 3.597977,
+        "signInP95Millis": 878.801368,
+        "failedSignIns": 0,
+        "failedRequestRate": 0,
+        "failedChecks": 0
+      },
+      "scope": "Aggregate HTTP metrics may include setup and mail-stub calls. Peak VUs do not alone prove 300 sustained users. Duration is never inferred from count/rate or intended configuration."
+    }
+  ]
+}

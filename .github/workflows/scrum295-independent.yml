@@ -1,0 +1,43 @@
+name: SCRUM-295 independent audit self-tests
+
+on:
+  push:
+    branches:
+      - test/SCRUM-295-independent-s5-checks
+  pull_request:
+    paths:
+      - 'scripts/scrum295-coverage-audit.mjs'
+      - 'scripts/scrum295-coverage-audit.test.mjs'
+      - 'scripts/scrum295-load-audit.mjs'
+      - 'scripts/scrum295-load-audit.test.mjs'
+      - 'scripts/scrum295-monitor-probe.mjs'
+      - 'scripts/scrum295-monitor-probe.test.mjs'
+      - 'scripts/scrum295-coverage-probe-result.mjs'
+      - 'scripts/scrum295-coverage-probe-result.test.mjs'
+      - 'scripts/scrum295-junit-summary.mjs'
+      - 'scripts/scrum295-junit-summary.test.mjs'
+      - 'scripts/scrum295-metrics-contract.mjs'
+      - 'scripts/scrum295-metrics-contract.test.mjs'
+      - 'verification/scrum295-post-h/pool-measurements*.mjs'
+      - 'scripts/scrum295-verify-metrics.mjs'
+      - 'scripts/scrum295-verify-metrics.test.mjs'
+      - '.github/workflows/scrum295-independent.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  coverage-audit-selftests:
+    name: Independent audit positive and negative controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify coverage and load audit positive/negative controls
+        run: node --test scripts/scrum295-coverage-audit.test.mjs scripts/scrum295-load-audit.test.mjs scripts/scrum295-monitor-probe.test.mjs scripts/scrum295-verify-metrics.test.mjs scripts/scrum295-metrics-contract.test.mjs scripts/scrum295-junit-summary.test.mjs scripts/scrum295-coverage-probe-result.test.mjs verification/scrum295-post-h/pool-measurements.test.mjs
+
+# This validates our verifier's synthetic controls only.
+# It does NOT certify the SCRUM-292 owner's real backend/frontend CI gate.

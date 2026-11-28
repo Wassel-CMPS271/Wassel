@@ -1,0 +1,9 @@
+services:
+  backend:
+    build:
+      context: ${SCRUM295_CANDIDATE_BACKEND:?Unmodified candidate backend is required}
+  mail-stub:
+    volumes:
+      - ${SCRUM295_VERIFIER_ROOT}/scripts:/verification/scripts:ro
+      - ${SCRUM295_VERIFIER_ROOT}/verification/scrum295-post-h:/verification/verification/scrum295-post-h:ro
+      - ./results:/results

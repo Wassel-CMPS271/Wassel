@@ -1,0 +1,41 @@
+{
+  "scope": "Independent extraction of real develop CI artifacts; does not modify the owner daily document.",
+  "readings": [
+    {
+      "date": "2026-11-23",
+      "run": 45239996621,
+      "sourceSha": "c23bbea0caac2438631e29060199317c5477affc",
+      "backend": 14851112225,
+      "frontend": 14849234777,
+      "backendPercent": 96.71797850711589,
+      "frontendPercent": 90.0933820544052,
+      "backendFloor": 94.7,
+      "frontendFloor": 86.6,
+      "backendCovered": 3330,
+      "backendTotal": 3443,
+      "frontendCovered": 4438,
+      "frontendTotal": 4926,
+      "backendZipSha256": "83ab97b40028fac04815e653ac008f0259c75abcb611b6e9841111b638212028",
+      "frontendZipSha256": "4bbb146f5c9f99b9c174a013e4ea962210798b3bacf2fc6a50853d6a0c757db2",
+      "runUrl": "https://github.com/Wassel-CMPS271/Wassel/actions/runs/45239996621"
+    },
+    {
+      "date": "2026-11-24",
+      "run": 45298409430,
+      "sourceSha": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b",
+      "backend": 14876664767,
+      "frontend": 14877801125,
+      "backendPercent": 96.65988963113564,
+      "frontendPercent": 90.34045922406968,
+      "backendFloor": 94.7,
+      "frontendFloor": 86.6,
+      "backendCovered": 3328,
+      "backendTotal": 3443,
+      "frontendCovered": 4564,
+      "frontendTotal": 5052,
+      "backendZipSha256": "51b1e89a2b75d64d241bf42235ff3e4cd49604a9082215705e678a5b3fdbdaf9",
+      "frontendZipSha256": "a6d98600bb71d5c524fc07559ad358398b8b23f342972be11f6e7c5ded111317",
+      "runUrl": "https://github.com/Wassel-CMPS271/Wassel/actions/runs/45298409430"
+    }
+  ]
+}

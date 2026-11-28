@@ -1,0 +1,305 @@
+# SCRUM-295 — independent Sprint 5 verification
+
+## 28 November 2026 — latest accepted-source refresh
+
+Updated the existing branch with accepted develop **f29b72e**, preserving history in merge **ea3c1bc**. See the [current report](2026-11-28-refresh.md) and [numeric/source evidence](evidence/2026-11-28-refresh.json); this section supersedes earlier dependency statuses below.
+
+- **93/93 verifier controls passed**. Merged SCRUM-289/290/292/293 implementations and current develop CI were inspected. Normal Maven/frontend CI passes; no gated pool measurement or long load run was repeated.
+- Current actual coverage: **96.6807% backend**, **92.02% frontend reported**. Both native floors pass; the strict backend 94.7% versus 94.72% policy discrepancy and missing daily rows remain.
+- Current-source [metrics CI](https://github.com/Wassel-CMPS271/Wassel/actions/runs/46143623026) executed **17 criteria: 16 passed / 1 failed, zero errors/skips** on `71f83c7`. Only the unchanged prefix defect fails (expected count 1, observed 0). The workflow now tests the actual push SHA, replacing the old pre-SCRUM-289 snapshot; sanitized current evidence is linked in the report.
+- **New monitoring PR #193 exists.** Its public status feed really lists two successful monitors created today, and both named services answered 200. Exact hidden target/cadence settings, delivered alerts and a controlled disposable outage/recovery remain unverified. The current public health body still includes `groups`, so the status-only shape mismatch remains.
+- Saved load evidence was re-audited. Workload, default 120-email quota and strict latency issues remain; historical candidate timings are not relabelled as current-develop results.
+
+**Keep PR #183 Draft**. No production fix, teammate branch/PR modification, Jira change or GitHub merge was made.
+
+## Preserved 24 November 2026 evidence
+
+Owner: Wassim. Updated **24 November 2026 (Asia/Beirut)**. PR #183 remains **Draft**.
+This branch contains verification tools and test fixtures only. No teammate production
+source, branch, acceptance test, or Jira status was changed.
+
+Latest continuation: [follow-up from commit 2e0a9f7](2026-11-24-follow-up.md), including the exact unapplied metrics fix proposal, executed post-SCRUM-289 checks and actual HTTP restart evidence.
+
+Current continuation results: real HTTP roles/2FA, backend outage/recovery and process counter reset executed; post-H full Maven/gated measurements passed; exact-100 burst exceeded 1s p95 and full-school defaults hit the 120-email cap. See the linked follow-up for the complete verdict.
+
+Dependency update: PR #187 was merged by its owner and develop is now `e9de4167`. The prefix remains unchanged; source-pinned verification is being refreshed, including stronger real-2FA setup under the updated contract. Earlier snapshots/results below are preserved.
+
+## Current evidence and verdict
+
+Acceptance is **incomplete**. Checker self-tests are not feature acceptance.
+
+| Gate | Actual evidence | Result / remaining work |
+| --- | --- | --- |
+| X2-01: admin-only metrics | Independent PostgreSQL/security tests and actual HTTP password/2FA sessions for all four roles | VERIFIED: ADMIN 200; head/driver/parent 403; no session 401; no metric fields in denied responses |
+| X2-02: metric values, units, resets | Java 16/17 pass; five delivery criteria pass; actual HTTP invalid-login deltas and process restart/reset pass | FAILED namespace exclusion remains; proposed fix in follow-up; existing cookie accepted after actual restart with all counters zero |
+| X2-03: minimal health / private actuator | Spring privacy/access assertions pass; actual HTTP health returns status UP plus groups | Strict status-only shape assertion FAILED; no component/details payload observed; owner must clarify exact contract |
+| X2-04: external uptime / outage alerts | Two private backend down/up observations and process reset executed; Jira has no supplied provider links, attachments or alert receipts | BLOCKED: genuine external frontend/backend monitoring, alert delivery and vendor-counted downtime |
+| X2-05: coverage readings | Actual PR #187 CI artifacts: backend **3408/3521 = 96.7907%**, frontend **4253/4735 = 89.8205%** | Both above configured floors; genuine develop daily readings independently extracted below; owner document still lacks rows; rounding discrepancy below |
+| X2-06: native coverage rejection | Disposable workflows add uncovered code and run all tests with unchanged native floors | Both native gates rejected actual below-floor regressions after zero unexpected functional failures; details below |
+| X2-07: school load replay | Pre-H replay p95 6.8531 ms / zero 5xx at 60.2475 RPS; post-H full defaults failed twice at 120 auth emails; exact 100/100 burst succeeded but p95 1217.2911 ms | FAILED: workload-band, default-quota capacity and strict 1s candidate latency; no integrated-develop acceptance claimed |
+| X2-08: isolated resource-capped stack | Real SQL dataset and Docker CPU/RAM/network settings checked; fake-mail/no-road-key configuration and hashes captured | Independent disposable-stack constraints passed and cleanup succeeded; measurements apply to the recorded host, not an unknown production plan |
+
+Frozen sources inspected:
+
+- develop `7a938f500228f6aff0c86c1a79ed029ed0e4f65b`.
+- SCRUM-293 / merged PR #185 head `cbaf70e1a574d1a0998a0d4019a7c401e26c7432`.
+- SCRUM-290 / open PR #187 head `e8bca50722324279df6be686843949b06a212500`.
+- SCRUM-292 / merged PR #184 head `72f274a2dd1b4e92fcd5fe10a1a73bbb25b3ef86`.
+
+The machine-readable [artifact audit](evidence/2026-11-24-artifact-audit.json)
+records source SHAs, original artifact IDs/ZIP digests, all measured values and
+missing measurements. The [local metrics result](evidence/2026-11-24-local-metrics.json)
+contains test identities/counts only, with no captured HTTP bodies or credentials.
+
+## Executed checks
+
+- Original independent tooling baseline: **40/40** Node tests passed.
+- Expanded verifier controls: **85/85** Node tests passed, no skipped/cancelled tests.
+  These exercise synthetic/loopback fixtures, not the production service.
+- Independent Java criteria against unmodified PR #187 production source:
+  **8 run, 7 passed, 1 failed, 0 errors, 0 skipped**. Both Java fixture classes
+  compiled. The local command selected only `IndependentRequestMetricsCriteriaTests`;
+  the four Spring/PostgreSQL tests were then executed in hosted CI and **all four passed**. PostgreSQL 16.16 started, and Flyway applied 17 migrations to v17.
+- All three SCRUM-295 workflow YAML files parsed successfully. JavaScript syntax and
+  `git diff --check` are checked before publication.
+- PR #187's real [backend CI](https://github.com/Wassel-CMPS271/Wassel/actions/runs/45238110173/job/137915153513)
+  ran `AdminMetricsControllerTests` **4/4**, `RequestMetricsFilterTests` **4/4**
+  and `OperationalMetricsTests` **7/7**. Its PR description's older statement
+  that controller tests were not run is stale; those 15 author tests did run.
+- That CI's downloaded `backend-coverage` artifact **14850599424** and
+  `frontend-coverage` artifact **14850548551** supplied the actual counts above.
+  They are candidate-branch readings, not new daily develop readings.
+
+Local Docker Desktop's engine did not answer two bounded unsandboxed server
+queries (25 s and 15 s). No local load stack was started or stopped. Hosted
+Ubuntu runners are used for the disposable PostgreSQL, coverage controls and
+load replay; the real completed results are recorded below. The initial load attempt failed before startup on Maven Central HTTP 429; the load-only retry built the stack but its host-loopback health probe could not connect. The corrected internal-network health probe then succeeded, and the full measured replay completed; see below. The Docker image and business load script were not patched.
+
+## Hosted execution results
+
+[Independent run 45314387002](https://github.com/Wassel-CMPS271/Wassel/actions/runs/45314387002), test commit `f902ce7b81065da14e540e56108e4108f39c5c74`:
+
+- **Metrics:** 12 tests, **11 passed / 1 failed**, zero errors/skips. All four
+  real PostgreSQL/Flyway/security tests passed. The only failure is the normal
+  actuator-prefix regression; it was not marked expected, skipped or removed.
+- **Backend native coverage control:** 1852 tests, **0 failures/errors**, 4
+  pre-existing skips; measured **74.8538%** below unchanged **94.7%** floor.
+  Maven returned 1 specifically because the native JaCoCo gate rejected it.
+- **Frontend native coverage control:** 1804 total tests, **0 unexpected
+  failures/errors**, 5 pre-existing skips and the existing expected-failure
+  test retained; coverage **75.3882%** below unchanged **86.6%** floor.
+  Vitest returned 1 specifically for the native coverage threshold.
+- **Load:** initial attempt could not build because Maven Central returned 429;
+  no load execution is claimed from that attempt. The first retry built the stack but host-loopback health remained unreachable; it never seeded or ran k6. Our harness now checks the same health endpoint inside the isolated network, preserving egress isolation and the UP requirement. The corrected replay subsequently completed as recorded below.
+
+The [sanitized hosted evidence](evidence/2026-11-24-hosted-probes.json) records
+artifact IDs, hashes and exact native exits/counts. A successful negative-control
+job means the native build **failed as required**; it is not a green product
+build with uncovered code added.
+
+[Normal PR integration CI](https://github.com/Wassel-CMPS271/Wassel/actions/runs/45314478705)
+also completed successfully: Maven **1852 total, 0 failures/errors, 4 existing
+skips**; frontend **1798 passed, 1 existing expected failure, 5 existing skips**
+(107 files), ESLint and production build passed. Authentication browser tests
+**10/10**, absences **1/1**, parent tracking **1/1**, Inbox **2/2**, integrated
+parent/driver UI **1/1** passed; routing success and both deliberate probe jobs
+also passed. No existing expected-failure or skipped test was changed by this PR.
+Those normal CI results do not override the independent candidate defect.
+
+Across the two independent PR #187 jobs, **17 distinct criteria ran: 16 passed,
+1 failed, 0 errors/skips**. The five notification criteria use real confirmations,
+PostgreSQL outbox/delivery state and the production sender with only the mail
+provider replaced by the existing recording stand-in. The prefix defect remains
+a genuine failing criterion.
+
+## Completed independent load replay — 24 November
+
+[Run 45319942145 / job 138195791968](https://github.com/Wassel-CMPS271/Wassel/actions/runs/45319942145/job/138195791968),
+source develop `7a938f500228f6aff0c86c1a79ed029ed0e4f65b`, test commit
+`44d304fe135f2a01a099ad33b10b833bc367b32b`:
+
+| Measurement | Actual result |
+| --- | --- |
+| Requests (all phases, including setup/stub) | 37,721 |
+| Backend steady-phase requests / measured elapsed | 36,521 / 606.183 seconds |
+| Backend steady-phase throughput | **60.2475 requests/s** |
+| Global p95 / steady p95 | **6.8531 ms / 4.9236 ms** |
+| Password / code / whole-sign-in p95 | **859.4436 / 2.7039 / 861.8540 ms** |
+| 5xx / failed requests / failed checks / failed sign-ins | **0 / 0 / 0 / 0** |
+| Observed participants / peak active VUs | **260 parents + 40 drivers / 302** |
+| Completed successful burst sign-ins / 2FA verifications | **100 / 100** |
+| Real run starts / location-sharing enables / GPS writes | **40 / 40 / 2,400**, every check passed |
+| Parent bus-location reads | **25,988**, every check passed |
+| Host | Ubuntu runner, Linux 7.0.0-1020-azure, 4 CPUs, 16,759,431,168 bytes RAM |
+| Actual Docker caps | Backend and PostgreSQL each 1 CPU/1 GiB; mail stand-in 0.25 CPU/128 MiB |
+| Dataset verified with SQL | **1,000 students / 40 buses / 800 parents / 40 drivers / 40 routes** |
+| Safety / cleanup | Internal-only network, fake mail, no road API key; only this uniquely named project removed successfully |
+
+All original k6 thresholds **passed**, as did the added duration/actor/burst
+measurements. The independent audit returned **exit 1 solely for the 40–50 RPS
+band**; all four other original audit gates passed and no evidence field was
+missing. This is positive latency/error evidence at a higher load, with a
+workload-specification discrepancy still requiring owner/team resolution.
+We did not weaken the band assertion. Backend steady RPS excludes the separate
+authentication-tagged burst calls; it is not the aggregate rate including setup.
+
+The independently measured p95/error results are consistent with the owner's
+Monday run 3 (9.8956 ms global p95, zero 5xx). They now supply the measured steady
+duration and throughput missing from the old native exports. The workload is
+still **pre-SCRUM-289**; no post-H performance acceptance is claimed.
+The [sanitized load evidence](evidence/2026-11-24-independent-load.json) includes
+all check counts, original threshold outcomes, exact caps, source/seed hashes,
+artifact digest and cleanup verdict. No session tokens, raw mail or browser
+artifacts are committed. Both native coverage controls and the 11/12 metrics
+result also repeated in this run; exact artifacts are linked in the hosted JSON.
+
+## Confirmed SCRUM-290 defect
+
+`RequestMetricsFilter.shouldNotFilter()` uses `path.startsWith("/actuator")`.
+An ordinary request to **`/actuator-not-an-endpoint`**, answered 404, is therefore
+excluded from all metrics. The contract excludes actual actuator endpoints
+(`/actuator/*`), not unrelated prefix lookalikes. The independent test
+`aLookalikePrefixIsNotAnActuatorEndpointAndMustBeCounted` expects total **1**,
+observes **0**, and remains a normal failing test.
+
+Moustafa should restrict exclusion to the actual actuator namespace and rerun
+his existing tests plus this regression. No feature implementation was patched
+in this branch. The Draft PR exposes the failure rather than masking it.
+
+```bash
+# In an isolated copy of pinned PR #187, add only verification/scrum295/java fixtures:
+cd backend
+./mvnw -B test -Dtest=IndependentRequestMetricsCriteriaTests -DfailIfNoTests=true
+```
+
+Independent coverage also checks nearest-rank p95 in **whole milliseconds**, the
+latest-2000 sample, null empty ratios/p95, response classification, documented
+failed-login statuses, notification arithmetic and in-memory reset behavior.
+The Spring fixture uses the real application/security chain, PostgreSQL/Flyway,
+controlled test-only 500/429 sources and real invalid-password/account-lock flows.
+Role principals are injected test fixtures. Notification arithmetic is a unit check. Five additional independent criteria now exercise real confirmations, PostgreSQL outbox rows, retry-then-success, exhausted retries, expiry, interruption and muted delivery through the production service, using the existing mail-provider stand-in. They compiled locally and [all five passed in hosted CI](https://github.com/Wassel-CMPS271/Wassel/actions/runs/45320203899), with zero errors/skips. The [sanitized notification evidence](evidence/2026-11-24-notification-metrics.json) preserves each case. The first attempt had 4 passes and one fixture-precondition failure: muting before confirmation suppressed creation of the event. The corrected fixture creates the event first and then mutes it; every assertion is unchanged. The provider stand-in is deliberate for these isolated tests; no external delivery was attempted. Restart disclosure and a new collector resetting are verified, without claiming an observed deployed-process restart.
+
+## SCRUM-292 coverage audit
+
+Merged implementation documents Day 1 backend **96.72%**, frontend **88.58%**;
+actual configured floors are **94.7%** and **86.6%**. Native CI artifacts are
+read from report-level JaCoCo `LINE` counters and Vitest total line counters.
+A stricter/raised floor is permitted; lowering a floor below baseline minus
+2 percentage points is rejected.
+
+The backend floor is **0.02 percentage points below** the literal published
+96.72 - 2 = **94.72%** minimum. Frontend 86.6% is stricter than 86.58%.
+The policy audit intentionally reports the backend discrepancy rather than
+inventing another baseline. Mohamad should clarify the approved rounding policy
+or correct his floor upward. The owner daily-readings document currently contains only 22 November. We independently downloaded real develop artifacts and preserved the missing readings in [our evidence](evidence/2026-11-24-develop-coverage-readings.json): **23 Nov: 96.7180% backend / 90.0934% frontend**, run **45239996621**; **24 Nov: 96.6599% / 90.3405%**, run **45298409430**. The owner should copy the genuine readings/links into docs/quality; absence of a row does not mean the CI evidence is absent.
+Jira SCRUM-292 still says To Do even though PR #184 merged; no status was changed.
+
+The native negative controls add a new 1000-line, deliberately uncovered fixture
+only to disposable checkouts. They leave every existing test and configured
+floor intact, run the full native test/coverage command, and require:
+
+1. Functional tests actually ran without failures or execution errors.
+2. Measured coverage fell below the unchanged native floor.
+3. The command failed specifically with JaCoCo/Vitest's coverage rejection.
+
+A compilation failure, test failure or missing report cannot pass the control.
+Only sanitized numeric results are uploaded; generated source and build logs
+are not committed. This controlled regression is verification, not a proposed
+product change or a weakened test.
+
+## SCRUM-293 report audit and replay
+
+| Author run | Requests | Aggregate RPS | Global p95 ms | Peak active VUs | Recorded 5xx |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 22 Nov, Sunday | 37,766 | 55.5397 | 5.6162 | 302 | 0 |
+| 23 Nov, Monday | 37,189 | 54.8160 | 11.0244 | 302 | 0 |
+| 23 Nov, Monday, run 3 | 37,240 | 54.8523 | 9.8956 | 302 | 0 |
+
+All three recorded zero failed requests/checks. Sunday lacked real school-day
+runs/GPS and cannot be the final morning-peak acceptance run. Monday run 3's
+whole sign-in p95 is **878.8014 ms** (password **875.7383 ms**, code **3.5980 ms**).
+These are positive observations, not proof of every acceptance condition.
+
+Limitations and discrepancies:
+
+- Jira asks for **40–50 requests/s**, while the authored script deliberately
+  models approximately **60 backend requests/s**. Its aggregate summary rate
+  also includes setup and fake-mail calls. More load is useful evidence but
+  does not silently redefine the approved workload. Owner must reconcile it
+  or supply a matching scenario and rerun.
+- Native `--summary-export` JSON lacks measured elapsed duration. Intended
+  `duration: 10m` is configuration, not a measurement. Old reports also lack
+  independently recorded backend-only steady throughput and completed burst
+  counts. The audit marks missing evidence and returns nonzero.
+- The source allows password/whole-sign-in p95 **3000 ms**, while the ticket
+  states a 1000 ms p95 budget. Recorded sign-ins were below 1000 ms, but the
+  weaker guard needs an explicit owner/team decision or correction.
+- The owner disclosed an initial simultaneous-login stampede with eight 500s
+  and ~52 s p95, and first-screen driver/parent initialization spikes (~6 s /
+  ~2.4 s) clearing after ~30 s. Overall p95 must not hide these limitations.
+- SCRUM-289 PR #188 and rate-limit PR #186 remain open at inspection. The
+  accepted-source replay is **before** those changes; the required post-289
+  burst needs another accepted combined candidate. PR #186 also proposes default per-address login/code limits of 30/60 per minute and deliberately sets rate limiting off in its load Compose file because all k6 users share one IP. Load performance with that switch off cannot certify production rate-limit behavior; a representative security-enabled client-address test is separately required after acceptance. We did not disable a limiter or alter those feature changes. No dependencies are merged
+  here to manufacture acceptance.
+- Caps are backend 1 CPU/1 GiB, PostgreSQL 1 CPU/1 GiB, fake mail 0.25 CPU/128 MiB.
+  The stand-in delays mail 800 ms; absent ORS key forces straight-line routing,
+  not a real road provider. Pinned addresses avoid geocoding. This differs
+  from hosted production and must remain explicit.
+
+Our reporting-only k6 entry invokes the author's setup and business callbacks
+unchanged and preserves every original threshold. Additional counters measure
+actual parent/driver participation, completed burst calls, steady elapsed time
+and backend-only steady requests. Only sanitized summary/limits are published;
+`setup_data` session tokens are removed. Its audit retains the ticket's original
+RPS/latency/error/duration gates. A genuine mismatch stays a failed job.
+
+The replay uses a uniquely named disposable Compose project, an internal-only
+network, loopback-only health port, exact SQL-checked 1000/40/800/40/40 dataset,
+slow fake mail and no road API key. It refuses weekends and removes only its
+own project after completion. It never targets Railway or a live school.
+
+## Running the independent tools
+
+```bash
+node --test scripts/scrum295-coverage-audit.test.mjs scripts/scrum295-load-audit.test.mjs scripts/scrum295-monitor-probe.test.mjs scripts/scrum295-verify-metrics.test.mjs scripts/scrum295-metrics-contract.test.mjs scripts/scrum295-junit-summary.test.mjs scripts/scrum295-coverage-probe-result.test.mjs
+node scripts/scrum295-load-audit.mjs path/to/sanitized-summary.json server_errors
+node scripts/scrum295-coverage-audit.mjs path/to/baseline-extracted-from-docs.json path/to/jacoco.xml path/to/coverage-summary.json
+```
+
+The baseline input is our explicit extraction of the published owner document;
+the ticket does not require the owner to invent a new JSON contract.
+
+For a real read-only HTTP smoke check, use the actual `/api/admin/metrics` path
+and mappings exported as `METRIC_FIELDS` by `scrum295-metrics-contract.mjs`.
+Set `SCRUM295_BASE_URL`, `SCRUM295_METRICS_PATH`, the four `SCRUM295_*_COOKIE`
+values (ADMIN/HEAD/DRIVER/PARENT), and JSON `SCRUM295_FIELDS` in the process
+environment only. Use isolated accounts authenticated through actual 2FA.
+No cookies belong in files, CI artifacts, PRs or Jira. The validator checks
+canonical nested fields, nullable empty p95/rates, fraction arithmetic and
+restart disclosure; controlled deltas require separate evidence.
+
+## External monitor dependency (SCRUM-291)
+
+Still needed from Mohamad: actual external provider/dashboard links for BOTH
+frontend and backend `/actuator/health`, finest free-plan cadence, verified team
+alert destination, incident/downtime and alert-receipt records. Jira's only
+comment is the previous handoff asking for these; no provider evidence was
+supplied there. README's Railway health configuration is not external-monitor
+or alert-delivery evidence.
+
+The existing read-only `scrum295-monitor-probe.mjs` remains available. On a
+**disposable monitored stack only**, collect up, intentional stop, down and
+recovery observations; compare real vendor incident timestamps/alerts and
+planned-deployment downtime. This script never stops services or sends alerts.
+Synthetic response tests are not genuine uptime acceptance.
+
+## Next actions / Draft rule
+
+1. Complete SCRUM-291 with genuine external-monitor outage, alert receipt and recovery evidence on a disposable stack. The app restart can also be observed during that coordinated run.
+2. Moustafa fixes the confirmed prefix exclusion; rerun independent criteria against his new head. Notification outcome counters already have independent PostgreSQL/service evidence. Real provider delivery was deliberately outside this isolated test.
+3. Mohamad supplies monitor/outage evidence, coverage rounding clarification and
+   publishes the independently recovered daily readings in the owner document; reconciles the 40–50 RPS model and 1s login guard with the owner script. Measured duration, burst counts and complete timings now exist in our independent evidence.
+4. Isolated SCRUM-289 candidate verification has executed (full Maven/gated measurements pass; full default-quota school and strict 1s burst fail). After owners resolve quota/latency and the code is integrated, rerun the complete accepted school workload.
+5. The lightweight combined metrics/security/delivery workflow now runs on every own-branch push, including report-only commits, so the unresolved normal failure remains visible on the current head. The longer pinned coverage/load probes retain their actual run links.
+6. Keep #183 Draft until all X2-01 through X2-08 are evidenced. Do not label
+   synthetic checks, author reports or pre-dependency runs as full acceptance.

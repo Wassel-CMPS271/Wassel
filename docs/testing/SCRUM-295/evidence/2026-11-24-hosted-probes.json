@@ -1,0 +1,246 @@
+{
+  "runId": 45314387002,
+  "attempt": 1,
+  "testCommit": "f902ce7b81065da14e540e56108e4108f39c5c74",
+  "runUrl": "https://github.com/Wassel-CMPS271/Wassel/actions/runs/45314387002",
+  "results": [
+    {
+      "artifactId": 14885236496,
+      "zipSha256": "62d7c727fa949468aaf323063b4a3441aed8df8b3c2a2dcacb6a19cbe04772b1",
+      "result": {
+        "candidateSha": "e8bca50722324279df6be686843949b06a212500",
+        "suites": [
+          {
+            "name": "independent.scrum295.IndependentAdminMetricsCriteriaTests",
+            "cases": [
+              {
+                "name": "responseIsAggregateOnlyAndHealthIsTheOnlyPublicActuatorPath",
+                "status": "passed"
+              },
+              {
+                "name": "everyOtherRoleAndSignedOutCallerIsRefusedWithoutMetricData",
+                "status": "passed"
+              },
+              {
+                "name": "anActualAccountLockIsCountedOnceAndLaterRefusalsAreOnlyFailedSignIns",
+                "status": "passed"
+              },
+              {
+                "name": "scriptedHttpStatusesAndFailedLoginsProduceExactCounterDeltas",
+                "status": "passed"
+              }
+            ],
+            "tests": 4,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "passed": 4
+          },
+          {
+            "name": "independent.scrum295.IndependentRequestMetricsCriteriaTests",
+            "cases": [
+              {
+                "name": "nearestRankIsInMillisecondsAndUsesOnlyTheLatestTwoThousand",
+                "status": "passed"
+              },
+              {
+                "name": "genuineActuatorPathsAndMetricsReadsAreExcluded",
+                "status": "passed"
+              },
+              {
+                "name": "aNewInstanceResetsAllCountersRatherThanClaimingLifetimeTotals",
+                "status": "passed"
+              },
+              {
+                "name": "aLookalikePrefixIsNotAnActuatorEndpointAndMustBeCounted",
+                "status": "failed"
+              },
+              {
+                "name": "finishedResponsesClassifyServerErrorsAnd429Separately",
+                "status": "passed"
+              },
+              {
+                "name": "emptyCountersUseNullRatesAndDiscloseRestart",
+                "status": "passed"
+              },
+              {
+                "name": "notificationOutcomeArithmeticUsesFinalFailuresAndFractionUnits",
+                "status": "passed"
+              },
+              {
+                "name": "failedSignInsAreOnlyTheDocumentedPostResponses",
+                "status": "passed"
+              }
+            ],
+            "tests": 8,
+            "failures": 1,
+            "errors": 0,
+            "skipped": 0,
+            "passed": 7
+          }
+        ]
+      }
+    },
+    {
+      "artifactId": 14885296805,
+      "zipSha256": "be9ce69cddf0f0e1c29d8ac0679884b800212ab6a02618ea5583cad881eb4428",
+      "result": {
+        "kind": "backend",
+        "gateRejectedRegression": true,
+        "floor": 94.69999999999999,
+        "measured": 74.85380116959064,
+        "tests": 1852,
+        "skipped": 4,
+        "failures": 0,
+        "errors": 0,
+        "nativeExit": 1,
+        "sourceSha": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b"
+      }
+    },
+    {
+      "artifactId": 14884807413,
+      "zipSha256": "f22cbf8e15ff7de1d2d0bd5745c0e80584935da35e9b5ebad80d8c87c8cc97b8",
+      "result": {
+        "kind": "frontend",
+        "gateRejectedRegression": true,
+        "floor": 86.6,
+        "measured": 75.38817310868848,
+        "tests": 1804,
+        "skipped": 5,
+        "failures": 0,
+        "errors": 0,
+        "nativeExit": 1,
+        "sourceSha": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b"
+      }
+    }
+  ],
+  "initialLoadAttempt": {
+    "executed": false,
+    "stage": "Docker Maven dependency resolution",
+    "reason": "Maven Central returned HTTP 429 for spring-boot-starter-parent:4.1.2",
+    "jobId": 138177587512
+  },
+  "loadRetry": {
+    "attempt": 2,
+    "jobId": 138192975032,
+    "executed": false,
+    "stage": "Pre-seed health readiness",
+    "reason": "Host loopback health never connected; no seed/k6 run. Harness changed to probe inside isolated Docker network; next run pending."
+  },
+  "repeatedRun": {
+    "runId": 45319942145,
+    "testCommit": "44d304fe135f2a01a099ad33b10b833bc367b32b",
+    "results": [
+      {
+        "artifactId": 14886604404,
+        "zipSha256": "7c8418186003e04e74d8d328c09af15bc588e0b5bbf29408303724c90cda6db5",
+        "result": {
+          "candidateSha": "e8bca50722324279df6be686843949b06a212500",
+          "suites": [
+            {
+              "name": "independent.scrum295.IndependentAdminMetricsCriteriaTests",
+              "cases": [
+                {
+                  "name": "responseIsAggregateOnlyAndHealthIsTheOnlyPublicActuatorPath",
+                  "status": "passed"
+                },
+                {
+                  "name": "everyOtherRoleAndSignedOutCallerIsRefusedWithoutMetricData",
+                  "status": "passed"
+                },
+                {
+                  "name": "anActualAccountLockIsCountedOnceAndLaterRefusalsAreOnlyFailedSignIns",
+                  "status": "passed"
+                },
+                {
+                  "name": "scriptedHttpStatusesAndFailedLoginsProduceExactCounterDeltas",
+                  "status": "passed"
+                }
+              ],
+              "tests": 4,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "passed": 4
+            },
+            {
+              "name": "independent.scrum295.IndependentRequestMetricsCriteriaTests",
+              "cases": [
+                {
+                  "name": "nearestRankIsInMillisecondsAndUsesOnlyTheLatestTwoThousand",
+                  "status": "passed"
+                },
+                {
+                  "name": "genuineActuatorPathsAndMetricsReadsAreExcluded",
+                  "status": "passed"
+                },
+                {
+                  "name": "aNewInstanceResetsAllCountersRatherThanClaimingLifetimeTotals",
+                  "status": "passed"
+                },
+                {
+                  "name": "aLookalikePrefixIsNotAnActuatorEndpointAndMustBeCounted",
+                  "status": "failed"
+                },
+                {
+                  "name": "finishedResponsesClassifyServerErrorsAnd429Separately",
+                  "status": "passed"
+                },
+                {
+                  "name": "emptyCountersUseNullRatesAndDiscloseRestart",
+                  "status": "passed"
+                },
+                {
+                  "name": "notificationOutcomeArithmeticUsesFinalFailuresAndFractionUnits",
+                  "status": "passed"
+                },
+                {
+                  "name": "failedSignInsAreOnlyTheDocumentedPostResponses",
+                  "status": "passed"
+                }
+              ],
+              "tests": 8,
+              "failures": 1,
+              "errors": 0,
+              "skipped": 0,
+              "passed": 7
+            }
+          ]
+        }
+      },
+      {
+        "artifactId": 14886709958,
+        "zipSha256": "daf9e0eaabac9f501a566640680c511fd7b461a5b606a05c5b689af9dd677f0b",
+        "result": {
+          "kind": "backend",
+          "gateRejectedRegression": true,
+          "floor": 94.69999999999999,
+          "measured": 74.89878542510121,
+          "tests": 1852,
+          "skipped": 4,
+          "failures": 0,
+          "errors": 0,
+          "nativeExit": 1,
+          "sourceSha": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b"
+        }
+      },
+      {
+        "artifactId": 14886738756,
+        "zipSha256": "e49f38794151f67398452e11ea3dd0d4c74a7c481ec9e83c174cba35b7c13af8",
+        "result": {
+          "kind": "frontend",
+          "gateRejectedRegression": true,
+          "floor": 86.6,
+          "measured": 75.38817310868848,
+          "tests": 1804,
+          "skipped": 5,
+          "failures": 0,
+          "errors": 0,
+          "nativeExit": 1,
+          "sourceSha": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b"
+        }
+      }
+    ]
+  },
+  "completedLoadReplay": "See 2026-11-24-independent-load.json: actual full replay completed, all native thresholds passed, strict independent RPS-band audit failed at 60.2475/sec."
+}
