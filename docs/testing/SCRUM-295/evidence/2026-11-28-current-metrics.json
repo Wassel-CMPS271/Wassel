@@ -1,0 +1,110 @@
+{
+  "runId": 46143623026,
+  "jobId": 140974785983,
+  "testCommit": "71f83c75b07e3cf9c0042cac589b3dbd44ea0697",
+  "artifactId": 15262768502,
+  "zipSha256": "82d3f548017e49b20e06e414d4960104384356bb53fe49e7773a74afce3049ed",
+  "result": {
+    "candidateSha": "71f83c75b07e3cf9c0042cac589b3dbd44ea0697",
+    "suites": [
+      {
+        "name": "independent.scrum295.IndependentAdminMetricsCriteriaTests",
+        "cases": [
+          {
+            "name": "responseIsAggregateOnlyAndHealthIsTheOnlyPublicActuatorPath",
+            "status": "passed"
+          },
+          {
+            "name": "everyOtherRoleAndSignedOutCallerIsRefusedWithoutMetricData",
+            "status": "passed"
+          },
+          {
+            "name": "anActualAccountLockIsCountedOnceAndLaterRefusalsAreOnlyFailedSignIns",
+            "status": "passed"
+          },
+          {
+            "name": "scriptedHttpStatusesAndFailedLoginsProduceExactCounterDeltas",
+            "status": "passed"
+          }
+        ],
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "passed": 4
+      },
+      {
+        "name": "independent.scrum295.IndependentNotificationMetricsCriteriaTests",
+        "cases": [
+          {
+            "name": "exhaustedRetriesCountOneFailureOnlyWhenTheDeliveryFinallyEnds",
+            "status": "passed"
+          },
+          {
+            "name": "expiredPendingDeliveryCountsOneFinalFailureRatherThanAnotherSend",
+            "status": "passed"
+          },
+          {
+            "name": "mutedDeliveryIsSkippedWithoutIncrementingSentOrFailed",
+            "status": "passed"
+          },
+          {
+            "name": "interruptedInFlightDeliveryCountsOneFinalFailureWithoutCallingMail",
+            "status": "passed"
+          },
+          {
+            "name": "aRetryThenSuccessCountsOneSentAndNoFinalFailure",
+            "status": "passed"
+          }
+        ],
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "passed": 5
+      },
+      {
+        "name": "independent.scrum295.IndependentRequestMetricsCriteriaTests",
+        "cases": [
+          {
+            "name": "nearestRankIsInMillisecondsAndUsesOnlyTheLatestTwoThousand",
+            "status": "passed"
+          },
+          {
+            "name": "genuineActuatorPathsAndMetricsReadsAreExcluded",
+            "status": "passed"
+          },
+          {
+            "name": "aNewInstanceResetsAllCountersRatherThanClaimingLifetimeTotals",
+            "status": "passed"
+          },
+          {
+            "name": "aLookalikePrefixIsNotAnActuatorEndpointAndMustBeCounted",
+            "status": "failed"
+          },
+          {
+            "name": "finishedResponsesClassifyServerErrorsAnd429Separately",
+            "status": "passed"
+          },
+          {
+            "name": "emptyCountersUseNullRatesAndDiscloseRestart",
+            "status": "passed"
+          },
+          {
+            "name": "notificationOutcomeArithmeticUsesFinalFailuresAndFractionUnits",
+            "status": "passed"
+          },
+          {
+            "name": "failedSignInsAreOnlyTheDocumentedPostResponses",
+            "status": "passed"
+          }
+        ],
+        "tests": 8,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0,
+        "passed": 7
+      }
+    ]
+  }
+}

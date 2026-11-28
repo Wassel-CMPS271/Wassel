@@ -225,7 +225,22 @@
   "metrics": {
     "prefixStillBroad": true,
     "sourceSha256": "bc4e6c042806b48eba8c11b5f1ddb81c01e36dad3f176c766048e3e28603a430",
-    "currentIndependentExecution": "Pending current-head hosted 17-criterion job; earlier failures retained, not counted as newly executed."
+    "currentIndependentExecution": {
+      "runId": 46143623026,
+      "jobId": 140974785983,
+      "source": "71f83c75b07e3cf9c0042cac589b3dbd44ea0697",
+      "artifactId": 15262768502,
+      "zipSha256": "82d3f548017e49b20e06e414d4960104384356bb53fe49e7773a74afce3049ed",
+      "tests": 17,
+      "passed": 16,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "failingCase": "aLookalikePrefixIsNotAnActuatorEndpointAndMustBeCounted",
+      "expectedRequestDelta": 1,
+      "observedRequestDelta": 0,
+      "details": "2026-11-28-current-metrics.json"
+    }
   },
   "unchangedSincePreviousAcceptedMetricsSource": {
     "backend/src/main/java/com/wassel/backend/monitoring/config/RequestMetricsFilter.java": true,
