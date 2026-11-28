@@ -1,0 +1,629 @@
+{
+  "checkedOn": "2026-11-28",
+  "timezone": "Asia/Beirut",
+  "develop": "f29b72ec69b4c22389c7a3b9b2d77d06a426f757",
+  "mergeCommit": "ea3c1bc25bc3cc1978bd52f84e2dfbdcb2d3c4d8",
+  "jira": [
+    {
+      "key": "SCRUM-295",
+      "status": "In Progress",
+      "owner": "Wassim Fawaz"
+    },
+    {
+      "key": "SCRUM-289",
+      "status": "Done",
+      "owner": "Hashem Awad"
+    },
+    {
+      "key": "SCRUM-290",
+      "status": "In Review",
+      "owner": "Moustafa Hashem"
+    },
+    {
+      "key": "SCRUM-291",
+      "status": "To Do",
+      "owner": "Mohamad A. Al Hamwi"
+    },
+    {
+      "key": "SCRUM-292",
+      "status": "Done",
+      "owner": "Mohamad A. Al Hamwi"
+    },
+    {
+      "key": "SCRUM-293",
+      "status": "Done",
+      "owner": "Mohamad A. Al Hamwi"
+    }
+  ],
+  "merged": [
+    {
+      "pr": 184,
+      "title": "SCRUM-292: publish test coverage on every CI run and protect it with a floor",
+      "head": "72f274a2dd1b4e92fcd5fe10a1a73bbb25b3ef86",
+      "mergeCommit": "fa7fc3ad1b508e120a57660a42e13a792248c052",
+      "mergedAt": "2026-11-23T17:10:16Z"
+    },
+    {
+      "pr": 185,
+      "title": "SCRUM-293: load test for a normal school (k6, throwaway stack, report)",
+      "head": "cbaf70e1a574d1a0998a0d4019a7c401e26c7432",
+      "mergeCommit": "ed4effdb49a89359dca00f35725d00c2701763ec",
+      "mergedAt": "2026-11-23T17:00:58Z"
+    },
+    {
+      "pr": 187,
+      "title": "SCRUM-290: error rate, response time and delivery success for the admin",
+      "head": "e4e480ab3b96fb6eec5ec0085ef9bdb87252522e",
+      "mergeCommit": "e9de4167a5d669289461b5054b5f0a28f8238358",
+      "mergedAt": "2026-11-24T06:39:16Z"
+    },
+    {
+      "pr": 188,
+      "title": "SCRUM-289: send the sign-in email after the commit, and cap authentication email",
+      "head": "e20764200a1ad3d760ab74abc4971956689005e5",
+      "mergeCommit": "35600e52b0c23c20f7c0b5b7734b471f1eea0d27",
+      "mergedAt": "2026-11-24T08:32:04Z"
+    }
+  ],
+  "ci": {
+    "runId": 46134735375,
+    "jobs": [
+      140947461400,
+      140947461415
+    ],
+    "backend": {
+      "total": 1984,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 5
+    },
+    "frontend": {
+      "passed": 1852,
+      "expectedFailure": 1,
+      "skipped": 5,
+      "total": 1858
+    },
+    "relevantAuthorTests": [
+      {
+        "class": "com.wassel.backend.security.RoleAccessMatrixTests",
+        "total": 447,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "class": "com.wassel.backend.monitoring.controller.AdminMetricsControllerTests",
+        "total": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "class": "com.wassel.backend.monitoring.config.RequestMetricsFilterTests",
+        "total": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "class": "com.wassel.backend.monitoring.service.OperationalMetricsTests",
+        "total": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "class": "com.wassel.backend.auth.controller.AuthEmailPoolMeasurementTests",
+        "total": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1
+      },
+      {
+        "class": "com.wassel.backend.auth.controller.AuthEmailCapContractTests",
+        "total": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "class": "com.wassel.backend.auth.controller.RateLimitTests",
+        "total": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "class": "com.wassel.backend.auth.controller.AuthEmailConnectionTests",
+        "total": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "class": "com.wassel.backend.auth.config.AuthEmailPropertiesTests",
+        "total": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "class": "com.wassel.backend.auth.service.TwoFactorEmailAfterCommitTests",
+        "total": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "class": "com.wassel.backend.auth.service.AuthEmailBudgetTests",
+        "total": 21,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ]
+  },
+  "scope": "Bounded read-only audit and verifier controls; no new load, deployment outage or external-monitor claim.",
+  "verifierControls": {
+    "total": 93,
+    "passed": 93,
+    "failed": 0,
+    "skipped": 0
+  },
+  "coverage": {
+    "source": "f29b72ec69b4c22389c7a3b9b2d77d06a426f757",
+    "runId": 46134735375,
+    "artifacts": [
+      {
+        "name": "backend-coverage",
+        "id": 15258933713,
+        "zipSha256": "593ece61c7e33d765fcc6aa4627a4aed3a4a5b3ec6c2fb76d2b1496212d0b74d",
+        "member": "jacoco.xml"
+      },
+      {
+        "name": "frontend-coverage",
+        "id": 15259366231,
+        "zipSha256": "ce97970831b252445e014f21e449a2efce1247b1068d6af1fa86a0f0ba17ab18",
+        "member": "coverage-summary.json"
+      }
+    ],
+    "contract": {
+      "backend": {
+        "metric": "LINE",
+        "baseline": 96.72,
+        "floor": 94.7
+      },
+      "frontend": {
+        "metric": "lines",
+        "baseline": 88.58,
+        "floor": 86.6
+      }
+    },
+    "backend": {
+      "missed": 126,
+      "covered": 3670,
+      "total": 3796,
+      "percent": 96.68071654373024
+    },
+    "frontend": {
+      "total": 5067,
+      "covered": 4663,
+      "skipped": 0,
+      "pct": 92.02,
+      "exactPercent": 92.02684033945135
+    },
+    "currentNativeFloorsPassed": true,
+    "strictPolicy": {
+      "pass": false,
+      "error": "backend floor must not be below Day 1 baseline minus 2 percentage points",
+      "minimumBackendFloor": 94.72
+    },
+    "publishedDailyDates": [
+      "2026-11-22"
+    ]
+  },
+  "metrics": {
+    "prefixStillBroad": true,
+    "sourceSha256": "bc4e6c042806b48eba8c11b5f1ddb81c01e36dad3f176c766048e3e28603a430",
+    "currentIndependentExecution": "Pending current-head hosted 17-criterion job; earlier failures retained, not counted as newly executed."
+  },
+  "unchangedSincePreviousAcceptedMetricsSource": {
+    "backend/src/main/java/com/wassel/backend/monitoring/config/RequestMetricsFilter.java": true,
+    "backend/pom.xml": true,
+    "frontend/vitest.config.mts": true,
+    "docs/quality/README.md": true,
+    "loadtest/load.js": true
+  },
+  "authorLoadSummaries": [
+    {
+      "file": "docs/testing/SCRUM-293/summary-2026-11-22-sunday.json",
+      "sha256": "e95447a5cc19ff763331541685d5e2f082ee6b59a09a49bdfae1f1b070f8f977",
+      "audit": {
+        "requests": 37766,
+        "checks": [
+          {
+            "name": "p95 under 1000 ms",
+            "actual": 5.61617375,
+            "pass": true
+          },
+          {
+            "name": "zero HTTP 5xx",
+            "actual": 0,
+            "pass": true
+          },
+          {
+            "name": "40-50 requests/sec achieved",
+            "actual": 55.539703082444,
+            "pass": false
+          },
+          {
+            "name": "300 peak active VUs",
+            "actual": 302,
+            "pass": true
+          },
+          {
+            "name": "10 minutes measured",
+            "actual": null,
+            "pass": false
+          }
+        ],
+        "complete": false,
+        "missing": [
+          "actual duration",
+          "backend-only steady request rate"
+        ],
+        "pass": false,
+        "observations": {
+          "aggregateRequestsPerSecond": 55.539703082444,
+          "backendSteadyRequestsPerSecond": null,
+          "parentActors": null,
+          "driverActors": null,
+          "completedBurst": null,
+          "steadyP95Millis": 5.02672475,
+          "passwordP95Millis": null,
+          "codeP95Millis": null,
+          "signInP95Millis": null,
+          "failedSignIns": 0,
+          "failedRequestRate": 0,
+          "failedChecks": 0
+        },
+        "scope": "Aggregate HTTP metrics may include setup and mail-stub calls. Peak VUs do not alone prove 300 sustained users. Duration is never inferred from count/rate or intended configuration."
+      }
+    },
+    {
+      "file": "docs/testing/SCRUM-293/summary-2026-11-23-monday.json",
+      "sha256": "3b68d9c994e7dfb1fdb72a83d74447266cf591a1281d28e05e9bf9fedff59855",
+      "audit": {
+        "requests": 37189,
+        "checks": [
+          {
+            "name": "p95 under 1000 ms",
+            "actual": 11.024420599999978,
+            "pass": true
+          },
+          {
+            "name": "zero HTTP 5xx",
+            "actual": 0,
+            "pass": true
+          },
+          {
+            "name": "40-50 requests/sec achieved",
+            "actual": 54.816043867147,
+            "pass": false
+          },
+          {
+            "name": "300 peak active VUs",
+            "actual": 302,
+            "pass": true
+          },
+          {
+            "name": "10 minutes measured",
+            "actual": null,
+            "pass": false
+          }
+        ],
+        "complete": false,
+        "missing": [
+          "actual duration",
+          "backend-only steady request rate"
+        ],
+        "pass": false,
+        "observations": {
+          "aggregateRequestsPerSecond": 54.816043867147,
+          "backendSteadyRequestsPerSecond": null,
+          "parentActors": null,
+          "driverActors": null,
+          "completedBurst": null,
+          "steadyP95Millis": 9.2225296,
+          "passwordP95Millis": null,
+          "codeP95Millis": null,
+          "signInP95Millis": null,
+          "failedSignIns": 0,
+          "failedRequestRate": 0,
+          "failedChecks": 0
+        },
+        "scope": "Aggregate HTTP metrics may include setup and mail-stub calls. Peak VUs do not alone prove 300 sustained users. Duration is never inferred from count/rate or intended configuration."
+      }
+    },
+    {
+      "file": "docs/testing/SCRUM-293/summary-2026-11-23-monday-run3.json",
+      "sha256": "ff7798042823cbd77fb6234a004acfb83973877030a80dfbc90f3245eb844c6a",
+      "audit": {
+        "requests": 37240,
+        "checks": [
+          {
+            "name": "p95 under 1000 ms",
+            "actual": 9.895603799999998,
+            "pass": true
+          },
+          {
+            "name": "zero HTTP 5xx",
+            "actual": 0,
+            "pass": true
+          },
+          {
+            "name": "40-50 requests/sec achieved",
+            "actual": 54.85227258632939,
+            "pass": false
+          },
+          {
+            "name": "300 peak active VUs",
+            "actual": 302,
+            "pass": true
+          },
+          {
+            "name": "10 minutes measured",
+            "actual": null,
+            "pass": false
+          }
+        ],
+        "complete": false,
+        "missing": [
+          "actual duration",
+          "backend-only steady request rate"
+        ],
+        "pass": false,
+        "observations": {
+          "aggregateRequestsPerSecond": 54.85227258632939,
+          "backendSteadyRequestsPerSecond": null,
+          "parentActors": null,
+          "driverActors": null,
+          "completedBurst": null,
+          "steadyP95Millis": 8.813280999999996,
+          "passwordP95Millis": 875.738314,
+          "codeP95Millis": 3.597977,
+          "signInP95Millis": 878.801368,
+          "failedSignIns": 0,
+          "failedRequestRate": 0,
+          "failedChecks": 0
+        },
+        "scope": "Aggregate HTTP metrics may include setup and mail-stub calls. Peak VUs do not alone prove 300 sustained users. Duration is never inferred from count/rate or intended configuration."
+      }
+    }
+  ],
+  "historicalIndependentPreH": {
+    "runId": 45319942145,
+    "source": "7a938f500228f6aff0c86c1a79ed029ed0e4f65b",
+    "audit": {
+      "requests": 37721,
+      "checks": [
+        {
+          "name": "p95 under 1000 ms",
+          "actual": 6.853132,
+          "pass": true
+        },
+        {
+          "name": "zero HTTP 5xx",
+          "actual": 0,
+          "pass": true
+        },
+        {
+          "name": "40-50 requests/sec achieved",
+          "actual": 60.24748302080395,
+          "pass": false
+        },
+        {
+          "name": "300 peak active VUs",
+          "actual": 302,
+          "pass": true
+        },
+        {
+          "name": "10 minutes measured",
+          "actual": 606.183,
+          "pass": true
+        }
+      ],
+      "complete": true,
+      "missing": [],
+      "pass": false,
+      "observations": {
+        "aggregateRequestsPerSecond": 56.26552151899596,
+        "backendSteadyRequestsPerSecond": 60.24748302080395,
+        "parentActors": 260,
+        "driverActors": 40,
+        "completedBurst": 100,
+        "steadyP95Millis": 4.923643,
+        "passwordP95Millis": 859.443585,
+        "codeP95Millis": 2.70385235,
+        "signInP95Millis": 861.8539776499999,
+        "failedSignIns": 0,
+        "failedRequestRate": 0,
+        "failedChecks": 0
+      },
+      "scope": "Aggregate HTTP metrics may include setup and mail-stub calls. Peak VUs do not alone prove 300 sustained users. Duration is never inferred from count/rate or intended configuration."
+    },
+    "cleanupVerified": true
+  },
+  "historicalPostH": {
+    "full": {
+      "runId": 45339167598,
+      "candidate": "cab56d67dabe1acf69884607c87bf936c92309e4",
+      "authEmailRows": 120,
+      "nativeExit": 99,
+      "audit": {
+        "requests": 17681,
+        "checks": [
+          {
+            "name": "p95 under 1000 ms",
+            "actual": 1090.784343,
+            "pass": false
+          },
+          {
+            "name": "zero HTTP 5xx",
+            "actual": 1765,
+            "pass": false
+          },
+          {
+            "name": "40-50 requests/sec achieved",
+            "actual": 24.045066886151027,
+            "pass": false
+          },
+          {
+            "name": "300 peak active VUs",
+            "actual": 301,
+            "pass": true
+          },
+          {
+            "name": "10 minutes measured",
+            "actual": 624.494,
+            "pass": true
+          }
+        ],
+        "complete": true,
+        "missing": [],
+        "pass": false,
+        "observations": {
+          "aggregateRequestsPerSecond": 25.8516152842872,
+          "backendSteadyRequestsPerSecond": 24.045066886151027,
+          "parentActors": 260,
+          "driverActors": 40,
+          "completedBurst": 101,
+          "steadyP95Millis": 86.79037100000001,
+          "passwordP95Millis": 16972.564586999997,
+          "codeP95Millis": 0,
+          "signInP95Millis": 0,
+          "failedSignIns": 1765,
+          "failedRequestRate": 0.1303659295288728,
+          "failedChecks": 1765
+        },
+        "scope": "Aggregate HTTP metrics may include setup and mail-stub calls. Peak VUs do not alone prove 300 sustained users. Duration is never inferred from count/rate or intended configuration."
+      }
+    },
+    "burst": {
+      "jobId": 138260850168,
+      "candidate": "cab56d67dabe1acf69884607c87bf936c92309e4",
+      "authEmailRows": 100,
+      "observed": {
+        "completedIterations": 100,
+        "elapsedMs": 60324,
+        "lastArrivalMs": 59401
+      },
+      "p95Millis": 1217.2910960000002,
+      "serverErrors": 0,
+      "failedSignIns": 0,
+      "pass": false
+    }
+  },
+  "currentLoadLimitations": {
+    "authEmailDailyDefault": 120,
+    "requiredInitialActors": 300,
+    "additionalBurstSignIns": 100,
+    "k6PasswordThresholdMillis": 3000,
+    "k6WholeSignInThresholdMillis": 3000,
+    "ticketThresholdMillis": 1000,
+    "rerunPerformed": false,
+    "reason": "No repeat of long-running loads while the documented quota/model mismatch is unchanged; historical candidate latency is not a current-develop measurement."
+  },
+  "monitoring": {
+    "jiraStatus": "To Do",
+    "ownerPr": 193,
+    "ownerHead": "09ad5c7cf2446a4760d8c7ee3ed363fe634a8994",
+    "ownerPrMerged": false,
+    "statusPage": "https://stats.uptimerobot.com/0oDCmNKnPa",
+    "externalProviderEvidenceSupplied": true,
+    "publicListingVerified": true,
+    "monitors": [
+      {
+        "id": 804836042,
+        "name": "wassel-production-a0724bec.up.railway.app",
+        "status": "success",
+        "type": "HTTP(s)",
+        "createdAtAsPublished": "2026-11-28 04:29:40",
+        "creationTimezone": "not specified in feed",
+        "exactTargetUrl": null,
+        "lastDowntime": null,
+        "publishedRatio": "100.000"
+      },
+      {
+        "id": 804836043,
+        "name": "wassel-sooty.vercel.app",
+        "status": "success",
+        "type": "HTTP(s)",
+        "createdAtAsPublished": "2026-11-28 04:30:30",
+        "creationTimezone": "not specified in feed",
+        "exactTargetUrl": null,
+        "lastDowntime": null,
+        "publishedRatio": "100.000"
+      }
+    ],
+    "publicReads": {
+      "scope": "Three single read-only public GETs; no outage, load or alert delivery test",
+      "results": [
+        {
+          "target": "provider",
+          "url": "https://stats.uptimerobot.com/0oDCmNKnPa",
+          "checkedAtUtc": "2026-11-28T12:07:30.096424+00:00",
+          "status": 200,
+          "finalUrl": "https://stats.uptimerobot.com/0oDCmNKnPa",
+          "contentType": "text/html; charset=utf-8",
+          "bytesRead": 29826,
+          "elapsedMs": 867
+        },
+        {
+          "target": "backend",
+          "url": "https://wassel-production-a0724bec.up.railway.app/actuator/health",
+          "checkedAtUtc": "2026-11-28T12:07:30.098091+00:00",
+          "status": 200,
+          "finalUrl": "https://wassel-production-a0724bec.up.railway.app/actuator/health",
+          "contentType": "application/vnd.spring-boot.actuator.v3+json",
+          "bytesRead": 49,
+          "body": {
+            "groups": [
+              "liveness",
+              "readiness"
+            ],
+            "status": "UP"
+          },
+          "strictStatusOnly": false,
+          "elapsedMs": 862
+        },
+        {
+          "target": "frontend",
+          "url": "https://wassel-sooty.vercel.app",
+          "checkedAtUtc": "2026-11-28T12:07:30.099707+00:00",
+          "status": 200,
+          "finalUrl": "https://wassel-sooty.vercel.app",
+          "contentType": "text/html; charset=utf-8",
+          "bytesRead": 57450,
+          "elapsedMs": 1042
+        }
+      ]
+    },
+    "publicEventCount": 0,
+    "exactTargetAndCadenceVerified": false,
+    "claimedProbeIntervalSeconds": 300,
+    "claimedAlertChannels": [
+      "owner email",
+      "team Discord"
+    ],
+    "alertReceiptVerified": false,
+    "vendorOutageRecoveryVerified": false,
+    "publicOrPrivateOutageRun": false,
+    "remainingOwner": "Mohamad A. Al Hamwi",
+    "limitations": "Both public monitor listings report success and each named site answered 200, but the feed hides exact target URLs and cadence. There are zero incident events. Creation is 28 November; displayed 30/90-day 100% is not a measured 30/90-day window. No alert recipient or delivered receipt was inspected."
+  },
+  "readiness": {
+    "draft": true,
+    "acceptanceComplete": false
+  }
+}

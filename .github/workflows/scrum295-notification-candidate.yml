@@ -5,18 +5,23 @@ on:
     # Keep the real independent verdict attached to every current PR head, including report-only commits.
 permissions:
   contents: read
+concurrency:
+  group: scrum295-current-metrics-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   delivery-metrics-candidate:
-    name: Independent metrics security and delivery against PR 187
+    name: Independent metrics security and delivery on current source
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      VERIFIED_SOURCE: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
-          ref: e9de4167a5d669289461b5054b5f0a28f8238358
+          ref: ${{ github.sha }}
           path: candidate-metrics
           persist-credentials: false
       - uses: actions/setup-java@v4
@@ -30,7 +35,7 @@ jobs:
           node-version: '24'
       - name: Add only independent metric and notification criteria
         run: |
-          test "$(git -C candidate-metrics rev-parse HEAD)" = e9de4167a5d669289461b5054b5f0a28f8238358
+          test "$(git -C candidate-metrics rev-parse HEAD)" = "$VERIFIED_SOURCE"
           mkdir -p candidate-metrics/backend/src/test/java/independent/scrum295
           cp verification/scrum295/java/independent/scrum295/*.java candidate-metrics/backend/src/test/java/independent/scrum295/
           cp verification/scrum295-notifications/java/independent/scrum295/*.java candidate-metrics/backend/src/test/java/independent/scrum295/
@@ -39,7 +44,7 @@ jobs:
         run: sh ./mvnw -B test -Dtest=IndependentRequestMetricsCriteriaTests,IndependentAdminMetricsCriteriaTests,IndependentNotificationMetricsCriteriaTests -DfailIfNoTests=true
       - name: Extract only independent test counts and identities
         if: always()
-        run: node scripts/scrum295-junit-summary.mjs candidate-metrics/backend/target/surefire-reports tmp/scrum295-notification-results.json e9de4167a5d669289461b5054b5f0a28f8238358
+        run: node scripts/scrum295-junit-summary.mjs candidate-metrics/backend/target/surefire-reports tmp/scrum295-notification-results.json "$VERIFIED_SOURCE"
       - uses: actions/upload-artifact@v4
         if: always() && hashFiles('tmp/scrum295-notification-results.json') != ''
         with:

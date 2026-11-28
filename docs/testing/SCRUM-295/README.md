@@ -1,5 +1,19 @@
 # SCRUM-295 — independent Sprint 5 verification
 
+## 28 November 2026 — latest accepted-source refresh
+
+Updated the existing branch with accepted develop **f29b72e**, preserving history in merge **ea3c1bc**. See the [current report](2026-11-28-refresh.md) and [numeric/source evidence](evidence/2026-11-28-refresh.json); this section supersedes earlier dependency statuses below.
+
+- **93/93 verifier controls passed**. Merged SCRUM-289/290/292/293 implementations and current develop CI were inspected. Normal Maven/frontend CI passes; no gated pool measurement or long load run was repeated.
+- Current actual coverage: **96.6807% backend**, **92.02% frontend reported**. Both native floors pass; the strict backend 94.7% versus 94.72% policy discrepancy and missing daily rows remain.
+- The metrics prefix defect remains unchanged. The 17-criterion CI now tests the actual current push SHA, rather than an old pre-SCRUM-289 snapshot; its fresh result is pending at this report commit.
+- **New monitoring PR #193 exists.** Its public status feed really lists two successful monitors created today, and both named services answered 200. Exact hidden target/cadence settings, delivered alerts and a controlled disposable outage/recovery remain unverified. The current public health body still includes `groups`, so the status-only shape mismatch remains.
+- Saved load evidence was re-audited. Workload, default 120-email quota and strict latency issues remain; historical candidate timings are not relabelled as current-develop results.
+
+**Keep PR #183 Draft**. No production fix, teammate branch/PR modification, Jira change or GitHub merge was made.
+
+## Preserved 24 November 2026 evidence
+
 Owner: Wassim. Updated **24 November 2026 (Asia/Beirut)**. PR #183 remains **Draft**.
 This branch contains verification tools and test fixtures only. No teammate production
 source, branch, acceptance test, or Jira status was changed.
