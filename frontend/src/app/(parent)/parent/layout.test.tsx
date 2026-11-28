@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import ParentLayout from "./layout";
 
 vi.mock("@/components/auth/RoleGuard", () => ({
+  useCurrentUser: () => ({ id: "parent-layout", schoolId: "school-layout" }),
   RoleGuard: ({
     role,
     children,
@@ -50,7 +51,7 @@ describe("SCRUM-185 Parent layout", () => {
   expect(within(brandLink).getByText("Parent")).toBeInTheDocument();
 });
 
-  it("displays three disabled Soon navigation items", () => {
+  it("links to My children and keeps unfinished destinations disabled", () => {
     renderLayout();
 
     const nav = screen.getByRole("navigation", {
@@ -61,13 +62,13 @@ describe("SCRUM-185 Parent layout", () => {
     expect(within(nav).getByText("School route")).toBeInTheDocument();
     expect(within(nav).getByText("Profile")).toBeInTheDocument();
 
-    expect(within(nav).getAllByText("Soon")).toHaveLength(3);
-    expect(within(nav).queryAllByRole("link")).toHaveLength(0);
+    expect(within(nav).getAllByText("Soon")).toHaveLength(2);
+    expect(within(nav).getByRole("link", { name: "My children" })).toHaveAttribute("href", "/parent");
 
     const disabledItems = nav.querySelectorAll(
       '[aria-disabled="true"]'
     );
-    expect(disabledItems).toHaveLength(3);
+    expect(disabledItems).toHaveLength(2);
   });
 
   it("renders the user area and page content", () => {

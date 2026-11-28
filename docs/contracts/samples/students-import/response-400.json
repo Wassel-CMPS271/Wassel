@@ -1,0 +1,7 @@
+{
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "Validation failed",
+  "instance": "/api/head-of-transport/students/import",
+  "errors": { "students": "Import between 1 and 500 students at a time." }
+}

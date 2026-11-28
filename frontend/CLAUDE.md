@@ -93,8 +93,10 @@ The app is dark everywhere, whatever the OS light/dark preference. The look is a
   and fails the build). `npm run test:watch` re-runs on save during development.
 - `npm run test:coverage` is the same run plus a v8 coverage report (a text summary and an HTML report in
   `frontend/coverage/`, git-ignored). CI's `frontend-build` job runs it instead of `npm test` and uploads the
-  folder as the `frontend-coverage` artifact. It is a report only: there are no thresholds, so a low number
-  never fails the build.
+  folder as the `frontend-coverage` artifact and prints the number in the job summary. **Floor (SCRUM-292):**
+  `coverage.thresholds.lines` in `vitest.config.mts` (86.6%, two points below the 88.58% of 2026-11-22) makes the
+  run fail below it. The floor is never lowered; if a change drops coverage, add tests. Definitions and daily
+  readings are in `docs/quality/`.
 - `vitest.setup.ts` loads the jest-dom matchers (`toBeInTheDocument`, etc.) for every test.
 
 ## Revoking access

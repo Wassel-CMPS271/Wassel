@@ -134,7 +134,17 @@ jobs:
           name: backend-test-reports
           path: backend/target/surefire-reports/
           if-no-files-found: ignore
-      # JaCoCo writes the HTML report during verify (SCRUM-151). A report only: nothing fails on a low number.
+      # The number goes in the job summary (SCRUM-292): line coverage = covered lines / all lines, from JaCoCo's CSV.
+      # The build itself fails below the floor set in pom.xml (the jacoco `check` execution), during verify.
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f backend/target/site/jacoco/jacoco.csv ]; then
+            awk -F, 'NR>1 {missed+=$8; covered+=$9} END {printf "### Backend line coverage: %.1f%% (%d of %d lines)\n", 100*covered/(missed+covered), covered, missed+covered}' backend/target/site/jacoco/jacoco.csv >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Backend line coverage: no report was written" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      # JaCoCo writes the HTML report during verify (SCRUM-151).
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -165,10 +175,21 @@ jobs:
       - name: Lint
         run: npm run lint
         working-directory: frontend
-      # Same run as `npm test` (a failing test still fails the job), plus a coverage report (SCRUM-151).
+      # Same run as `npm test` (a failing test still fails the job), plus a coverage report (SCRUM-151). It also
+      # fails below the line-coverage floor in vitest.config.mts (SCRUM-292).
       - name: Test
         run: npm run test:coverage
         working-directory: frontend
+      # The number goes in the job summary (SCRUM-292), from vitest's json-summary report.
+      - name: Coverage summary
+        if: always()
+        working-directory: frontend
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            node -e "const t=require('./coverage/coverage-summary.json').total.lines; console.log('### Front-end line coverage: '+t.pct.toFixed(1)+'% ('+t.covered+' of '+t.total+' lines)')" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Front-end line coverage: no report was written" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4

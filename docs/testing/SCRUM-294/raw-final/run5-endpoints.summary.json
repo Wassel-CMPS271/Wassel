@@ -1,0 +1,1 @@
+{"run":"endpoints","vus":1,"limited":true,"requests":240,"seconds":2.1,"statuses":{"login_401":30,"password_429":5,"password_400":30,"forgot_429":5,"logout_429":5,"forgot_204":10,"verify_429":5,"resend_429":5,"resend_401":20,"login_429":5,"logout_204":60,"verify_401":60},"first429At":null,"latencyMs":{"avg":9,"p95":59,"max":80}}

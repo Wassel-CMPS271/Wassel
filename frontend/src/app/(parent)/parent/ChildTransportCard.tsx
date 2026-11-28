@@ -1,4 +1,5 @@
 import { useId } from "react";
+import Link from "next/link";
 import { ChildRunStatus } from "./ChildRunStatus";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -58,6 +59,11 @@ export function ChildTransportCard({ child, onAbsences }: { child: Child; onAbse
           </>
         )}
         {onAbsences && <Button id={`absences-${child.studentId}`} variant="secondary" style={{ minHeight: sizing.tapTarget }} onClick={onAbsences} aria-label={`Manage absences for ${fullName}`}>Manage absences</Button>}
+        <Link href={"/parent/children/" + encodeURIComponent(child.studentId) + "/records"}
+          className={`inline-flex items-center justify-center rounded-md text-sm font-medium ${focusRingClass}`}
+          style={{ ...focusRingStyle, minHeight: sizing.tapTarget, padding: spacing.sm, color: colors.primary[300], border: `1px solid ${darkTheme.surface.inputBorder}` }}>
+          Address changes &amp; attendance history for {fullName}
+        </Link>
       </Card>
     </li>
   );

@@ -1,0 +1,10 @@
+{
+  "students": [
+    { "row": 2, "firstName": "Zeina", "lastName": "Fakhoury", "grade": "Grade 3", "guardianName": "Nabil Fakhoury", "guardianPhone": "+961 3 222 111" },
+    { "row": 3, "firstName": "Hadi", "lastName": "Bou Saab", "grade": " Grade 5 ", "guardianName": "Lina Bou Saab", "guardianPhone": "+961 70 333 222" },
+    { "row": 5, "firstName": "Rami", "lastName": "Aziz", "grade": "Grade 2", "guardianName": "Samir Aziz", "guardianPhone": "03 444 333" },
+    { "row": 6, "firstName": "zeina", "lastName": "FAKHOURY", "grade": "Grade 3", "guardianName": "Nabil Fakhoury", "guardianPhone": "+961 3 222 111" },
+    { "row": 7, "firstName": "Tarek", "lastName": "Mansour", "grade": "4", "guardianName": "Maya Mansour", "guardianPhone": "+961 3 411 001" },
+    { "row": 8, "firstName": "", "lastName": "Khoury", "grade": "  ", "guardianName": "Joseph Khoury", "guardianPhone": "+961 71 555 444" }
+  ]
+}
