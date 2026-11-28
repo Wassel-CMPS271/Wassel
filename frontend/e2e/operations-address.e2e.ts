@@ -1,0 +1,60 @@
+import { expect, test, type APIResponse } from "@playwright/test";
+import { signIn } from "./auth-helpers";
+import type { Student } from "../src/lib/api/students";
+import type { AddressRequest } from "../src/lib/api/addressRequests";
+async function json<T>(response: APIResponse, status = 200): Promise<T> { expect(response.status(), await response.text()).toBe(status); return response.json(); }
+
+test("real address decisions: request, approve/reject, persistence, offline retry, ownership and 360px", async ({ browser }) => {
+ const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:4180";
+ const head = await browser.newPage({ baseURL, viewport: { width: 360, height: 800 } });
+ const parent = await browser.newPage({ baseURL }); const signedOut = await browser.newPage({ baseURL });
+ const crashes: string[] = []; head.on("pageerror", error => crashes.push(error.message));
+ const requests = "/api/head-of-transport/address-requests";
+ try {
+  await signIn(head, "HEAD_OF_TRANSPORT"); await signIn(parent, "PARENT");
+  const children = await json<{ studentId: string }[]>(await parent.request.get("/api/parent/children")); expect(children).toHaveLength(2);
+  const studentsPath = "/api/head-of-transport/students";
+  const initial = await json<Student[]>(await head.request.get(studentsPath));
+  const saved = children.map(child => initial.find(student => student.id === child.studentId)!); expect(saved.every(Boolean)).toBe(true);
+  const childPath = (id: string) => `/api/parent/children/${id}/address-requests`;
+  const requested = ["Independent approved pickup address", "Independent rejected pickup address"];
+  const first = await json<AddressRequest>(await parent.request.post(childPath(saved[0].id), { data: { address: requested[0], latitude: 33.88, longitude: 35.52 } }), 201);
+  const second = await json<AddressRequest>(await parent.request.post(childPath(saved[1].id), { data: { address: requested[1] } }), 201);
+  expect(first.status).toBe("pending"); expect(second.status).toBe("pending");
+  expect((await parent.request.post(childPath(saved[0].id), { data: { address: "Overlapping request" } })).status()).toBe(409);
+  const unchanged = await json<Student[]>(await head.request.get(studentsPath));
+  for (const student of saved) expect(unchanged.find(s => s.id === student.id)).toMatchObject({ address: student.address, latitude: student.latitude, longitude: student.longitude });
+  await head.goto("/head-of-transport/students");
+  const section = head.getByRole("region", { name: "Address requests" });
+  await expect(section.getByText(`Requested (not yet saved): ${requested[0]}`)).toBeVisible();
+  await expect(section.getByText(`Requested (not yet saved): ${requested[1]}`)).toBeVisible();
+  const name = (s: Student) => `${s.firstName} ${s.lastName}`;
+  const approve = section.getByRole("button", { name: `Approve address change for ${name(saved[0])}`, exact: true });
+  await head.context().setOffline(true); await approve.click(); await expect(section.getByRole("alert")).toBeVisible();
+  await head.context().setOffline(false);
+  const approved = head.waitForResponse(response => new URL(response.url()).pathname === `${requests}/${first.id}/approve` && response.request().method() === "POST");
+  await approve.click(); expect((await approved).status()).toBe(200); await expect(section.getByText(`Address approved for ${name(saved[0])}.`)).toBeVisible();
+  const afterApproval = await json<Student[]>(await head.request.get(studentsPath)); expect(afterApproval.find(s => s.id === saved[0].id)).toMatchObject({ address: requested[0], latitude: 33.88, longitude: 35.52 });
+  expect(afterApproval.find(s => s.id === saved[1].id)).toMatchObject({ address: saved[1].address, latitude: saved[1].latitude, longitude: saved[1].longitude });
+  const reject = section.getByRole("button", { name: `Reject address change for ${name(saved[1])}`, exact: true });
+  await reject.click(); const confirm = section.getByRole("button", { name: `Confirm reject address change for ${name(saved[1])}`, exact: true });
+  await expect(confirm).toBeFocused(); await confirm.press("Escape"); await expect(reject).toBeFocused();
+  expect((await json<AddressRequest[]>(await parent.request.get(childPath(saved[1].id))))[0].status).toBe("pending");
+  await reject.click(); await section.getByLabel("Reason (optional)").fill("  Outside pickup zone  ");
+  const rejected = head.waitForResponse(response => new URL(response.url()).pathname === `${requests}/${second.id}/reject` && response.request().method() === "POST");
+  await confirm.click(); const receipt = await rejected; expect(receipt.status()).toBe(200); expect(receipt.request().postDataJSON()).toEqual({ reason: "Outside pickup zone" });
+  await expect(section.getByText(`Address request rejected for ${name(saved[1])}.`)).toBeVisible();
+  expect((await json<AddressRequest[]>(await parent.request.get(childPath(saved[1].id))))[0]).toMatchObject({ status: "rejected", rejectionReason: "Outside pickup zone" });
+  expect((await json<Student[]>(await head.request.get(studentsPath))).find(s => s.id === saved[1].id)).toMatchObject({ address: saved[1].address, latitude: saved[1].latitude, longitude: saved[1].longitude });
+  await head.reload(); await expect(head.getByText("No pending address requests.")).toBeVisible();
+  expect((await json<AddressRequest[]>(await parent.request.get(childPath(saved[0].id))))[0]).toMatchObject({ status: "approved", requestedAddress: requested[0] });
+  expect((await head.request.post(`${requests}/${first.id}/approve`)).status()).toBe(409);
+  expect((await parent.request.post(`${requests}/${first.id}/approve`)).status()).toBe(403);
+  expect((await parent.request.get(childPath("00000000-0000-0000-0000-000000000001"))).status()).toBe(404);
+  expect((await head.request.post(`${requests}/00000000-0000-0000-0000-000000000001/approve`)).status()).toBe(404);
+  expect((await signedOut.request.get(requests)).status()).toBe(401);
+  const size = await head.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: innerWidth })); expect(size.width).toBeLessThanOrEqual(size.viewport); expect(crashes).toEqual([]);
+  await head.screenshot({ path: "e2e-artifacts/operations-address-360.png", fullPage: true });
+  console.log("PASS real address request -> Head approve/reject UI, no pre-approval mutation, persisted address/pin, rejection preserves saved data, 409, 401/403/404, actual offline retry, keyboard focus/Escape, reload and 360px. PostgreSQL/Flyway; no production response mocked. Isolated seed database only.");
+ } finally { await head.context().setOffline(false); await Promise.all([head.close(), parent.close(), signedOut.close()]); }
+});
