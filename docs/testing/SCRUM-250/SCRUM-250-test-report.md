@@ -1,5 +1,40 @@
 # SCRUM-250 — Independent driver frontend tests
 
+## 28 November 2026 — confirmed replay contracts and current-source acceptance
+
+Resolved the two preserved failures using [Majd's confirmed explanation](https://github.com/Wassel-CMPS271/Wassel/pull/148#issuecomment-7203845536) and the accepted `docs/contracts/runs.md` confirmation/replay rules and `docs/contracts/driver-gps-offline.md` status mapping. No Driver production code or teammate branch was changed.
+
+### Contract corrections and retained coverage
+
+- **Pending pickup:** the queued projection already means Picked up. The test now requires **Not present to be absent** and the legal **Dropped off action to be disabled** until acknowledgement. It still requires exactly one confirmation for duplicate taps, keeps the other student's action enabled, and now also verifies Dropped off becomes enabled after the successful receipt.
+- **HTTP 409:** the test requires the backend's valid run-state detail under the affected student, a day refetch, no old-item Try again, and no error on the other student. A fresh explicit Not present tap must submit the same business action with a **different valid v4 UUID**, then reach Sent/Done. The previous "student no longer on the run" detail was a 404 condition and is no longer used as a 409 oracle.
+- **Transient retries:** three additional cases cover **500, 429 and 408**. They require the contracted generic, student-scoped Couldn't send live status, no exposed upstream detail, another student remaining actionable, and an explicit Try again sending the **same business payload and same UUID**, followed by a successful receipt and cleared retry status. Thus correcting the 409 oracle does not remove same-key retry coverage.
+- All **65 original scenarios remain**, with the two incorrect expectations corrected and the conflict case renamed accurately. The other four suites and shared `driverContract.ts` are byte-identical to their preserved originals. The driver screen file has 38 cases instead of 35; the complete independent suite now has **68**. No skip, expected-failure marker, disabled check or production response workaround was added.
+
+### Source and preservation
+
+Preserved the previously uncommitted November 26 report in commit `e8f0476`. Normally merged latest accepted develop **f29b72ec69b4c22389c7a3b9b2d77d06a426f757** in **9f639ef**, retaining both histories. Resolved the sole `frontend/.gitignore` conflict by keeping every accepted Inbox/GPS/dual-UI exclusion and the own generated Driver launcher rule. The PR diff contains SCRUM-250 tests, tooling and evidence only; production source matches accepted develop. Earlier reports and raw failure evidence are preserved, not rewritten as passes.
+
+### Executed local verification
+
+| Check | Actual result |
+| --- | --- |
+| All retained 65 scenarios plus 3 new transient cases | **68 passed / 0 failed / 0 skipped**, 5 files, exit 0, 26.26 seconds |
+| Complete frontend regression with V8 coverage | **1,920 passed / 0 failed / 1 existing expected failure / 5 existing skips**, 1,926 cases, all 116 files passed, exit 0, 657.74 seconds |
+| Line coverage | **92.26% (4,675 / 5,067)**; unchanged **86.6%** floor passed |
+| Full ESLint / production build | Passed, exit 0 |
+| `git diff --check` / preservation hashes for unaffected suites and fixtures | Passed |
+
+The existing expected failure and skips belong to accepted develop; none was introduced here. Initial added-test probes are retained (62/68 and 65/68): a mid-render fake-timer switch interfered with Motion cleanup, and a raw-detail/alert expectation was not the retryable-error contract. The final tests use real timers and await drain settlement, and require the contracted generic live status plus privacy, isolation and key assertions. These were test-author setup/oracle corrections, not claimed product defects or hidden failures. Existing React `act(...)` notices remain in raw logs.
+
+### Publication and review readiness
+
+The obsolete pending/409 acceptance blockers are resolved locally. Publish these exact files and verify the new head's ordinary push/PR frontend CI and the existing real PostgreSQL/Flyway integrated Driver browser workflow; queued checks are not counted as passes in this report. The local runs above are unit/component/client evidence, not a new real-browser pass. Earlier November 17 browser evidence stays dated to that source until current-head CI supplies fresh results. The accepted-source browser job exercises this branch directly; historical optional candidate-review tooling and its evidence remain preserved.
+
+**Ready for independent review once new-head CI is green.** Draft status is intentionally unchanged, no Jira status changed, no formal review was submitted, and PR #148 was not merged. Physical device GPS and the full offline cross-tab matrix remain outside this Driver Today/actions/maps/call acceptance certification; the browser workflow's device GPS is simulated while backend business responses are real.
+
+Ignored evidence is under the main repository's `tmp/SCRUM-250-contract-fix-20261128/`: original report/test snapshots and hashes, all exploratory and final 68-case logs/JSON, full frontend coverage log/JSON and summary, lint and build logs. No logs, generated launchers, credentials or build artifacts are committed. Historical sections below retain their original source/date and are superseded by this current result where applicable.
+
 ## 26 November 2026 — latest-develop driver acceptance recheck
 
 ### Scope and source preservation

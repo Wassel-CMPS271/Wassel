@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
 import type { ConfirmationStatus, Run } from "@/lib/api/runs";
+import type { ConfirmationReplayInput } from "@/lib/api/confirmationReplay";
 import { confirmStudent, endRun, getDriverToday, startRun } from "@/lib/api/runs";
 import { day, deferred, instant, run, student } from "@/test-support/driverContract";
 import DriverTodayPage from "./page";
@@ -31,10 +32,14 @@ vi.mock("@/components/auth/RoleGuard", async () => ({
   useCurrentUser: () => ({ id: "user-250", email: "independent@e2e.invalid", role: "DRIVER", schoolId: "school-250" }),
 }));
 
-// The candidate offline flow calls a new adapter for the same public confirmation.
-// Keep the independent receipt/error spy and all existing acceptance assertions.
+// Observe the public replay input as well as the existing business-call spy:
+// a new tap after a dropped conflict gets a new key; a transient retry keeps it.
+const replayCalls = vi.hoisted(() => ({ confirm: vi.fn() }));
 vi.mock("@/lib/api/confirmationReplay", () => ({ confirmationReplayApi: {
-  confirm: ({ runId, studentId, status }: { runId: string; studentId: string; status: ConfirmationStatus }) => driverCalls.confirmStudent(runId, studentId, status),
+  confirm: (input: ConfirmationReplayInput) => {
+    replayCalls.confirm(input);
+    return driverCalls.confirmStudent(input.runId, input.studentId, input.status);
+  },
 } }));
 beforeEach(() => { vi.resetAllMocks(); localStorage.clear(); vi.setSystemTime(new Date(instant)); });
 afterEach(() => { cleanup(); localStorage.clear(); vi.useRealTimers(); });
@@ -214,9 +219,16 @@ describe("SCRUM-244: legal actions and observable state changes", () => {
     const button = within(row()).getByRole("button", { name: "Picked up" });
     act(() => { fireEvent.click(button); fireEvent.click(button); });
     await waitFor(() => expect(confirmStudent).toHaveBeenCalledTimes(1));
-    expect(within(row()).getByRole("button", { name: "Not present" })).toBeDisabled();
+    // runs.md forbids Not present after Picked up; queued projection already
+    // advances the row, but the legal next action stays disabled while sending.
+    expect(within(row()).queryByRole("button", { name: "Not present" })).not.toBeInTheDocument();
+    expect(within(row()).getByRole("button", { name: "Dropped off" })).toBeDisabled();
+    expect(replayCalls.confirm).toHaveBeenCalledTimes(1);
     expect(within(row(2)).getByRole("button", { name: "Picked up" })).toBeEnabled();
     await act(async () => gate.resolve(run({ stops: [student(1, { confirmation: { status: "PICKED_UP", at: instant } }), student(2)] })));
+    expect(within(row()).getByRole("button", { name: "Dropped off" })).toBeEnabled();
+    expect(within(row()).queryByRole("button", { name: "Not present" })).not.toBeInTheDocument();
+    expect(confirmStudent).toHaveBeenCalledTimes(1);
   });
 
   it.each(["start", "end"] as const)("shows a failed %s action and permits an explicit retry", async action => {
@@ -234,16 +246,71 @@ describe("SCRUM-244: legal actions and observable state changes", () => {
     expect(onChange).toHaveBeenCalledWith(updated);
   });
 
-  it("keeps a failed confirmation scoped to its student and retries the same status", async () => {
+  it("drops a 409 confirmation, refetches the day and permits a new scoped tap with a new key", async () => {
     const updated = run({ stops: [student(1, { confirmation: { status: "NOT_PRESENT", at: instant } }), student(2)] });
-    vi.mocked(confirmStudent).mockRejectedValueOnce(new ApiError(409, "This student is no longer on the run")).mockResolvedValueOnce(updated);
+    const detail = "Run is NOT_STARTED, so it cannot be confirmed";
+    vi.mocked(confirmStudent).mockRejectedValueOnce(new ApiError(409, detail)).mockResolvedValueOnce(updated);
     await show(day([run({ stops: [student(1), student(2)] })]));
     fireEvent.click(within(row()).getByRole("button", { name: "Not present" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("This student is no longer on the run");
+    expect(await within(row()).findByRole("alert")).toHaveTextContent(detail);
+    await waitFor(() => expect(getDriverToday).toHaveBeenCalledTimes(2));
     expect(within(row(2)).queryByRole("alert")).not.toBeInTheDocument();
-    fireEvent.click(within(row()).getByRole("button", { name: "Try again" }));
-    await screen.findByText(/done.*not present/i);
+    expect(within(row(2)).getByRole("button", { name: "Picked up" })).toBeEnabled();
+    expect(within(row()).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    expect(confirmStudent).toHaveBeenCalledTimes(1);
+    expect(replayCalls.confirm).toHaveBeenCalledTimes(1);
+    const firstKey = replayCalls.confirm.mock.calls[0][0].clientRequestId;
+    expect(firstKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    // The fresh day permits the action again. Only this explicit new tap may
+    // enqueue a new key; a 409 is never retried through the old item's Try again.
+    await waitFor(() => expect(within(row()).getByRole("button", { name: "Not present" })).toBeEnabled());
+    fireEvent.click(within(row()).getByRole("button", { name: "Not present" }));
+    await waitFor(() => expect(confirmStudent).toHaveBeenCalledTimes(2));
+    await within(row()).findByText(/^Sent.*Not present/i);
+    expect(within(row()).getByText(/done.*not present/i)).toBeVisible();
     expect(vi.mocked(confirmStudent).mock.calls[1]).toEqual(vi.mocked(confirmStudent).mock.calls[0]);
+    expect(replayCalls.confirm).toHaveBeenCalledTimes(2);
+    const nextKey = replayCalls.confirm.mock.calls[1][0].clientRequestId;
+    expect(nextKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(nextKey).not.toBe(firstKey);
+    expect(within(row()).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(row(2)).queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it.each([500, 429, 408])("keeps an HTTP %s confirmation scoped and retries the same status and key", async status => {
+    const updated = run({ stops: [student(1, { confirmation: { status: "NOT_PRESENT", at: instant } }), student(2)] });
+    const detail = "Confirmation service temporarily unavailable";
+    vi.mocked(confirmStudent).mockRejectedValueOnce(new ApiError(status, detail)).mockResolvedValueOnce(updated);
+    await show(day([run({ stops: [student(1), student(2)] })]));
+    fireEvent.click(within(row()).getByRole("button", { name: "Not present" }));
+    // The contract exposes a generic retryable status, not an upstream detail.
+    const statusMessage = await within(row()).findByText(/^Couldn't send/);
+    expect(statusMessage).toBeVisible();
+    expect(statusMessage.closest("[aria-live]")).toHaveAttribute("aria-live", "polite");
+    expect(screen.queryByText(detail)).not.toBeInTheDocument();
+    // Let the failed drain finish before the explicit retry starts another one.
+    // Keep real timers: replacing them mid-render strands Motion's frame loop.
+    await act(() => new Promise(resolve => setTimeout(resolve, 50)));
+    expect(within(row(2)).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(row(2)).queryByText(/^Couldn't send/)).not.toBeInTheDocument();
+    expect(within(row(2)).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    expect(within(row(2)).getByRole("button", { name: "Picked up" })).toBeEnabled();
+    expect(confirmStudent).toHaveBeenCalledTimes(1);
+    const firstKey = replayCalls.confirm.mock.calls[0][0].clientRequestId;
+    expect(firstKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    fireEvent.click(within(row()).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(confirmStudent).toHaveBeenCalledTimes(2));
+    await within(row()).findByText(/^Sent.*Not present/i);
+    expect(confirmStudent).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(confirmStudent).mock.calls[1]).toEqual(vi.mocked(confirmStudent).mock.calls[0]);
+    expect(replayCalls.confirm).toHaveBeenCalledTimes(2);
+    expect(replayCalls.confirm.mock.calls[1][0].clientRequestId).toBe(firstKey);
+    expect(within(row()).getByText(/^Sent.*Not present/i)).toBeVisible();
+    expect(within(row()).getByText(/done.*not present/i)).toBeVisible();
+    expect(within(row()).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(row()).queryByText(/^Couldn't send/)).not.toBeInTheDocument();
+    expect(within(row()).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    expect(getDriverToday).toHaveBeenCalledTimes(1);
   });
 
   it("warns before ending with outstanding stops, supports Cancel and keyboard Escape", async () => {
